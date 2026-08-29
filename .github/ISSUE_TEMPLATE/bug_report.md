@@ -20,10 +20,10 @@ labels: bug
 
 # 🐞 KPR Bug Report
 
-[![Reproduction](https://img.shields.io/badge/reproduction-minimal-0969da?style=flat-square)](#minimal-reproduction)
-[![Contract](https://img.shields.io/badge/contract-explicit-217346?style=flat-square)](#financial-contract)
-[![Evidence](https://img.shields.io/badge/evidence-independent-d97706?style=flat-square)](#numerical-comparison)
-[![Security](https://img.shields.io/badge/security-report_privately-d73a49?style=flat-square)](../../SECURITY.md#reporting-a-vulnerability)
+[![Reproduction](https://img.shields.io/badge/Reproduction-Minimal-0969da?style=flat-square)](#minimal-reproduction)
+[![Contract](https://img.shields.io/badge/Contract-Explicit-217346?style=flat-square)](#financial-contract)
+[![Evidence](https://img.shields.io/badge/Evidence-Independent-d97706?style=flat-square)](#numerical-comparison)
+[![Security](https://img.shields.io/badge/Security-Report_privately-d73a49?style=flat-square)](../../SECURITY.md#reporting-a-vulnerability)
 
 </div>
 
