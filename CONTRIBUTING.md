@@ -4,10 +4,10 @@
 
 ### Engineering guidance for defensible Excel/VBA financial analytics and pricing
 
-[![Conduct](https://img.shields.io/badge/read_first-code_of_conduct-6f42c1?style=flat-square)](CODE_OF_CONDUCT.md)
-[![License](https://img.shields.io/badge/license-MIT-217346?style=flat-square)](LICENSE)
-[![Source](https://img.shields.io/badge/model-source--first-0969da?style=flat-square)](#source-first-development)
-[![Numerics](https://img.shields.io/badge/numerics-evidence_required-d97706?style=flat-square)](#numerical-engineering)
+[![Conduct](https://img.shields.io/badge/Read_first-Code_of_conduct-6f42c1?style=flat-square)](CODE_OF_CONDUCT.md)
+[![License](https://img.shields.io/badge/License-MIT-217346?style=flat-square)](LICENSE)
+[![Source](https://img.shields.io/badge/Model-Source--first-0969da?style=flat-square)](#source-first-development)
+[![Numerics](https://img.shields.io/badge/Numerics-Evidence_required-d97706?style=flat-square)](#numerical-engineering)
 [![Office](https://img.shields.io/badge/Office-32_%2F_64--bit-217346?style=flat-square)](#vba-and-excel-standards)
 
 <br>
