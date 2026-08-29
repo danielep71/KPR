@@ -44,6 +44,14 @@
 
 ---
 
+<p align="center">
+  <img src=".github/social-preview.png"
+       alt="KPR — financial analytics and instrument pricing for Excel/VBA"
+       width="100%">
+</p>
+
+---
+
 <a id="overview"></a>
 
 ## ✨ Overview
