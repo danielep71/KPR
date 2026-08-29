@@ -2,12 +2,12 @@
 # KPR .gitignore
 #------------------------------------------------------------------------------
 # PURPOSE
-#   Keep the repository source-first and reviewable.
+#   Keep the repository source-first, reviewable, and safe to clone.
 #
 #   Ignore local, temporary, generated, sensitive, and release-binary files
 #   while preserving the exported VBA source, UserForm resources, RibbonX,
-#   demo builders, regression tests, documentation, workflows, and screenshots
-#   that define the project.
+#   demo builders, regression tests, repository tooling, documentation,
+#   workflows, evidence, and screenshots that define the project.
 #
 # REPOSITORY POLICY
 #   - Exported VBA source is version-controlled.
@@ -16,13 +16,15 @@
 #   - Demo and regression source are version-controlled when present.
 #   - Generated .xlsm / .xlam and other Office binaries are NOT source files.
 #   - Tested binaries are distributed as GitHub Release assets.
+#   - Project-wide editor policy is version-controlled in .editorconfig.
 #   - Editor state, logs, caches, build output, local secrets, Office lock files,
 #     and OS metadata do not belong in Git.
 #
 # SAFETY RULE
 #   Do not add broad rules that can hide:
 #
-#       *.bas  *.cls  *.frm  *.frx  *.xml  *.md  assets/  images/  .github/
+#       *.bas  *.cls  *.frm  *.frx  *.py  *.xml  *.md  *.txt
+#       src/  demo/  test/  tools/  docs/  evidence/  assets/  images/  .github/
 #
 #   Those paths contain authoritative project source or repository evidence.
 #==============================================================================
@@ -36,6 +38,8 @@
 #------------------------------------------------------------------------------
 
 ~$*
+*.laccdb
+*.ldb
 
 *.tmp
 *.temp
@@ -81,8 +85,10 @@
 *.ppsm
 *.accdb
 *.accde
+*.accdr
 *.mdb
 *.mde
+*.ade
 
 # If a binary fixture ever genuinely belongs in source control, re-include it
 # by EXPLICIT path so that the exception is visible in code review.
@@ -119,12 +125,15 @@ test-output/
 test-results/
 coverage/
 .coverage
+.tox/
 
 # Optional future local certification evidence. Published release evidence,
-# when implemented, belongs in the GitHub Release process rather than being
-# committed from a workstation accidentally.
-KPR_certification_*.json
-KPR_certification_*.txt
+# when implemented, belongs in an explicit trackable evidence/ path or in the
+# GitHub Release process rather than being committed from a workstation
+# accidentally. Root-only patterns do not hide future evidence/** files.
+local-evidence/
+/KPR_certification_*.json
+/KPR_certification_*.txt
 
 
 #------------------------------------------------------------------------------
@@ -176,8 +185,8 @@ Icon?
 #------------------------------------------------------------------------------
 # EDITOR / IDE / AI-ASSISTANT LOCAL STATE
 #------------------------------------------------------------------------------
-# Project-wide editor configuration can be added deliberately later by explicit
-# exception. These defaults keep personal workspace state out of the repo.
+# Project-wide editor configuration is tracked at the repository root. These
+# defaults keep personal workspace state out of the repo.
 #------------------------------------------------------------------------------
 
 .vscode/
@@ -186,6 +195,8 @@ Icon?
 .history/
 
 *.code-workspace
+*.suo
+*.user
 *.swp
 *.swo
 *~
@@ -237,6 +248,7 @@ session.xml
 *.p12
 *.pvk
 *.key
+*.pem
 
 
 #------------------------------------------------------------------------------
@@ -274,6 +286,7 @@ node_modules/
 # These comments are intentional guardrails for future maintenance.
 #
 # Production VBA source:
+#   src/modules/KPR_Dates_Days.bas
 #   src/modules/*.bas
 #   src/classes/*.cls
 #   src/forms/*.frm
@@ -288,6 +301,11 @@ node_modules/
 # Regression source:
 #   test/*.bas
 #
+# Repository tooling and publishable evidence:
+#   tools/*.py
+#   evidence/**
+#   benchmark/**
+#
 # Documentation / governance:
 #   README.md
 #   CHANGELOG.md
@@ -299,6 +317,7 @@ node_modules/
 # Repository configuration / automation:
 #   .gitignore
 #   .gitattributes
+#   .editorconfig
 #   .github/**
 #
 # Visual documentation:
