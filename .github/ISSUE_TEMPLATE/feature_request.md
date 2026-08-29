@@ -20,10 +20,10 @@ labels: enhancement
 
 # ✨ KPR Feature or Model Proposal
 
-[![Use case](https://img.shields.io/badge/start_with-real_use_case-0969da?style=flat-square)](#problem-and-use-case)
-[![Contract](https://img.shields.io/badge/model-contract-explicit-217346?style=flat-square)](#financial-contract)
-[![Evidence](https://img.shields.io/badge/validation-independent-d97706?style=flat-square)](#validation-strategy)
-[![API](https://img.shields.io/badge/API-compatibility_assessed-6f42c1?style=flat-square)](#api-and-compatibility)
+[![Use case](https://img.shields.io/badge/Start_with-Real_use_case-0969da?style=flat-square)](#problem-and-use-case)
+[![Contract](https://img.shields.io/badge/Model-Contract-explicit-217346?style=flat-square)](#financial-contract)
+[![Evidence](https://img.shields.io/badge/Validation-Independent-d97706?style=flat-square)](#validation-strategy)
+[![API](https://img.shields.io/badge/API-Compatibility_assessed-6f42c1?style=flat-square)](#api-and-compatibility)
 
 </div>
 
