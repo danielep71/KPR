@@ -7,4 +7,37 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ## [Unreleased]
 
-No release notes have been recorded yet.
+No unreleased changes have been recorded yet.
+
+## [0.0.1] - 2026-08-29
+
+### Added
+
+- A KPR-native scalar date and business-day source baseline with native Excel
+  error returns.
+- Premium KPR governance, contribution, installation, security, pull-request,
+  bug-report, and feature-request documentation.
+- A canonical 23-label manifest with a self-healing GitHub label workflow.
+- Hosted static repository checks covering repository identity, structured data,
+  Markdown links, text integrity, forbidden artifacts, file policy, label
+  definitions, immutable workflow actions, whitespace, and VBA declarations.
+- Shared editor, line-ending, encoding, attribute, and ignore policies.
+- KPR repository metadata, security reporting, branch protection, release-tag
+  protection, and an explicit suite-wide merge policy.
+- A suite-aligned social preview, also used as the README banner, with an honest
+  under-development status.
+
+### Changed
+
+- Removed the inherited template implementation and all stale identity,
+  routing, links, and claims.
+- Reset the repository documentation and issue surfaces around KPR's intended
+  financial-analytics and instrument-pricing scope.
+
+### Release status
+
+- This is a **repository-setup pre-release only**. It certifies the KPR project
+  baseline and its governance and automation surfaces; it does not provide a
+  supported analytical API, installation package, Excel execution CI,
+  numerical accuracy certification, production support, or a stable functional
+  release.
