@@ -1,1125 +1,389 @@
 ---
-name: ✨ Feature request
-about: Propose a backward-compatible DatePicker capability, integration, safety, recovery, diagnostic, testing, or deployment enhancement
+name: ✨ Feature or model proposal
+about: Propose a KPR financial model, analytical capability, convention, API, validation, or deployment improvement
 title: "[Feature]: "
 labels: enhancement
 ---
 
 <!--
-  VBA-DATETIMEPICKER feature request
+  KPR feature or model proposal
 
-  Thank you for proposing an improvement.
+  Begin with the real workflow and desired behavior. You do not need to design
+  the implementation before the contract is clear.
 
-  Start with the problem and desired behavior. Do not feel required to design
-  the implementation before the use case is clear.
-
-  The core sections are intentionally short. The subsystem sections near the
-  bottom are optional and collapsed; expand only the ones that matter.
-
-  If the proposal is really a reproducible defect in current documented
-  behavior, use the Bug report template instead.
-
-  If the proposal concerns a vulnerability, credential, malicious release
-  artifact, or security-sensitive disclosure, follow SECURITY.md privately.
+  Use the bug template when current documented behavior is reproducibly wrong.
+  Follow SECURITY.md privately for vulnerabilities, credentials, confidential
+  workbooks, malicious artifacts, or exploitable trust-boundary issues.
 -->
 
-## ✨ Problem / real use case
+<div align="center">
 
-Describe the workflow, limitation, or recurring friction.
+# ✨ KPR Feature or Model Proposal
 
-What are you trying to achieve that the current DatePicker does not support
-cleanly?
+[![Use case](https://img.shields.io/badge/start_with-real_use_case-0969da?style=flat-square)](#problem-and-use-case)
+[![Contract](https://img.shields.io/badge/model-contract-explicit-217346?style=flat-square)](#financial-contract)
+[![Evidence](https://img.shields.io/badge/validation-independent-d97706?style=flat-square)](#validation-strategy)
+[![API](https://img.shields.io/badge/API-compatibility_assessed-6f42c1?style=flat-square)](#api-and-compatibility)
 
-<!--
-Good:
-"We distribute three independent workbooks that use different DatePicker
-preferences. I need each workbook to retain its own settings without changing
-runtime ownership."
+</div>
 
-Less useful:
-"Add more settings."
--->
+<a id="problem-and-use-case"></a>
 
-## 👤 Who benefits?
+## 🎯 Problem and real use case
 
-<!--
-Examples:
-- workbook author
-- end user
-- add-in deployment
-- locked-down corporate user
-- maintainer / tester
-- release engineer
--->
+Describe the workflow, analytical need, limitation, or recurring friction.
 
 ```text
 Primary user:
-Typical deployment:
+Typical workflow:
 Frequency of need:
+Current limitation:
+Practical consequence:
 ```
+
+<!--
+Prefer:
+"I need bond accrued interest and clean/dirty price to use an explicit ex-coupon
+rule so the same contract can be used from worksheet formulas and VBA."
+
+Avoid:
+"Add bond functions."
+-->
 
 ## 💡 Desired behavior
 
-Describe the outcome **before** prescribing the implementation.
+Describe the outcome before prescribing the implementation.
 
 ```text
-Requested behavior:
-Expected scope:
+Requested capability:
+Expected caller surface:
 Expected default:
-Expected failure/refusal behavior:
-Expected result/diagnostics:
+Expected output:
+Expected invalid-input behavior:
+Expected non-convergence / unavailable-result behavior:
 ```
 
-Where useful, show an illustrative call:
+## 👤 Who benefits?
 
-```vb
-' Illustrative only — the final API may differ.
+- [ ] Financial analyst or risk practitioner
+- [ ] Workbook author
+- [ ] VBA developer
+- [ ] Model validator or reviewer
+- [ ] Academic or teaching user
+- [ ] Add-in or controlled-deployment user
+- [ ] Maintainer, tester, or release engineer
+- [ ] Other
+
+---
+
+## 🏷️ Proposal category
+
+- [ ] 📅 Date, calendar, roll, day-count, or schedule capability
+- [ ] 📈 Rate, discounting, compounding, or time-value capability
+- [ ] 📉 Curve, interpolation, extrapolation, or calibration capability
+- [ ] 🧾 Cash-flow or instrument representation
+- [ ] 💰 Pricing model or valuation function
+- [ ] 🎯 Risk measure, sensitivity, scenario, or aggregation
+- [ ] 🔢 Numerical method, solver, approximation, or accuracy improvement
+- [ ] 📊 Worksheet UDF or VBA public API
+- [ ] ⚙️ Excel integration or caller-state behavior
+- [ ] 🧪 Test harness, reference data, or validation tooling
+- [ ] ⚡ Performance or scalability improvement
+- [ ] 📦 Installation, packaging, release, or provenance improvement
+- [ ] 📖 Documentation or example
+- [ ] Other
+
+---
+
+<a id="financial-contract"></a>
+
+## 📐 Financial contract
+
+Complete this section for a calculation, convention, model, instrument, or
+analytical feature. Delete fields that genuinely do not apply.
+
+```text
+Instrument / calculation:
+Inputs and admissible domain:
+Valuation and settlement dates:
+Currency / notional / units:
+Calendar and business-day rule:
+Day-count / accrual rule:
+Frequency / stub / end-of-month rule:
+Compounding convention:
+Quote type and scaling:
+Long/short or payer/receiver sign:
+Curve inputs and interpolation/extrapolation:
+Cash-flow inclusion boundary:
+Output definition and units:
+Rounding / precision:
 ```
+
+### Market variants
+
+Which alternative conventions exist, and which should KPR support?
+
+| Variant | Required now | Possible later | Explicitly out of scope |
+|---|:---:|:---:|:---:|
+| | | | |
+
+> [!IMPORTANT]
+> Do not ask the implementation to infer a material market convention from
+> workbook formatting, locale, or an unexplained default.
 
 ---
 
 ## ✅ Acceptance criteria
 
-What would make the feature complete from the user's perspective?
+Use observable outcomes rather than internal helper names.
 
 1.
 2.
 3.
 
-<!--
-Prefer observable outcomes.
-
-Good:
-"With ShowRightClick=False, ShowGridIcon=False and
-EnableKeyboardShortcut=False, the new Ribbon action still opens the picker."
-
-Less useful:
-"Add helper M_XYZ."
--->
+```text
+Accuracy / tolerance criterion:
+Compatibility criterion:
+Failure criterion:
+Documentation criterion:
+```
 
 ## 🚫 Non-goals
 
-What should this feature **not** try to solve?
+State what this proposal should not attempt to solve.
 
 ```text
 
 ```
 
-This helps keep a useful feature from silently becoming an architectural rewrite.
+This keeps a useful capability from silently becoming an architectural rewrite.
 
 ---
 
-## 🔀 Current workaround / alternatives considered
-
-Describe what you do today.
-
-Check any that apply:
-
-- [ ] Call existing `DP_...` procedures differently
-- [ ] Use a workbook-specific wrapper macro
-- [ ] Use RibbonX
-- [ ] Use the right-click menu
-- [ ] Use the in-grid icon
-- [ ] Use `Ctrl + Shift + D`
-- [ ] Use a settings namespace
-- [ ] Use `DP_RepairRuntime`
-- [ ] Restart Excel
-- [ ] Use a separate `.xlam`
-- [ ] Duplicate / modify DatePicker source
-- [ ] Leave the behavior outside this repository
-- [ ] No practical workaround
+## 🔀 Current workaround and alternatives
 
 ```text
 Current workaround:
 Why it is insufficient:
+Alternative implementation or library considered:
+Reason KPR should own this capability:
 ```
 
----
-
-## 🎯 Affected area
-
-Check all that appear relevant.
-
-**Supported consumer surface**
-
-- [ ] 🚀 Startup / lifecycle — `DP_Start`, `DP_Stop`
-- [ ] 🖱️ Picker UI — `DP_Show`, `DP_Close`, `DP_Preload`, `DP_Hide`
-- [ ] 📅 Direct write-back — `DP_Today`, `DP_Now`
-- [ ] 📊 Explicit Table fill — `DP_FillTableColumn`
-- [ ] 🛠️ Runtime repair — `DP_RepairRuntime`
-- [ ] 🪪 Lease recovery — `DP_ForceReleaseProviderLease`
-- [ ] ⚙️ Settings namespace — `M_Settings_SetNamespace`, `M_Settings_GetNamespace`
-- [ ] 🧾 `DP_WriteResult`
-- [ ] 🪟 `DP_WindowStyleResult`
-- [ ] 🔢 Public enums / constants
-- [ ] ➕ New supported API
-
-**Excel integration**
-
-- [ ] 🧠 Application event manager
-- [ ] ⌨️ Keyboard shortcut / `Application.OnKey`
-- [ ] 🧷 Right-click menu / CommandBars
-- [ ] 📌 In-grid worksheet icon
-- [ ] ⏱️ Live clock / `Application.OnTime`
-- [ ] 🎛️ RibbonX
-- [ ] 🗃️ Registry-backed settings
-- [ ] 🪪 Runtime-provider lease
-
-**Component / project**
-
-- [ ] 🖼️ UserForm / runtime controls
-- [ ] 🪟 WinAPI styling / positioning
-- [ ] 🧪 Regression harness
-- [ ] 🖼️ Demo
-- [ ] 📦 `.xlam` / `.xlsm` packaging
-- [ ] 🚦 Release process / provenance
-- [ ] ⚙️ GitHub workflow / repository tooling
-- [ ] 📖 Documentation only
-- [ ] Other
+- [ ] Existing KPR primitives can express part of the behavior
+- [ ] A workbook formula is used today
+- [ ] A wrapper VBA procedure is used today
+- [ ] A third-party library or vendor tool is used today
+- [ ] The result is calculated manually
+- [ ] No practical workaround exists
 
 ---
 
-# 🧩 Compatibility and API design
+## 🧮 Method and reference basis
 
-## 🔒 Public API / Semantic Versioning
+Complete for algorithms, models, solvers, curves, or numerical changes.
 
 ```text
+Proposed method / equation:
+Primary specification or reference:
+Reference link / citation / version:
+Why this method is appropriate:
+Known alternatives:
+Supported domain:
+Stability or conditioning risks:
+Tail / boundary behavior:
+Convergence approach:
+```
+
+### Reference availability
+
+- [ ] Published formula or paper
+- [ ] Regulator, central bank, exchange, or industry specification
+- [ ] Independent trusted analytical library
+- [ ] Separately implemented high-precision reference
+- [ ] Licensed vendor output that may be used as evidence
+- [ ] Independently derived invariant or limiting case
+- [ ] No independent reference identified yet
+
+Describe any licensing or redistribution limits on reference data.
+
+---
+
+<a id="api-and-compatibility"></a>
+
+## 🧱 API and compatibility
+
+An exact final signature is not required, but the intended caller contract should
+be clear.
+
+```text
+Worksheet UDF, VBA API, or both:
 New supported member proposed:
 Existing supported member changed:
-Existing calls affected:
-Backward compatible:             Yes / No / Unsure
+Parameter and type concept:
+Return / result concept:
+Error or unavailable-result concept:
+Backward compatible:              Yes / No / Uncertain
 Migration required:
-Suggested release:               patch / minor / major / unsure
+Suggested release impact:         patch / minor / major / uncertain
 ```
 
-If proposing a new public member, explain why the behavior cannot be expressed
-cleanly through the current supported surface.
-
-Current principal supported surface includes:
-
-```text
-DP_Start
-DP_Stop
-DP_Show
-DP_Close
-DP_Preload
-DP_Hide
-DP_Today
-DP_Now
-DP_FillTableColumn
-DP_RepairRuntime
-DP_ForceReleaseProviderLease
-
-M_Settings_SetNamespace
-M_Settings_GetNamespace
-
-DP_WriteResult
-DP_WindowStyleResult
-
-DP_WriteAction
-DP_ClockMode
-DP_SizeMode
-```
-
-> [!NOTE]
-> A VBA procedure may need to be technically `Public` for RibbonX,
-> `Application.Run`, Office callbacks, or cross-module testing without becoming
-> supported consumer API.
->
-> If the proposal adds a technically public internal seam, state that explicitly.
-
-### Compatibility-sensitive behavior
-
-If affected, explain changes to:
-
-- procedure / function names;
-- parameter order;
-- optional defaults;
-- enum numeric values;
-- structured-result fields;
-- safe Table write scope;
-- formula-preservation default;
-- application-state ownership;
-- settings persistence;
-- runtime-provider ownership;
-- recovery semantics;
-- stable `VBA_DATETIMEPICKER` identifiers.
-
----
-
-## 🧭 Default behavior
-
-Should the feature be:
-
-- [ ] Enabled by default
-- [ ] Disabled / opt-in by default
-- [ ] Controlled per call
-- [ ] Persisted as a setting
-- [ ] Derived from existing state
-- [ ] Automatic only in a narrowly defined condition
-- [ ] Unsure
-
-Explain why that default is safe and backward compatible.
-
-```text
-
-```
-
-> [!IMPORTANT]
-> In this project, a convenient automatic behavior can still be the wrong
-> default if it expands write scope, changes caller-owned Excel state, consumes
-> an application-wide resource, or destroys formulas.
-
----
-
-# 🔬 Optional design sections
-
-<!--
-Expand the sections that apply. Delete the rest.
--->
-
-## 🎯 Write-back / target scope
-
-<details>
-<summary>Expand when the feature writes worksheet data, changes target resolution, or adds Table behavior</summary>
-
-<br>
-
-Describe the intended target:
-
-- [ ] Active cell
-- [ ] Current selection
-- [ ] Multi-area selection
-- [ ] Resolved Table data cell
-- [ ] Entire Table data column
-- [ ] Specified `Range`
-- [ ] Other
-
-```text
-How target is selected:
-Can target expand beyond visible selection:
-What constitutes explicit user/caller intent:
-Preview/confirmation required:
-Behavior if target changes before write:
-```
-
-Current v1.2.0 safety baseline:
-
-```text
-normal calendar / Today / Now
-    → selected/resolved cell scope
-
-DP_FillTableColumn
-    → explicit whole Table data-column scope
-```
-
-Explain why the proposed behavior should preserve or change that distinction.
-
-### Partial write
-
-Should the operation:
-
-- [ ] Be all-or-nothing
-- [ ] Permit partial success and report it
-- [ ] Skip protected/locked cells
-- [ ] Skip formulas
-- [ ] Fail on any non-writable cell
-- [ ] Other
-
-If partial success is allowed, describe the result contract.
-
-</details>
-
----
-
-## 🧮 Formula behavior
-
-<details>
-<summary>Expand when formula cells can be targeted, displayed dates are used, or overwrite policy changes</summary>
-
-<br>
-
-Current default:
-
-```text
-literal value        → writable
-ordinary formula     → preserved
-date-returning formula → preserved
-array formula        → non-overridable failure
-```
-
-Proposed behavior:
-
-```text
-Ordinary formula:
-Date-returning formula:
-Array formula:
-Explicit overwrite:
-Persisted preference:
-```
-
-Questions to address:
-
-- should a formula remain eligible to initialize the picker?
-- should it remain protected from write-back?
-- should destructive overwrite require a per-call opt-in?
-- should the feature add a new `DP_WriteResult` classification?
-- how should formula skips appear in diagnostics?
-
-> [!CAUTION]
-> A cell displaying a date is not necessarily a literal date cell.
-
-</details>
-
----
-
-## 🧾 Result / diagnostic contract
-
-<details>
-<summary>Expand when the feature can partially succeed, refuse safely, or needs new diagnostics</summary>
-
-<br>
-
-Should it:
-
-- [ ] Remain fire-and-forget
-- [ ] Return a Boolean
-- [ ] Return / extend `DP_WriteResult`
-- [ ] Return / extend `DP_WindowStyleResult`
-- [ ] Introduce a new structured result type
-- [ ] Log to the Immediate Window
-- [ ] Produce a user-facing message
-- [ ] Introduce machine-readable status/failure categories
-- [ ] Preserve the current contract with no new diagnostics
-
-Describe the desired contract:
-
-```text
-Attempted work:
-Successful work:
-Skipped work:
-Failed work:
-Refusal:
-Recovery required:
-Address/object identity included:
-```
-
-### If proposing a new result type
-
-Explain why an existing result type does not fit the domain.
-
-A worksheet write result and a native-window transaction are deliberately
-different result domains today.
-
-</details>
-
----
-
-## ⚙️ Settings / persistence / namespace
-
-<details>
-<summary>Expand when the feature introduces a setting, changes persistence, or depends on deployment identity</summary>
-
-<br>
-
-Should the feature be:
-
-- [ ] Session-only
-- [ ] Persisted
-- [ ] Per Windows user
-- [ ] Per DatePicker namespace
-- [ ] Per workbook
-- [ ] Per add-in deployment
-- [ ] Other
-
-```text
-Proposed setting:
-Default:
-Persistence lifetime:
-Migration behavior:
-```
-
-Current persistence baseline:
-
-```text
-legacy/default base: VBA_DATETIMEPICKER
-optional namespace:  VBA_DATETIMEPICKER__<stable namespace>
-```
-
-Current namespace rules:
-
-- namespace is configured before first settings load;
-- namespace locks after load;
-- no automatic migration from legacy scope;
-- namespace should represent stable deployment identity;
-- namespace is not runtime-provider identity.
-
-If proposing workbook-specific persistence, explain whether it should be:
-
-```text
-explicit namespace chosen by host
-```
-
-or:
-
-```text
-automatic workbook-derived identity
-```
-
-and how rename / Save As / file move should behave.
-
-### Sensitive data
-
-The DatePicker settings store must not become a credential or secret store.
-
-If the feature requires secrets, explain why this repository is the right place
-for them at all.
-
-</details>
-
----
-
-## 🪪 Runtime provider ownership / multi-provider behavior
-
-<details>
-<summary>Expand when the feature affects startup, teardown, shared Excel resources, provider coexistence, or the lease</summary>
-
-<br>
-
-Current v1.2.0 model:
-
-```text
-one participating current-version provider per Excel process
-```
-
-Lease:
-
-```text
-__VBA_DATETIMEPICKER_RUNTIME_PROVIDER_LEASE__
-```
-
-What should change?
-
-- [ ] No ownership change
-- [ ] Better duplicate-provider diagnostics
-- [ ] Stale-owner recovery improvement
-- [ ] Multiple providers should coexist
-- [ ] Ownership should move between providers
-- [ ] Resource ownership should become per workbook
-- [ ] Other
-
-Describe:
-
-```text
-Provider identity:
-Resource identity:
-Acquisition:
-Conflict behavior:
-Teardown ownership:
-Dead/stale owner detection:
-Recovery:
-```
-
-### Application-wide resources affected
-
-- [ ] `Application.OnKey`
-- [ ] Application events
-- [ ] `Application.OnTime`
-- [ ] CommandBars/context menu
-- [ ] Worksheet Shape naming
-- [ ] Other
-
-> [!IMPORTANT]
-> A settings namespace does not solve runtime ownership.
->
-> Persistence identity and process-level ownership have different lifetimes.
-
-### Mixed-version behavior
-
-How should the feature behave with:
-
-```text
-new version + current v1.2.0
-new version + pre-v1.2.0
-```
-
-A released old provider cannot be retrofitted with a protocol it never had.
-
-</details>
-
----
-
-## 🧠 Application state / event ownership
-
-<details>
-<summary>Expand when Application.EnableEvents, manager creation, selection events, or shared Excel state changes</summary>
-
-<br>
-
-Current baseline:
-
-```text
-normal DatePicker entry points
-    → preserve caller Application.EnableEvents
-
-DP_RepairRuntime
-    → explicit recovery path that may re-enable events
-```
-
-Proposed behavior:
-
-```text
-Caller state read:
-Caller state changed:
-State restored:
-Failure path:
-Repair behavior:
-```
-
-Questions:
-
-- does the feature require events to be enabled?
-- can it operate while the caller deliberately has events disabled?
-- should inability to operate be a refusal or an automatic repair?
-- which component owns the repair decision?
-- can the feature create event recursion/re-entrancy?
-
-Avoid hidden repair behavior in ordinary entry points unless the use case truly
-requires a contract change.
-
-</details>
-
----
-
-## ⌨️ Keyboard / right-click / grid-icon / Ribbon access
-
-<details>
-<summary>Expand when the feature adds or changes a way to open or invoke the DatePicker</summary>
-
-<br>
-
-Affected access paths:
-
-- [ ] Right-click
-- [ ] In-grid icon
-- [ ] `Ctrl + Shift + D`
-- [ ] RibbonX
-- [ ] Caller-provided button/macro
-- [ ] New access path
-
-Current valid configuration:
-
-```text
-ShowRightClick = False
-ShowGridIcon = False
-EnableKeyboardShortcut = False
-```
-
-Zero built-in interactive access paths are permitted.
-
-Describe the new access path:
-
-```text
-Registration lifetime:
-Owner:
-Persistence:
-Conflict behavior:
-Teardown:
-Callback identity:
-```
-
-### If keyboard-based
-
-Excel's `Application.OnKey` exposes no getter for the predecessor binding.
-
-Explain:
-
-- key combination;
-- collision behavior;
-- removal behavior;
-- why the chosen key is appropriate;
-- whether Excel default or a third-party binding is expected after teardown.
-
-Do not design around restoring an unknown predecessor unless new platform
-capability makes it observable.
-
-</details>
-
----
-
-## 📌 In-grid icon / worksheet Shape
-
-<details>
-<summary>Expand when the feature changes grid-icon rendering, placement, interaction, or ownership</summary>
-
-<br>
-
-Describe:
-
-```text
-When icon appears:
-When icon hides:
-When icon is created:
-When icon is deleted:
-Shape name/identity:
-Protected-sheet behavior:
-```
-
-Consider:
-
-- worksheet deletion;
-- Shape deletion;
-- stale retained object references;
-- protected drawing objects;
-- `UserInterfaceOnly`;
-- high-frequency selection performance;
-- accidental deletion of unrelated Shapes;
-- multiple workbook/provider interaction.
-
-Prefer reuse/move/hide over recreate-on-every-selection unless measurement shows
-a reason to change.
-
-</details>
-
----
-
-## ⏱️ Timer / live clock
-
-<details>
-<summary>Expand when the feature uses Application.OnTime, periodic work, or background-like scheduling</summary>
-
-<br>
-
-```text
-Interval:
-Scheduled procedure:
-Qualification:
-Stored scheduled time:
-Cancellation:
-Excel shutdown behavior:
-VBA reset behavior:
-```
-
-Questions:
-
-- who owns the scheduled callback?
-- how is exact cancellation identity retained?
-- what prevents duplicate scheduling?
-- what happens if the callback fires after the form closes?
-- can a failure create an uncontrolled rescheduling loop?
-
-The DatePicker has no background service; periodic behavior is still executed by
-Excel/VBA in the user session.
-
-</details>
-
----
-
-## 🖼️ UserForm / interaction design
-
-<details>
-<summary>Expand when the feature changes visual layout, controls, keyboard behavior, overlays, or accessibility</summary>
-
-<br>
-
-Describe the proposed interaction:
-
-```text
-Normal mode:
-Compact mode:
-Keyboard:
-Mouse:
-Focus:
-Overlay behavior:
-```
-
-Consider:
-
-- modeless workflow;
-- keyboard navigation;
-- focus retention;
-- screen scaling / DPI;
-- high contrast;
-- localization;
-- runtime-created controls;
-- `.frm` / `.frx` impact;
-- visual recovery after errors.
-
-Attach a mockup if it materially clarifies the request.
-
-</details>
-
----
-
-## 🪟 WinAPI / native-window behavior
-
-<details>
-<summary>Expand when the feature changes positioning, borderless styling, drag behavior, native APIs, or monitor handling</summary>
-
-<br>
-
-Proposed native behavior:
-
-```text
-API(s):
-Window identity:
-32-bit path:
-64-bit path:
-Commit point:
-Rollback:
-Recovery if rollback fails:
-```
-
-Current styling result domain:
+### Illustrative use
 
 ```vb
-DP_WindowStyleResult
+' Illustrative only — the reviewed public API may differ.
 ```
 
-with:
-
-```text
-Attempted
-Applied
-Committed
-RolledBack
-RecoveryRequired
-FailedStep
-LastApiError
+```excel
+=IllustrativeFormula(...)
 ```
 
-If the proposal adds another native mutation, explain:
+Delete either block if it does not apply.
 
-- whether it belongs in the same transaction;
-- how partial commit is detected;
-- how rollback works;
-- how the post-operation state is independently verified;
-- what happens when the window handle cannot be resolved;
-- multi-monitor behavior.
-
-</details>
+> [!NOTE]
+> A VBA member may need public visibility for Excel, RibbonX, callbacks,
+> `Application.Run`, packaging, or tests without becoming supported consumer API.
 
 ---
 
-## 🧪 Regression harness / testability
+<a id="validation-strategy"></a>
 
-<details>
-<summary>Expand when the feature needs new tests, changes harness behavior, or is difficult to reproduce naturally</summary>
+## 🧪 Validation strategy
 
-<br>
+How can the capability be proved correct independently?
 
-How should the feature be tested?
-
-- [ ] Standard regression case
-- [ ] UserForm UI smoke
-- [ ] Failure-path test
-- [ ] Dirty-start test
-- [ ] Cleanup test
-- [ ] Multi-workbook test
-- [ ] Multi-provider test
-- [ ] Settings persistence test
-- [ ] Formula/write-back test
-- [ ] Protected-sheet test
-- [ ] Native-state test
-- [ ] 32-bit Office
-- [ ] 64-bit Office
-- [ ] Multi-monitor
-- [ ] Package-level `.xlam` test
-- [ ] Demo update
-- [ ] Manual characterization only
+### Proposed evidence
 
 ```text
-Proposed test cases:
+Independent reference:
+Reference precision:
+Comparison rule:              absolute / relative / combined / other
+Tolerance rationale:
+Tested domain:
+Expected worst-case region:
 ```
 
-Current harness states:
+### Required test classes
+
+- [ ] ✅ Representative market examples
+- [ ] 0️⃣ Zero, near-zero, empty, or degenerate cases
+- [ ] ↔️ Date, domain, discontinuity, and limiting boundaries
+- [ ] ➖ Negative rates, prices, signs, or notionals where admissible
+- [ ] 🔭 Extreme maturities, notionals, rates, volatilities, or tails
+- [ ] 🚫 Invalid, inconsistent, missing, and non-finite inputs
+- [ ] 🔁 Price/yield, rate/discount-factor, or other round trips
+- [ ] ⚖️ Bounds, parity, monotonicity, symmetry, or conservation
+- [ ] 📚 Independent reference values across the supported domain
+- [ ] 🐛 Permanent regressions for defects found during implementation
+- [ ] 📊 Worksheet and VBA caller-path equivalence
+
+### Evidence boundary
 
 ```text
-PASS
-FAIL
-FAIL_CLEANUP
-FAIL_DIRTY_START
-INCOMPLETE_SKIPPED
-```
-
-A feature should not weaken the meaning of `PASS`.
-
-### Hard-to-reach failures
-
-If the feature needs a test-only seam:
-
-```text
-Why natural input cannot reproduce the failure:
-How the seam is armed:
-How it is consumed/reset:
-How production behavior is protected:
-How side effects are verified independently:
-```
-
-</details>
-
----
-
-## 📦 Deployment / packaging
-
-<details>
-<summary>Expand when the feature behaves differently in embedded source, .xlam, demo workbook, or Ribbon package</summary>
-
-<br>
-
-Should the feature support:
-
-- [ ] Embedded source
-- [ ] `.xlam`
-- [ ] Demo `.xlsm`
-- [ ] Ribbon-enabled package
-- [ ] All supported deployment modes
-
-```text
-Deployment-specific behavior:
-Additional package content:
-Upgrade impact:
-Removal/uninstall impact:
-```
-
-Consider whether the feature requires:
-
-- new Ribbon XML;
-- new binary form resources;
-- new release asset;
-- workbook event wiring;
-- host-specific configuration.
-
-Source and package behavior should not silently diverge.
-
-</details>
-
----
-
-## 🚦 Release / provenance / automation
-
-<details>
-<summary>Expand when the feature concerns CI, release evidence, manifests, checksums, workflow health, or artifact provenance</summary>
-
-<br>
-
-What is the requested guarantee?
-
-- [ ] Static repository checks
-- [ ] Workflow health / failed-run visibility
-- [ ] VBA source certification
-- [ ] Package-level `.xlam` / `.xlsm` smoke
-- [ ] Exact source ↔ release asset binding
-- [ ] Checksums
-- [ ] Machine-readable manifest
-- [ ] Release gate
-- [ ] Other
-
-```text
-Requested evidence:
-Failure condition:
-Release should be blocked when:
-```
-
-Keep these concepts distinct:
-
-```text
-source regression
-package validation
-workflow success
-artifact provenance
-```
-
-A passing source regression alone does not cryptographically prove a later-saved
-binary was built from that exact source.
-
-### Repository credentials
-
-If workflow changes are proposed, explain:
-
-```text
-Secrets required:
-Environment:
-Permissions:
-Third-party actions:
-Contributor-controlled code executed:
-```
-
-The analytics `TRAFFIC_TOKEN` should remain isolated from jobs that execute
-repository build/test code.
-
-</details>
-
----
-
-## 🔐 Security / privacy impact
-
-<details>
-<summary>Expand when the feature touches trust boundaries, external data, logging, credentials, or destructive behavior</summary>
-
-<br>
-
-Does the proposal:
-
-- [ ] Write workbook data
-- [ ] Read workbook values
-- [ ] Persist data in the registry
-- [ ] Log worksheet addresses / metadata
-- [ ] Execute callbacks by name
-- [ ] Use WinAPI
-- [ ] Add a GitHub secret
-- [ ] Add an external dependency
-- [ ] Access the network
-- [ ] Add a release binary/resource
-- [ ] None of the above
-
-```text
-Security/privacy impact:
-Sensitive data involved:
-Mitigation:
-```
-
-Do not propose storing credentials in DatePicker settings.
-
-If the feature fundamentally requires secret management, explain why that belongs
-inside this project rather than the host application.
-
-</details>
-
----
-
-# 🧪 Validation proposal
-
-Even before implementation, define what evidence would prove the feature works.
-
-```text
-Compile:
-Regression:
-UI smoke:
-Manual scenario:
-Failure path:
-Cleanup/recovery:
-Package test:
-Environments:
-```
-
-### Suggested acceptance matrix
-
-| Scenario | Expected behavior |
-|---|---|
-| Normal path | |
-| Invalid / unsupported input | |
-| Partial failure | |
-| Recovery | |
-| Excel restart | |
-| VBA reset | |
-| Protected sheet | |
-| Multiple providers | |
-| Mixed-version provider | |
-| 32-bit Office | |
-| 64-bit Office | |
-
-Delete rows that genuinely do not apply.
-
----
-
-## 🖥️ Platform / environment considerations
-
-Check known concerns:
-
-- [ ] Office 32-bit
-- [ ] Office 64-bit
-- [ ] Different Microsoft 365 channels/builds
-- [ ] Windows versions
-- [ ] Multiple monitors
-- [ ] DPI/display scaling
-- [ ] High contrast/accessibility
-- [ ] Protected worksheets
-- [ ] Excel Tables
-- [ ] Formula cells
-- [ ] Multiple workbooks
-- [ ] Other add-ins
-- [ ] Embedded + `.xlam`
-- [ ] VBA project reset
-- [ ] Ribbon package
-- [ ] Macro-security / Trusted Location policy
-- [ ] Other
-
-Explain any environment-specific assumption:
-
-```text
-
+Environment(s) required:
+Data or tool required:
+What the proposed evidence would not prove:
 ```
 
 ---
 
-## 📖 Documentation impact
+## ⚙️ Excel and deployment behavior
 
-Which documentation would need to change if accepted?
-
-- [ ] README
-- [ ] INSTALLATION
-- [ ] CONTRIBUTING
-- [ ] SECURITY
-- [ ] CHANGELOG
-- [ ] Wiki
-- [ ] Demo
-- [ ] Code comments / procedure banners
-- [ ] No user-facing documentation impact
-- [ ] Unsure
+Complete when the feature touches Excel objects, global application state, or
+distribution.
 
 ```text
-Documentation concept that must be explained:
+Workbook / worksheet / range scope:
+Formula / name / link / connection impact:
+Application state read or changed:
+32-bit / 64-bit impact:
+Locale or date-system impact:
+External reference / dependency:
+Embedded-source behavior:
+Add-in behavior:
+```
+
+KPR must preserve caller-owned state unless the public contract establishes a
+specific, bounded mutation.
+
+---
+
+## ⚡ Performance expectations
+
+```text
+Representative workload:
+Expected scale:
+Acceptable latency:
+Memory / workbook-size concern:
+Measurement approach:
+```
+
+Do not trade away correctness, stability, or contract clarity for an unmeasured
+micro-optimization.
+
+---
+
+## 🔐 Security, data, and licensing
+
+- [ ] The proposal can be demonstrated with synthetic or redistributable data
+- [ ] No client, employer, counterparty, student, or personal data is required
+- [ ] Market data or vendor references can be used within their license
+- [ ] No credential, secret, signing material, or internal endpoint is required
+- [ ] Formula, command, path, and external-content injection risks were considered
+- [ ] Adapted code, algorithms, and data can be attributed and licensed compatibly
+- [ ] The proposal does not require private vulnerability disclosure
+
+```text
+Data / license constraints:
+Security considerations:
 ```
 
 ---
 
-## 📎 Mockups / pseudocode / references
+## 📖 Documentation and release impact
 
-Attach sanitized material that clarifies the request.
-
-Useful:
-
-- UI mockup;
-- pseudocode;
-- before/after workflow;
-- small VBA example;
-- platform documentation;
-- related issue/PR;
-- comparable implementation.
-
-Do not attach confidential/client workbooks or credentials.
-
----
-
-## 📝 Additional context
+- [ ] README or target-scope documentation
+- [ ] Installation or deployment guidance
+- [ ] Public API and financial-contract documentation
+- [ ] Formula / VBA examples
+- [ ] Numerical method, reference, and tolerance documentation
+- [ ] Demo workbook or source
+- [ ] Changelog and release notes
+- [ ] Security policy
+- [ ] No documentation impact
 
 ```text
-Related issue/PR:
-Known limitation:
-Open design question:
-Other context:
+Documentation needed:
+Release-artifact impact:
 ```
 
 ---
 
-<!--
-Maintainer triage prompts:
+## 🗺️ Dependencies and sequencing
 
-1. Is this a feature, or a bug against current documented behavior?
-2. Can current supported API already express it?
-3. Does it expand destructive write scope?
-4. Does it consume caller-owned/application-wide Excel state?
-5. Does it change provider ownership or persistence identity?
-6. Can partial success occur, and is the result observable?
-7. Is recovery explicit?
-8. Is it backward compatible?
-9. Can it be regression-tested deterministically?
-10. Does it belong in core DatePicker, host integration, or release tooling?
--->
+What must exist first, and what future capabilities would depend on this work?
 
-<div align="center">
+```text
+Prerequisite issue / module / contract:
+Downstream consumer:
+Can be delivered incrementally:
+Suggested first slice:
+```
 
-**Feature principle: start from the workflow, keep destructive intent explicit, preserve caller ownership, and define the evidence before the implementation.**
+---
 
-</div>
+## ✅ Proposer checklist
+
+- [ ] I searched existing issues and proposals
+- [ ] I described a real use case rather than only an implementation idea
+- [ ] I made relevant financial conventions explicit
+- [ ] I identified acceptance criteria and non-goals
+- [ ] I considered API compatibility and failure behavior
+- [ ] I identified an independent reference or stated that one is missing
+- [ ] I outlined boundary, invalid-input, invariant, and regression testing
+- [ ] I considered Excel state, platform, locale, performance, and deployment impact
+- [ ] I removed confidential, restricted, personal, and security-sensitive content
+- [ ] I identified dependencies and the smallest defensible delivery slice
+
+## ➕ Additional context
+
+<!-- Add diagrams, synthetic examples, or references that clarify the proposal. -->
