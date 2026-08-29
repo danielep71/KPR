@@ -1,0 +1,67 @@
+name: Sync issue labels
+
+# The manifest is validated without write permission on pull requests. Only a
+# trusted push to main or an explicit manual dispatch can reconcile GitHub.
+# Invalid input is rejected before the first API mutation.
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/labels.json
+      - .github/scripts/labels-sync.mjs
+      - .github/workflows/labels-sync.yml
+  push:
+    branches:
+      - main
+    paths:
+      - .github/labels.json
+      - .github/scripts/labels-sync.mjs
+      - .github/workflows/labels-sync.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: labels-sync-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate label manifest
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out the exact SHA under review
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Exercise validation and reconciliation paths
+        run: node .github/scripts/labels-sync.mjs --self-test
+
+      - name: Validate the canonical manifest
+        run: node .github/scripts/labels-sync.mjs --mode validate
+
+  reconcile:
+    name: Reconcile live labels
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Check out the exact SHA to apply
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Exercise validation and reconciliation paths
+        run: node .github/scripts/labels-sync.mjs --self-test
+
+      - name: Reconcile and verify the live taxonomy
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node .github/scripts/labels-sync.mjs --mode reconcile --repository "${GITHUB_REPOSITORY}"

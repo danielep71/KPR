@@ -100,6 +100,9 @@
 *.sh    text eol=lf
 *.py    text eol=lf
 *.pyw   text eol=lf
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.cjs   text eol=lf
 
 
 #------------------------------------------------------------------------------

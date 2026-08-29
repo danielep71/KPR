@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "labels": [
+    {
+      "name": "behavior-change",
+      "color": "C24E00",
+      "description": "Intentional externally observable behavior change"
+    },
+    {
+      "name": "blocked",
+      "color": "B60205",
+      "description": "cannot proceed until a named dependency is complete"
+    },
+    {
+      "name": "bug",
+      "color": "D73A4A",
+      "description": "Something isn't working"
+    },
+    {
+      "name": "ci",
+      "color": "24292F",
+      "description": "Automated quality checks or release certification"
+    },
+    {
+      "name": "code",
+      "color": "0052CC",
+      "description": "Production VBA source"
+    },
+    {
+      "name": "documentation",
+      "color": "0075CA",
+      "description": "Improvements or additions to documentation"
+    },
+    {
+      "name": "duplicate",
+      "color": "CFD3D7",
+      "description": "This issue or pull request already exists"
+    },
+    {
+      "name": "enhancement",
+      "color": "A2EEEF",
+      "description": "New feature or request"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057FF",
+      "description": "Good for newcomers"
+    },
+    {
+      "name": "help wanted",
+      "color": "008672",
+      "description": "Extra attention is needed"
+    },
+    {
+      "name": "invalid",
+      "color": "E4E669",
+      "description": "This doesn't seem right"
+    },
+    {
+      "name": "P1",
+      "color": "B60205",
+      "description": "Release blocker or serious data/application-state integrity risk"
+    },
+    {
+      "name": "P2",
+      "color": "D93F0B",
+      "description": "Material correctness, robustness or maintainability defect"
+    },
+    {
+      "name": "P3",
+      "color": "FBCA04",
+      "description": "Lower-risk quality, testing, documentation or technical-debt improvement"
+    },
+    {
+      "name": "question",
+      "color": "D876E3",
+      "description": "Further information is requested"
+    },
+    {
+      "name": "refactor",
+      "color": "6F42C1",
+      "description": "internal restructuring intended to preserve supported behavior"
+    },
+    {
+      "name": "release",
+      "color": "B60276",
+      "description": "release preparation, certification, evidence and packaging"
+    },
+    {
+      "name": "repository",
+      "color": "1D76DB",
+      "description": "Repository structure, governance, packaging or release process"
+    },
+    {
+      "name": "security",
+      "color": "B60205",
+      "description": ""
+    },
+    {
+      "name": "tests",
+      "color": "006B75",
+      "description": "Regression harness, test support or manual validation"
+    },
+    {
+      "name": "wiki",
+      "color": "0075CA",
+      "description": "GitHub Wiki content or navigation"
+    },
+    {
+      "name": "winapi",
+      "color": "5319E7",
+      "description": ""
+    },
+    {
+      "name": "wontfix",
+      "color": "FFFFFF",
+      "description": "This will not be worked on"
+    }
+  ]
+}
