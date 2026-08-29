@@ -11,6 +11,7 @@
 [![Excel VBA](https://img.shields.io/badge/Excel_VBA-32_%2F_64--bit-217346?style=for-the-badge&logo=microsoft-excel&logoColor=white)](#requirements)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white)](#requirements)
 [![Status](https://img.shields.io/badge/Status-Pre--release-d97706?style=for-the-badge)](#project-status)
+[![Development](https://img.shields.io/badge/Development-UNDER_DEVELOPMENT-d73a49?style=for-the-badge)](#project-status)
 [![Focus](https://img.shields.io/badge/Focus-Analytics_%2B_Pricing-6f42c1?style=for-the-badge)](#target-scope)
 [![License](https://img.shields.io/badge/License-MIT-2ea44f?style=for-the-badge)](LICENSE)
 
