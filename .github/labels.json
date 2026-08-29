@@ -94,7 +94,7 @@
     {
       "name": "security",
       "color": "B60205",
-      "description": ""
+      "description": "Security boundary, supply-chain, or security-hardening work"
     },
     {
       "name": "tests",
@@ -109,7 +109,7 @@
     {
       "name": "winapi",
       "color": "5319E7",
-      "description": ""
+      "description": "Windows API declarations, compatibility, or host interoperability"
     },
     {
       "name": "wontfix",
