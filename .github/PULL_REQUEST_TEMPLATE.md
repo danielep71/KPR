@@ -19,10 +19,10 @@
 
 ### Focused change · Explicit contract · Reproducible evidence · Honest boundaries
 
-[![Contract](https://img.shields.io/badge/contract-explicit-217346?style=flat-square)](../CONTRIBUTING.md#financial-contract-first)
-[![Numerics](https://img.shields.io/badge/numerics-evidence_required-d97706?style=flat-square)](../CONTRIBUTING.md#numerical-engineering)
+[![Contract](https://img.shields.io/badge/Contract-Explicit-217346?style=flat-square)](../CONTRIBUTING.md#financial-contract-first)
+[![Numerics](https://img.shields.io/badge/Numerics-Evidence_required-d97706?style=flat-square)](../CONTRIBUTING.md#numerical-engineering)
 [![Compatibility](https://img.shields.io/badge/API-SemVer_assessed-6f42c1?style=flat-square)](../CONTRIBUTING.md)
-[![Data](https://img.shields.io/badge/data-synthetic_only-d73a49?style=flat-square)](../SECURITY.md#financial-data-and-confidentiality)
+[![Data](https://img.shields.io/badge/Data-Synthetic_only-d73a49?style=flat-square)](../SECURITY.md#financial-data-and-confidentiality)
 
 </div>
 
