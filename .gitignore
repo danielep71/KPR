@@ -1,5 +1,5 @@
 #==============================================================================
-# VBA-DATETIMEPICKER .gitignore
+# KPR .gitignore
 #------------------------------------------------------------------------------
 # PURPOSE
 #   Keep the repository source-first and reviewable.
@@ -11,13 +11,11 @@
 #
 # REPOSITORY POLICY
 #   - Exported VBA source is version-controlled.
-#   - UF_DatePicker.frm AND UF_DatePicker.frx are version-controlled together.
-#   - RibbonX source (customUI14.xml) is version-controlled.
-#   - Demo workbook SOURCE is version-controlled.
+#   - UserForm .frm and .frx companions are version-controlled together.
+#   - RibbonX source is version-controlled when present.
+#   - Demo and regression source are version-controlled when present.
 #   - Generated .xlsm / .xlam and other Office binaries are NOT source files.
 #   - Tested binaries are distributed as GitHub Release assets.
-#   - dist/README.md remains version-controlled even though local release
-#     binaries may be staged under dist/.
 #   - Editor state, logs, caches, build output, local secrets, Office lock files,
 #     and OS metadata do not belong in Git.
 #
@@ -54,8 +52,8 @@
 #------------------------------------------------------------------------------
 # GENERATED EXCEL / OFFICE BINARIES
 #------------------------------------------------------------------------------
-# The repository tracks the source used to build the DatePicker, demo workbook,
-# and add-in. Generated Office binaries belong in GitHub Releases, not Git.
+# The repository tracks the source used to build KPR components and future
+# packages. Generated Office binaries belong in GitHub Releases, not Git.
 #
 # These rules are global rather than demo/-only or dist/-only. A workbook saved
 # accidentally at the repository root, under test/, or in another folder should
@@ -113,11 +111,8 @@ outputs/
 #------------------------------------------------------------------------------
 # REGRESSION / LOCAL TEST OUTPUT
 #------------------------------------------------------------------------------
-# The committed regression harness is source:
-#
-#   test/M_cDP_Test.bas
-#
-# Local output generated while investigating or automating tests is not.
+# Regression source is trackable. Local output generated while investigating or
+# automating tests is not.
 #------------------------------------------------------------------------------
 
 test-output/
@@ -128,8 +123,8 @@ coverage/
 # Optional future local certification evidence. Published release evidence,
 # when implemented, belongs in the GitHub Release process rather than being
 # committed from a workstation accidentally.
-DATETIMEPICKER_certification_*.json
-DATETIMEPICKER_certification_*.txt
+KPR_certification_*.json
+KPR_certification_*.txt
 
 
 #------------------------------------------------------------------------------
@@ -288,11 +283,10 @@ node_modules/
 #   src/ribbon/customUI14.xml
 #
 # Demo source:
-#   demo/M_DEMO_BUILDER.bas
-#   demo/M_DP_DEMO.bas
+#   demo/*.bas
 #
 # Regression source:
-#   test/M_cDP_Test.bas
+#   test/*.bas
 #
 # Documentation / governance:
 #   README.md

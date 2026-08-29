@@ -65,10 +65,10 @@ KPR aims to sit between two unsatisfactory extremes:
 | A black-box pricing stack that is difficult to inspect from Excel | Transparent algorithms, attributable references, and reproducible tests |
 
 > [!IMPORTANT]
-> KPR is currently in repository-initialization and pre-release development. It
-> has no stable public API, supported installation package, or production release
-> yet. The scope described below is a development direction, not a claim that
-> every capability is already implemented.
+> KPR is in early pre-release development. Its KPR-native source baseline has
+> begun, but it has no stable public API, supported installation package, or
+> production release yet. The scope described below is a development direction,
+> not a claim that every capability is already implemented.
 
 ---
 
@@ -91,8 +91,8 @@ KPR aims to sit between two unsatisfactory extremes:
 
 ## 🚧 Project status
 
-KPR is **pre-release**. Repository governance is being established before the
-first supported analytical surface is frozen.
+KPR is **pre-release**. Repository governance and the KPR-native source baseline
+are established; the first supported analytical surface has not yet been frozen.
 
 ### Status legend
 
@@ -305,23 +305,23 @@ generated and committed or attached to a release.
 
 ```text
 KPR/
-├─ src/                 exported production VBA and Ribbon source
-├─ test/                regression and numerical validation source
-├─ demo/                reviewable demonstration source
-├─ dist/                distribution guidance and approved artifacts
-├─ assets/              documentation assets
-├─ images/              repository and social-preview media
-├─ README.md             project overview and status
-├─ INSTALLATION.md       release installation guidance
-├─ CONTRIBUTING.md       engineering and evidence standards
-├─ SECURITY.md           security model and disclosure policy
-├─ CHANGELOG.md          version history from the first release
-└─ LICENSE               MIT License
+├─ .github/                     contribution templates and issue routing
+├─ src/
+│  └─ modules/
+│     └─ KPR_Dates_Days.bas   first KPR-native foundation module
+├─ .gitattributes               source and line-ending policy
+├─ .gitignore                   local and generated-file exclusions
+├─ README.md                    project overview and status
+├─ INSTALLATION.md              future release installation guidance
+├─ CONTRIBUTING.md              engineering and evidence standards
+├─ SECURITY.md                  security model and disclosure policy
+├─ CHANGELOG.md                 version history from the first release
+└─ LICENSE                      MIT License
 ```
 
-The repository is still being transitioned to its KPR source baseline. Directory
-presence alone does not imply that its current contents form a supported KPR
-release.
+The tracked tree is now KPR-native. `KPR_Dates_Days.bas` is development source,
+not a release-certified API; future test, demo, evidence, tooling, and packaging
+directories will be added only when their corresponding contracts are defined.
 
 ---
 
@@ -403,8 +403,8 @@ architectural work, open an issue before implementation.
 
 The intended sequence is dependency-led:
 
-1. complete repository transition and define the KPR source baseline;
-2. establish dates, calendars, conventions, and schedule contracts;
+1. certify the KPR repository baseline and dates contract;
+2. establish calendars, conventions, and schedule contracts;
 3. establish rate mathematics and numerical primitives;
 4. add cash-flow and curve representations;
 5. add instruments only with independent references and contract tests;
