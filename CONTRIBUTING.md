@@ -135,6 +135,11 @@ KPR uses exported, reviewable source files as its development record.
 | `dist/` | Release-artifact guidance and approved distributable outputs | Distribution boundary |
 | `assets/`, `images/` | Documentation and repository media | Supporting material |
 
+Every tracked VBA file is a Visual Basic Editor export carrying an
+`Attribute VB_Name` header that matches its file name. Follow
+[docs/VBE_EXPORT.md](docs/VBE_EXPORT.md) when exporting a component or importing
+one back into Excel.
+
 Keep form `.frm` and `.frx` companions together. Do not treat a binary workbook
 as a substitute for exported source. Generated workbooks or add-ins should be
 committed only when they are deliberate distribution or test artifacts and
