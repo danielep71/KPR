@@ -250,7 +250,7 @@ This terminal register is the canonical output format for the drift-controlled r
 <details>
 <summary><strong>#9 — Specify the date-layer behavioural contract</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `documentation`, `behavior-change`, `P1`
 - Milestone: `v0.0.2`
