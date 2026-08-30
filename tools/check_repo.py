@@ -41,7 +41,6 @@ REQUIRED_FILES = (
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/labels.json",
     ".github/scripts/labels-sync.mjs",
-    ".github/social-preview.png",
     ".github/workflows/labels-sync.yml",
     ".github/workflows/static-checks.yml",
     "CHANGELOG.md",
@@ -52,6 +51,7 @@ REQUIRED_FILES = (
     "README.md",
     "SECURITY.md",
     "VERSION",
+    "assets/social-preview.png",
     "src/modules/KPR_Dates_Days.bas",
     "tools/check_repo.py",
 )
@@ -915,7 +915,7 @@ def _positive_fixture(root: Path) -> None:
     write("LICENSE", "MIT License\n")
     write(".github/ISSUE_TEMPLATE/config.yml", "blank_issues_enabled: true\n")
     write(".github/scripts/labels-sync.mjs", "// self-test placeholder\n")
-    write(".github/social-preview.png", "self-test placeholder\n")
+    write("assets/social-preview.png", "self-test placeholder\n")
     labels = [
         {"name": f"label-{index:02d}", "color": "123ABC", "description": "self-test"}
         for index in range(1, 24)

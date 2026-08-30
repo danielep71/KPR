@@ -45,7 +45,7 @@
 ---
 
 <p align="center">
-  <img src=".github/social-preview.png"
+  <img src="assets/social-preview.png"
        alt="KPR — financial analytics and instrument pricing for Excel/VBA"
        width="100%">
 </p>
@@ -322,8 +322,9 @@ KPR/
 │  │  ├─ labels-sync.yml      declarative label synchronization
 │  │  └─ static-checks.yml    hosted repository-integrity gate
 │  ├─ labels.json             canonical issue-label manifest
-│  ├─ PULL_REQUEST_TEMPLATE.md
-│  └─ social-preview.png      README banner and social-preview source
+│  └─ PULL_REQUEST_TEMPLATE.md
+├─ assets/
+│  └─ social-preview.png      archive-safe README and social-preview source
 ├─ src/
 │  └─ modules/
 │     └─ KPR_Dates_Days.bas   first KPR-native foundation module

@@ -15,8 +15,10 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   `v0.0.1` pre-release and the tracked tooling and version file.
 - Hardened the required-file gate around the label synchronizer, social
   preview, version marker, and certified KPR-native source baseline.
-- Removed repository-policy references to nonexistent distribution and visual
-  asset directories.
+- Moved the README banner to an archive-safe asset path so release source
+  archives remain self-contained.
+- Removed stale repository-policy references to nonexistent distribution
+  directories and aligned visual-asset policy with tracked content.
 
 ## [0.0.1] - 2026-08-29
 

@@ -24,7 +24,7 @@
 #   Do not add broad rules that can hide:
 #
 #       *.bas  *.cls  *.frm  *.frx  *.py  *.xml  *.md  *.txt
-#       src/  demo/  test/  tools/  docs/  evidence/  .github/
+#       src/  demo/  test/  tools/  docs/  evidence/  assets/  .github/
 #
 #   Those paths contain authoritative project source or repository evidence.
 #==============================================================================
@@ -317,7 +317,7 @@ node_modules/
 #   .github/**
 #
 # Visual documentation:
-#   .github/social-preview.png
+#   assets/social-preview.png
 #
 # Do not add broad ignore rules for source extensions or source directories.
 # Generated Office binaries should be published as GitHub Release assets.
