@@ -7,6 +7,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ## [Unreleased]
 
+### Added
+
+- A documented VBE export format for tracked VBA source, with a static rule that
+  requires a unique `Attribute VB_Name` header matching each file name and
+  rejects procedure-level description attributes.
+
 ### Changed
 
 - Refined the KPR social preview by removing the maintainer footer and adding

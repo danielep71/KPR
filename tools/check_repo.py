@@ -52,8 +52,17 @@ REQUIRED_FILES = (
     "SECURITY.md",
     "VERSION",
     "assets/social-preview.png",
+    "docs/VBE_EXPORT.md",
     "src/modules/KPR_Dates_Days.bas",
     "tools/check_repo.py",
+)
+
+VBA_SOURCE_SUFFIXES = {".bas", ".cls", ".frm"}
+VBA_COMPONENT_NAME_LIMIT = 31
+VBA_HEADER_SCAN_LINES = 12
+VBA_PROCEDURE_ATTRIBUTE_PREFIXES = (
+    "Attribute VB_Description",
+    "Attribute VB_ProcData",
 )
 
 TEXT_SUFFIXES = {
@@ -793,6 +802,119 @@ def check_vba_option_explicit(repo: Repository) -> dict[str, object]:
     )
 
 
+def check_vba_export_header(repo: Repository) -> dict[str, object]:
+    """Validate the VBE export header of every tracked VBA component.
+
+    A VBE export names its component through `Attribute VB_Name`. A standard
+    module carries that declaration on its first line; a class or form export
+    carries a `VERSION`/`BEGIN` header block first, so the declaration is
+    accepted anywhere in the leading header region for those suffixes. VBA
+    components share one flat project namespace, so the declared name must be
+    unique across the whole tracked tree, not merely within a directory.
+
+    Procedure-level attributes are rejected. `Application.MacroOptions` is the
+    single description mechanism for this project, and hidden procedure
+    attributes would silently compete with it.
+    """
+    failures: list[dict[str, object]] = []
+    declaration = re.compile(r'^Attribute VB_Name = "([^"]*)"$')
+    identifier = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+    declared: dict[str, str] = {}
+    checked = 0
+    for path in repo.files:
+        pure = PurePosixPath(path)
+        suffix = pure.suffix.casefold()
+        if suffix not in VBA_SOURCE_SUFFIXES:
+            continue
+        checked += 1
+        try:
+            lines = repo.text(path).splitlines()
+        except (OSError, UnicodeError) as error:
+            failures.append(finding(path, f"VBA source cannot be read: {error}"))
+            continue
+        for number, line in enumerate(lines, start=1):
+            if line.startswith(VBA_PROCEDURE_ATTRIBUTE_PREFIXES):
+                failures.append(
+                    finding(
+                        path,
+                        "Procedure-level VBA attribute is not permitted; function and "
+                        "argument descriptions are owned by the MacroOptions manifest.",
+                        number,
+                    )
+                )
+        matches = [
+            (number, match.group(1))
+            for number, line in enumerate(lines, start=1)
+            if (match := declaration.match(line))
+        ]
+        if not matches:
+            failures.append(
+                finding(
+                    path,
+                    'VBA export must declare Attribute VB_Name = "<ComponentName>" '
+                    "in the canonical VBE form.",
+                )
+            )
+            continue
+        if len(matches) > 1:
+            failures.append(
+                finding(path, "VBA export declares Attribute VB_Name more than once.", matches[1][0])
+            )
+        number, name = matches[0]
+        if suffix == ".bas":
+            if number != 1:
+                failures.append(
+                    finding(path, "Attribute VB_Name must be the first line of a module export.", number)
+                )
+        elif number > VBA_HEADER_SCAN_LINES:
+            failures.append(
+                finding(
+                    path,
+                    "Attribute VB_Name must appear in the leading export header block.",
+                    number,
+                )
+            )
+        stem = pure.stem
+        if name != stem:
+            failures.append(
+                finding(
+                    path,
+                    f"Declared component name {name!r} does not match the file name {stem!r}.",
+                    number,
+                )
+            )
+        if not identifier.match(name):
+            failures.append(
+                finding(path, f"Component name {name!r} is not a legal VBA identifier.", number)
+            )
+        elif len(name) > VBA_COMPONENT_NAME_LIMIT:
+            failures.append(
+                finding(
+                    path,
+                    f"Component name {name!r} exceeds the {VBA_COMPONENT_NAME_LIMIT}-character VBA limit.",
+                    number,
+                )
+            )
+        previous = declared.get(name)
+        if previous is not None:
+            failures.append(
+                finding(
+                    path,
+                    f"Component name {name!r} is already declared by {previous}; VBA component "
+                    "names are unique across the whole project.",
+                    number,
+                )
+            )
+        else:
+            declared[name] = path
+    return rule_result(
+        "vba-export-header",
+        "VBA export headers and component names",
+        failures,
+        f"All {checked} VBA source files carry a unique matching Attribute VB_Name",
+    )
+
+
 CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_required_files,
     check_stale_identity,
@@ -805,6 +927,7 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_workflow_actions,
     check_git_diff,
     check_vba_option_explicit,
+    check_vba_export_header,
 )
 
 
@@ -934,7 +1057,12 @@ def _positive_fixture(root: Path) -> None:
     )
     write("VERSION", "0.0.1\n")
     write("tools/check_repo.py", "# self-test placeholder\n")
-    write("src/modules/KPR_Dates_Days.bas", "Option Explicit\n", newline="\r\n")
+    write("docs/VBE_EXPORT.md", "# Export\n")
+    write(
+        "src/modules/KPR_Dates_Days.bas",
+        'Attribute VB_Name = "KPR_Dates_Days"\nOption Explicit\n',
+        newline="\r\n",
+    )
     _initialize_fixture(root)
 
 
@@ -977,6 +1105,39 @@ def run_self_tests(root: Path) -> None:
         readme = case / "README.md"
         readme.write_text(readme.read_text(encoding="utf-8") + "\n[missing](docs/not-here.md)\n", encoding="utf-8")
 
+    module_relative = "src/modules/KPR_Dates_Days.bas"
+
+    def rewrite_module(case: Path, transform: Callable[[str], str]) -> None:
+        module = case / module_relative
+        module.write_text(
+            transform(module.read_text(encoding="utf-8")),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def missing_module_name(case: Path) -> None:
+        rewrite_module(case, lambda text: text.split("\n", 1)[1])
+
+    def mismatched_module_name(case: Path) -> None:
+        rewrite_module(case, lambda text: text.replace('"KPR_Dates_Days"', '"KPR_Dates_Day"', 1))
+
+    def duplicate_module_name(case: Path) -> None:
+        source = case / module_relative
+        duplicate = case / "test/modules/KPR_Dates_Days.bas"
+        duplicate.parent.mkdir(parents=True, exist_ok=True)
+        duplicate.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\r\n")
+        _run_git(case, "add", "-f", str(duplicate.relative_to(case)))
+
+    def procedure_attribute(case: Path) -> None:
+        rewrite_module(
+            case,
+            lambda text: text.replace(
+                "Option Explicit\n",
+                'Option Explicit\nAttribute VB_Description = "self-test"\n',
+                1,
+            ),
+        )
+
     scenarios: tuple[tuple[str, str, Callable[[Path], None]], ...] = (
         ("stale identity", "stale-identity", stale_identity),
         ("missing required dependency", "required-files", missing_required_dependency),
@@ -985,6 +1146,10 @@ def run_self_tests(root: Path) -> None:
         ("invalid YAML", "structured-data", invalid_yaml),
         ("invalid Ribbon XML", "structured-data", invalid_xml),
         ("broken Markdown link", "markdown-links", broken_markdown),
+        ("missing module name", "vba-export-header", missing_module_name),
+        ("mismatched module name", "vba-export-header", mismatched_module_name),
+        ("duplicate module name", "vba-export-header", duplicate_module_name),
+        ("procedure-level attribute", "vba-export-header", procedure_attribute),
     )
 
     with tempfile.TemporaryDirectory(prefix="kpr-static-self-test-") as temporary:
