@@ -7,7 +7,10 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ## [Unreleased]
 
-No unreleased changes have been recorded yet.
+### Changed
+
+- Refined the KPR social preview by removing the maintainer footer and adding
+  clearer financial-market imagery and pricing formulas.
 
 ## [0.0.1] - 2026-08-29
 
