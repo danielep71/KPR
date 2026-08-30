@@ -11,6 +11,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 - Refined the KPR social preview by removing the maintainer footer and adding
   clearer financial-market imagery and pricing formulas.
+- Reconciled the README release status and repository tree with the published
+  `v0.0.1` pre-release and the tracked tooling and version file.
+- Hardened the required-file gate around the label synchronizer, social
+  preview, version marker, and certified KPR-native source baseline.
+- Removed repository-policy references to nonexistent distribution and visual
+  asset directories.
 
 ## [0.0.1] - 2026-08-29
 
@@ -44,3 +50,6 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   supported analytical API, installation package, Excel execution CI,
   numerical accuracy certification, production support, or a stable functional
   release.
+
+[Unreleased]: https://github.com/danielep71/KPR/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/danielep71/KPR/releases/tag/v0.0.1

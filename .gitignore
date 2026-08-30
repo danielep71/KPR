@@ -24,7 +24,7 @@
 #   Do not add broad rules that can hide:
 #
 #       *.bas  *.cls  *.frm  *.frx  *.py  *.xml  *.md  *.txt
-#       src/  demo/  test/  tools/  docs/  evidence/  assets/  images/  .github/
+#       src/  demo/  test/  tools/  docs/  evidence/  .github/
 #
 #   Those paths contain authoritative project source or repository evidence.
 #==============================================================================
@@ -59,7 +59,7 @@
 # The repository tracks the source used to build KPR components and future
 # packages. Generated Office binaries belong in GitHub Releases, not Git.
 #
-# These rules are global rather than demo/-only or dist/-only. A workbook saved
+# These rules are global rather than directory-specific. A workbook saved
 # accidentally at the repository root, under test/, or in another folder should
 # still remain untracked.
 #------------------------------------------------------------------------------
@@ -100,9 +100,6 @@
 #------------------------------------------------------------------------------
 # RELEASE-ASSET / LOCAL BUILD STAGING
 #------------------------------------------------------------------------------
-# Keep dist/README.md and the dist/ directory policy documentation in Git.
-# Office binaries placed under dist/ are already ignored by the rules above.
-#
 # Use release-assets/ for local staging of generated binaries, hashes, manifests
 # or files being prepared for a GitHub Release.
 #------------------------------------------------------------------------------
@@ -312,7 +309,6 @@ node_modules/
 #   CONTRIBUTING.md
 #   SECURITY.md
 #   CODE_OF_CONDUCT.md
-#   dist/README.md
 #
 # Repository configuration / automation:
 #   .gitignore
@@ -321,8 +317,7 @@ node_modules/
 #   .github/**
 #
 # Visual documentation:
-#   assets/**
-#   images/**
+#   .github/social-preview.png
 #
 # Do not add broad ignore rules for source extensions or source directories.
 # Generated Office binaries should be published as GitHub Release assets.

@@ -228,16 +228,6 @@ CITATION.cff    text eol=lf
 
 
 #------------------------------------------------------------------------------
-# LANGUAGE REPORTING
-#------------------------------------------------------------------------------
-# Keep the GitHub language bar representative of the component itself.
-# Screenshots, banners, and social previews carry no language signal but are
-# marked explicitly so intent is recorded rather than inferred.
-assets/**   linguist-vendored
-images/**   linguist-vendored
-
-
-#------------------------------------------------------------------------------
 # ARCHIVE AND RELEASE HYGIENE
 #------------------------------------------------------------------------------
 # Excluded from `git archive`, which is what produces the GitHub source ZIP and

@@ -17,7 +17,7 @@
 
 <br>
 
-[![Release](https://img.shields.io/github/v/release/danielep71/KPR?style=flat-square&label=release&color=217346)](https://github.com/danielep71/KPR/releases)
+[![Release](https://img.shields.io/github/v/release/danielep71/KPR?include_prereleases&style=flat-square&label=release&color=217346)](https://github.com/danielep71/KPR/releases)
 [![Issues](https://img.shields.io/github/issues/danielep71/KPR?style=flat-square&color=d73a49)](https://github.com/danielep71/KPR/issues)
 [![Stars](https://img.shields.io/github/stars/danielep71/KPR?style=flat-square&color=bf8700)](https://github.com/danielep71/KPR/stargazers)
 [![Last commit](https://img.shields.io/github/last-commit/danielep71/KPR?style=flat-square&color=0969da)](https://github.com/danielep71/KPR/commits/main)
@@ -99,8 +99,9 @@ KPR aims to sit between two unsatisfactory extremes:
 
 ## 🚧 Project status
 
-KPR is **pre-release**. Repository governance and the KPR-native source baseline
-are established; the first supported analytical surface has not yet been frozen.
+KPR is **pre-release**. The `v0.0.1` repository-setup pre-release certifies the
+governance, automation, and KPR-native source baseline; the first supported
+analytical surface has not yet been frozen.
 
 ### Status legend
 
@@ -121,7 +122,7 @@ are established; the first supported analytical surface has not yet been frozen.
 | Numerical reference sets | 🧭 | Evidence format and provenance will be defined with each analytical surface |
 | Regression harness | 🧭 | No KPR-wide certified regression result is published yet |
 | Installable workbook or add-in | — | No official package is available |
-| Tagged release | — | No KPR version has been released |
+| Tagged release | ✅ | [`v0.0.1`](https://github.com/danielep71/KPR/releases/tag/v0.0.1) certifies repository setup only; no functional production release exists |
 
 > [!WARNING]
 > Files on `main` are development material. Do not describe them as a supported
@@ -313,23 +314,38 @@ generated and committed or attached to a release.
 
 ```text
 KPR/
-├─ .github/                     contribution templates and issue routing
+├─ .github/
+│  ├─ ISSUE_TEMPLATE/          bug and feature intake
+│  ├─ scripts/
+│  │  └─ labels-sync.mjs      label validation and reconciliation
+│  ├─ workflows/
+│  │  ├─ labels-sync.yml      declarative label synchronization
+│  │  └─ static-checks.yml    hosted repository-integrity gate
+│  ├─ labels.json             canonical issue-label manifest
+│  ├─ PULL_REQUEST_TEMPLATE.md
+│  └─ social-preview.png      README banner and social-preview source
 ├─ src/
 │  └─ modules/
 │     └─ KPR_Dates_Days.bas   first KPR-native foundation module
+├─ tools/
+│  └─ check_repo.py           static gate and self-test harness
+├─ VERSION                     machine-readable current version
 ├─ .gitattributes               source and line-ending policy
 ├─ .gitignore                   local and generated-file exclusions
+├─ .editorconfig                shared editor baseline
 ├─ README.md                    project overview and status
 ├─ INSTALLATION.md              future release installation guidance
 ├─ CONTRIBUTING.md              engineering and evidence standards
+├─ CODE_OF_CONDUCT.md           community expectations
 ├─ SECURITY.md                  security model and disclosure policy
 ├─ CHANGELOG.md                 version history from the first release
 └─ LICENSE                      MIT License
 ```
 
 The tracked tree is now KPR-native. `KPR_Dates_Days.bas` is development source,
-not a release-certified API; future test, demo, evidence, tooling, and packaging
-directories will be added only when their corresponding contracts are defined.
+not a release-certified API. Repository tooling is active; future test, demo,
+evidence, and packaging directories will be added only when their corresponding
+contracts are defined.
 
 ---
 
@@ -400,7 +416,7 @@ Before contributing, read:
 - [CONTRIBUTING.md](CONTRIBUTING.md) — source, numerical, API, and evidence rules;
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — respectful, evidence-led collaboration;
 - [SECURITY.md](SECURITY.md) — private disclosure and data-protection boundaries; and
-- [CHANGELOG.md](CHANGELOG.md) — the clean pre-release history baseline.
+- [CHANGELOG.md](CHANGELOG.md) — release history and unreleased changes.
 
 For material features, pricing models, API changes, dependencies, or
 architectural work, open an issue before implementation.
@@ -417,7 +433,8 @@ The intended sequence is dependency-led:
 4. add cash-flow and curve representations;
 5. add instruments only with independent references and contract tests;
 6. build a reproducible demo and distribution artifact; and
-7. publish the first tagged release with installation and validation evidence.
+7. publish the first functional tagged release with installation and validation
+   evidence.
 
 This sequence may change as design work and evidence reveal better boundaries.
 
@@ -425,11 +442,14 @@ This sequence may change as design work and evidence reveal better boundaries.
 
 ## 📜 Versioning and changelog
 
-KPR intends to follow [Semantic Versioning](https://semver.org/) from its first
-published release and to maintain release notes in
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+KPR follows [Semantic Versioning](https://semver.org/) and maintains release
+notes in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
-No version is currently published. See [CHANGELOG.md](CHANGELOG.md).
+[`v0.0.1`](https://github.com/danielep71/KPR/releases/tag/v0.0.1) is published
+as a repository-setup pre-release. It certifies governance, automation, and the
+source baseline; it is not a functional or production-ready release and does
+not provide a supported installation package. See
+[CHANGELOG.md](CHANGELOG.md).
 
 ---
 

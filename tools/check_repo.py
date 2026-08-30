@@ -40,6 +40,8 @@ REQUIRED_FILES = (
     ".github/ISSUE_TEMPLATE/feature_request.md",
     ".github/PULL_REQUEST_TEMPLATE.md",
     ".github/labels.json",
+    ".github/scripts/labels-sync.mjs",
+    ".github/social-preview.png",
     ".github/workflows/labels-sync.yml",
     ".github/workflows/static-checks.yml",
     "CHANGELOG.md",
@@ -49,6 +51,8 @@ REQUIRED_FILES = (
     "LICENSE",
     "README.md",
     "SECURITY.md",
+    "VERSION",
+    "src/modules/KPR_Dates_Days.bas",
     "tools/check_repo.py",
 )
 
@@ -910,6 +914,8 @@ def _positive_fixture(root: Path) -> None:
     write("README.md", "# KPR\n\n[Conduct](CODE_OF_CONDUCT.md)\n")
     write("LICENSE", "MIT License\n")
     write(".github/ISSUE_TEMPLATE/config.yml", "blank_issues_enabled: true\n")
+    write(".github/scripts/labels-sync.mjs", "// self-test placeholder\n")
+    write(".github/social-preview.png", "self-test placeholder\n")
     labels = [
         {"name": f"label-{index:02d}", "color": "123ABC", "description": "self-test"}
         for index in range(1, 24)
@@ -926,8 +932,9 @@ def _positive_fixture(root: Path) -> None:
         "name: Static\non:\n  push:\njobs:\n  check:\n    runs-on: ubuntu-latest\n"
         f"    steps:\n      - uses: {checkout}\n",
     )
+    write("VERSION", "0.0.1\n")
     write("tools/check_repo.py", "# self-test placeholder\n")
-    write("src/modules/Sample.bas", "Option Explicit\n", newline="\r\n")
+    write("src/modules/KPR_Dates_Days.bas", "Option Explicit\n", newline="\r\n")
     _initialize_fixture(root)
 
 
@@ -938,6 +945,9 @@ def run_self_tests(root: Path) -> None:
     def stale_identity(case: Path) -> None:
         readme = case / "README.md"
         readme.write_text(readme.read_text(encoding="utf-8") + f"\nInherited {identity_name}\n", encoding="utf-8")
+
+    def missing_required_dependency(case: Path) -> None:
+        _run_git(case, "rm", ".github/scripts/labels-sync.mjs")
 
     def unpinned_action(case: Path) -> None:
         workflow = case / static_workflow
@@ -969,6 +979,7 @@ def run_self_tests(root: Path) -> None:
 
     scenarios: tuple[tuple[str, str, Callable[[Path], None]], ...] = (
         ("stale identity", "stale-identity", stale_identity),
+        ("missing required dependency", "required-files", missing_required_dependency),
         ("unpinned action", "workflow-actions", unpinned_action),
         ("invalid label JSON", "label-manifest", invalid_label_json),
         ("invalid YAML", "structured-data", invalid_yaml),
