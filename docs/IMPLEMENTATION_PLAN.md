@@ -4,7 +4,7 @@ Status: approved for issue-driven implementation. No production implementation o
 
 - Milestone: [v0.0.2](https://github.com/danielep71/KPR/milestone/2)
 - Planning baseline: `main` at `54d64ab3624aa051b19f9677aa49a3782cd26c60`
-- Last plan revision before this reconciliation: `6de661e8bb3a7561480fcaaf097b8af605071f57`
+- Prior plan revision: `1e9220d5840c1ffbacbb0ebaaa444363cd29ff10`
 - Published protected baseline: `v0.0.1` at `abf38786eb48b3db1edced8ae26c756d9c7f5328`
 - Version before candidate assembly: `0.0.1`
 
@@ -29,10 +29,10 @@ The `KPR_Cal_*` namespace is reserved now. v0.0.2 creates no calendar placeholde
 | Area | v0.0.2 decision |
 | --- | --- |
 | Public surface | Exactly 22 supported `KPR_Dates_*` names in one facade. Every function with value arguments is array-capable. There are no `_Spill` twins. |
-| Caller/date system | A worksheet `Range` caller is checked through its own workbook. A 1904 workbook returns call-level `#N/A`. A non-`Range` caller is treated as a direct VBA/infrastructure call and uses the documented 1900 serial contract. No unrelated workbook fallback is permitted. |
+| Caller/date system | A worksheet `Range` caller is checked through its own workbook. A 1904 workbook returns call-level `#N/A`. When no worksheet host can be identified, the documented 1900 serial contract applies; certified direct-VBA uses are distinguished from unsupported non-`Range` Excel host contexts. No unrelated workbook fallback is permitted. |
 | Supported window | `1900-03-01 .. 9999-12-31`. Excel serial 60 and all earlier values are excluded. |
 | String dates | ISO `YYYY-MM-DD` only. Locale-formatted and numeric-looking strings are rejected. |
-| Errors | `#VALUE!` means uninterpretable or contract-invalid; `#NUM!` means well-formed but outside the supported domain; `#N/A` means unavailable in the host configuration. Incoming Excel errors propagate verbatim. |
+| Errors | `#VALUE!` means uninterpretable or contract-invalid; `#NUM!` means well-formed but outside the supported domain; library-produced `#N/A` means unavailable in the host configuration. Incoming Excel errors propagate verbatim. Host-generated and propagated `#N/A` are value-identical and retain separate provenance. |
 | Arrays | Scalar expansion plus exact-shape broadcasting; shape and orientation preserved; one-dimensional VBA arrays are `1×N`; no outer broadcasting. |
 | Optional arguments | All required value arguments first. Every `Opt_` argument is last and must be omitted, scalar or `1×1`; a larger optional argument is call-level `#VALUE!`. |
 | Size guard | Maximum 100,000 output elements per call. A larger target shape returns call-level `#NUM!`. A supplied Range is never shortened through `UsedRange`. |
@@ -69,7 +69,7 @@ The following signatures are the target contract. All worksheet-reachable inputs
 | 21 | `KPR_Dates_DateFromPillar(StartDate As Variant, Pillar As Variant) As Variant` | `Date` |
 | 22 | `KPR_Dates_HostDateSystem() As Variant` | `Long` 1900 or 1904 |
 
-The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument. `KPR_Dates_DateFromPillar` replaces the current plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
+The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument and calls `Application.Volatile True` so ordinary recalculation refreshes the diagnostic. The other date functions remain non-volatile. `KPR_Dates_DateFromPillar` replaces the current plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
 
 ### Value and shape rules
 
@@ -85,11 +85,14 @@ The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` re
 
 `Application.Caller` is used only to distinguish the contexts that actually carry serial-date ambiguity:
 
-1. If the caller is a `Range`, the implementation reads `Application.Caller.Parent.Parent.Date1904` from that exact workbook. A 1904 workbook returns call-level `#N/A` before element conversion.
-2. If the caller is not a `Range`, the call is from VBA or infrastructure. The direct caller owns the meaning of values it constructed, and the library applies the documented 1900 serial contract.
-3. `ActiveWorkbook`, `ThisWorkbook` and other unrelated workbooks are never used as fallback date-system authorities.
+1. If the caller identifies a worksheet `Range`, the implementation reads `Application.Caller.Parent.Parent.Date1904` from that exact workbook. A 1904 workbook returns call-level `#N/A` before element conversion.
+2. If no worksheet host can be identified, the library applies the documented 1900 serial contract. Direct VBA, the Immediate window, `Application.Run` and the regression harness are the certified uses of this path.
+3. A non-`Range` caller is not automatically described as direct VBA. Macro-attached shapes can supply a String, and data-validation, chart-series, defined-name and related evaluation contexts can supply Error or other caller forms. Those contexts are probed during certification but are outside the v0.0.2 compatibility claim.
+4. `ActiveWorkbook`, `ThisWorkbook` and other unrelated workbooks are never used as fallback date-system authorities.
 
-`KPR_Dates_HostDateSystem()` reports `1900` or `1904` for an identifiable worksheet caller and `1900` for a direct VBA/infrastructure call. A result that cannot be established in a worksheet host remains `#N/A`.
+`KPR_Dates_HostDateSystem()` reports `1900` or `1904` for an identifiable worksheet caller and `1900` when no worksheet host can be identified under the documented contract. It calls `Application.Volatile True`, so changing calculation context and performing an ordinary recalculation refreshes the result. It returns `#N/A` only when an identifiable worksheet host should be readable but its date system cannot be resolved reliably.
+
+A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` are the same Excel error value. Provenance cannot be recovered from that value alone. For an identifiable worksheet caller, volatile `HostDateSystem()` supplies the context: `1904` identifies host refusal, while `1900` leaves propagation or another documented input condition as the source.
 
 ### Dynamic-array policy
 
@@ -162,9 +165,10 @@ test/evidence/
   compile-template.md
 tools/
   gen_fixtures.py
+  sync_milestone_register.py
 ```
 
-`date-fixtures.tsv` is the canonical generated fixture artifact. `KPR_Test_Fixtures_Generated.bas` is generated test source, not hand-maintained production code. The independent deterministic generator has a drift-check mode and records enough source metadata for reproducibility.
+`date-fixtures.tsv` is the canonical generated fixture artifact. `KPR_Test_Fixtures_Generated.bas` is generated test source, not hand-maintained production code. The independent deterministic generator has a drift-check mode and records enough source metadata for reproducibility. Native-error fixtures record both the expected Excel error code and the originating condition, so host-generated and propagated `#N/A` have separate stable case provenance despite having the same expected value.
 
 The runner interface is:
 
@@ -176,7 +180,7 @@ Public Function KPR_Test_RunAll( _
 
 The runner is callable directly and through `Application.Run`, preserves caller state, returns Boolean success, and writes a structured summary, case-level TSV and environment record for the supplied exact source SHA. Direct VBA calls exercise the documented 1900 caller contract; worksheet-host tests separately exercise 1900 and 1904 behavior.
 
-Coverage includes accepted and rejected inputs, serial limits and serial 60, leap years, month/quarter/year boundaries, `AddDays`/`AddWeeks`/`AddMonths`/`AddYears`, pillar grammar and all rounding modes, both weekday bases, scalar/array parity, row/column/rectangular and one-dimensional shapes, mismatches, optional-argument rejection, blanks, mixed validity, native errors, the 100,000-element boundary, overflow, repeatability, caller-state restoration and date-system behavior.
+Coverage includes accepted and rejected inputs, serial limits and serial 60, leap years, month/quarter/year boundaries, `AddDays`/`AddWeeks`/`AddMonths`/`AddYears`, pillar grammar and all rounding modes, both weekday bases, scalar/array parity, row/column/rectangular and one-dimensional shapes, mismatches, optional-argument rejection, blanks, mixed validity, native errors and their provenance, the 100,000-element boundary, overflow, repeatability, caller-state restoration, volatile `HostDateSystem()` recalculation and date-system behavior.
 
 `KPR_Test_Oracle.bas` owns allowed worksheet-oracle checks against `EOMONTH`, `EDATE`, `WEEKDAY`, `DAY`, `YEAR` and `MONTH` only where contracts overlap. `WORKDAY.INTL` and `NETWORKDAYS.INTL` are out of scope.
 
@@ -187,6 +191,16 @@ Schemas and templates are tracked under `test/evidence/`. Actual runs are writte
 `demo/modules/KPR_Demo_Dates.bas` deterministically builds the demonstration workbook from a clean Excel instance and an explicit output path. The builder is authoritative source. Generated `.xlsx`, `.xlsm`, `.xlam` and other Office binaries are never committed; a certified demo or add-in may be attached later as a release asset.
 
 The demo uses the single public function surface for both scalar and array examples. It shows supported behavior, native errors and array shapes without claiming calendar support, business-day support, production readiness, legacy CSE use or any untested Excel version.
+
+## Plan and milestone-register drift control
+
+`docs/IMPLEMENTATION_PLAN.md` is part of the required-file inventory. Its terminal issue register is generated by `tools/sync_milestone_register.py` inside stable begin/end comments.
+
+- `--write` replaces only the bounded register and renders all live v0.0.2 issues in ascending number order with title, state, assignees, labels, milestone, URL and complete body.
+- `--check` fetches the same live milestone and fails on any content, metadata, membership or ordering drift.
+- The check runs on push, pull request and relevant GitHub issue events with read-only contents/issues permissions.
+- Failure output identifies the first mismatched issue or field and gives the regeneration command.
+- The fixture drift check and issue-register drift check are independent repository-integrity rules; neither claims Excel execution.
 
 ## Delivery phases
 
@@ -210,7 +224,11 @@ Parallel work is allowed only where the issue dependency list permits it. The `b
 - A clean Windows Excel import and VBA compilation succeed at that same SHA.
 - Scalar regressions pass from direct VBA under the documented 1900 contract and from worksheet cells in a 1900 workbook.
 - Multi-cell regression and scalar/array parity pass on dynamic-array Excel; no CSE compatibility is claimed.
-- A 1904 worksheet call is refused with call-level `#N/A`, and `HostDateSystem` reports the documented caller context.
+- A 1904 worksheet `Range` call is refused with call-level `#N/A`, and volatile `HostDateSystem` refreshes through ordinary recalculation and reports the documented caller context.
+- Host-generated and propagated `#N/A` paths are tested as value-identical results with distinct recorded provenance.
+- Direct VBA, Immediate-window, `Application.Run` and regression-harness calls pass under the documented 1900 contract.
+- Non-`Range` Excel host probes are attached, and macro-attached shapes, data validation, chart series, defined-name evaluation and any untestable caller forms are explicitly outside the v0.0.2 compatibility claim.
+- `docs/IMPLEMENTATION_PLAN.md` is required and its generated terminal issue register matches the live v0.0.2 milestone.
 - Allowed cross-oracle tests, UI lifecycle tests, repeatability tests and caller-state restoration pass.
 - The demo is rebuilt from source and its claims match the tested evidence.
 - `VERSION` is `0.0.2`; README and CHANGELOG explicitly defer calendars to v0.0.3 and business-day arithmetic to v0.0.4.
@@ -220,7 +238,9 @@ Parallel work is allowed only where the issue dependency list permits it. The `b
 
 ## Milestone issue register
 
-This terminal register is generated from the live GitHub issues after the architecture reconciliation. It is intentionally complete: every issue includes its current title, state, assignee, labels, URL and full body. Because the register must remain the end of this document, issue #29 is the final content.
+This terminal register is the canonical output format for the drift-controlled renderer specified in issue #27. It is intentionally complete: every issue includes its current title, state, assignee, labels, URL and full body. Because the register must remain the end of this document, issue #29 is the final issue content.
+
+<!-- BEGIN GENERATED MILESTONE ISSUE REGISTER -->
 
 <details>
 <summary><strong>#9 — Specify the date-layer behavioural contract</strong></summary>
@@ -240,13 +260,14 @@ Freeze the complete supported contract for the v0.0.2 date layer before producti
 ## Decisions to record
 
 - Publish one supported public surface containing exactly 22 `KPR_Dates_*` names. Every value-taking function is array-capable; scalar input returns a scalar and multi-cell input returns a shape-preserving array. Do not create `_Spill` twins or `KPR_Dates_Spill.bas`.
-- Keep `KPR_Dates_HostDateSystem()` scalar because it has no value argument.
+- Keep `KPR_Dates_HostDateSystem()` scalar because it has no value argument, and call `Application.Volatile True` so the diagnostic is refreshed by ordinary recalculation.
 - Rename the current plural `KPR_Dates_DatesFromPillar` member to `KPR_Dates_DateFromPillar`; do not retain a compatibility alias in this pre-release.
 - Put required value arguments first and optional `Opt_` arguments last. Value arguments may vectorize; `Opt_` arguments must be omitted, scalar or 1×1.
 - Accept locale-independent ISO `YYYY-MM-DD` text only; reject locale-formatted and numeric-looking strings.
 - Retain the supported window `1900-03-01 .. 9999-12-31`, excluding the Excel serial-60 anomaly and all earlier serials.
-- Distinguish worksheet and VBA callers: a worksheet `Range` caller is checked for `Date1904` and a 1904 host returns `#N/A`; a non-`Range` caller is a direct VBA/infrastructure call and uses the documented 1900 serial contract. Never fall back to an unrelated active workbook.
-- Define native errors in three categories: `#VALUE!` for uninterpretable/contract-invalid input, `#NUM!` for validly formed values outside the supported domain, and `#N/A` when the result is unavailable in the host configuration. Propagate incoming Excel errors verbatim.
+- When `Application.Caller` identifies a worksheet `Range`, inspect that exact workbook's `Date1904` setting and return call-level `#N/A` from a 1904 host. When no worksheet host can be identified, apply the documented 1900 serial contract. Direct VBA, the Immediate window, `Application.Run` and the regression harness are the certified non-Range uses; other non-Range host contexts are not thereby classified as direct VBA or covered by a compatibility claim.
+- Never fall back to `ActiveWorkbook`, `ThisWorkbook` or another unrelated workbook.
+- Define native errors in three categories: `#VALUE!` for uninterpretable/contract-invalid input, `#NUM!` for validly formed values outside the supported domain, and `#N/A` when the result is unavailable in the host configuration. Propagate incoming Excel errors verbatim. A host-generated `#N/A` and a propagated input `#N/A` are the same Excel value; their provenance is distinguished by the documented condition and, for an identifiable worksheet caller, `HostDateSystem()`.
 - Define scalar expansion, exact-shape broadcasting, orientation preservation, one-dimensional VBA arrays as 1×N, blank handling, per-element errors and call-level shape failures.
 - Cap a single array-capable call at 100,000 output elements; 100,001 or more returns call-level `#NUM!`. Never shorten a supplied Range through `UsedRange`.
 - Support scalar calls on every Excel version ultimately certified for the scalar surface. Support and claim multi-cell use only on dynamic-array Excel. Make no Ctrl+Shift+Enter compatibility claim until separately tested.
@@ -262,8 +283,11 @@ Add a source-controlled date-layer contract document that is the normative refer
 
 - [ ] Every one of the 22 supported names has an exact VBA signature, semantic return type and vectorization classification.
 - [ ] The input-type and native-error matrices contain no locale-dependent parsing path.
-- [ ] The `1900-03-01 .. 9999-12-31` gate and worksheet-versus-VBA caller policy are unambiguous.
-- [ ] `#VALUE!`, `#NUM!`, `#N/A` and verbatim error propagation have distinct documented meanings.
+- [ ] The `1900-03-01 .. 9999-12-31` gate and caller/date-system policy are unambiguous.
+- [ ] The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A` and verbatim propagated errors as specified.
+- [ ] The contract states that host-generated and propagated `#N/A` values are indistinguishable at the Excel-value level and documents how `HostDateSystem()` supplies caller context where available.
+- [ ] `HostDateSystem()` is volatile and its recalculation behavior is specified.
+- [ ] Certified direct-VBA uses are distinguished from unsupported non-Range Excel host contexts.
 - [ ] Scalar expansion, optional-argument rules, orientation, 1-D arrays, blanks, the 100,000-element cap and per-element error propagation are specified.
 - [ ] Scalar and dynamic-array compatibility claims are stated separately with no CSE claim.
 - [ ] Pillar rounding is defined with tie-breaking, negative intervals and non-invariant round trips.
@@ -422,41 +446,52 @@ The worksheet/VBA caller distinction and 1904 host refusal are owned by #13, out
 
 ## Objective
 
-Prevent 1,462-day worksheet serial shifts while preserving direct VBA use and the regression harness.
+Prevent 1,462-day worksheet serial shifts while preserving certified direct-VBA use and the regression harness.
 
 ## Caller contract
 
 - Inspect `Application.Caller` once at the public-call boundary, before any element loop.
-- If the caller is a worksheet `Range`, read that Range's workbook `Date1904` setting.
+- If the caller identifies a worksheet `Range`, read that Range's workbook `Date1904` setting.
 - A 1900 worksheet host proceeds normally.
 - A 1904 worksheet host returns one call-level `#N/A`, meaning the result is unavailable in this host configuration.
-- If the caller is not a `Range`, treat the call as direct VBA/infrastructure use and assume the documented 1900 serial contract. The VBA caller owns the interpretation of values it constructed.
+- If no worksheet host can be identified, apply the documented 1900 serial contract. Direct VBA, the Immediate window, `Application.Run` and the regression harness are the certified uses of this path; the caller owns the interpretation of values it constructed.
+- Do not equate every non-`Range` value with direct VBA. Excel may expose a String caller for a macro-attached shape and Error or other non-`Range` callers in data-validation, chart-series, defined-name and related evaluation contexts.
+- v0.0.2 makes no compatibility claim for those non-`Range` Excel host contexts. Their caller forms and observed behavior must be probed and recorded during #29.
 - Never use `ActiveWorkbook`, `ThisWorkbook` or another unrelated workbook as a fallback.
 
 ## Diagnostic function
 
 Add scalar-only `KPR_Dates_HostDateSystem()`:
 
+- call `Application.Volatile True` at entry so an ordinary recalculation re-evaluates the zero-argument diagnostic;
 - return `1900` or `1904` for an identifiable worksheet caller;
-- return `1900` for a direct VBA/infrastructure caller under the documented VBA contract;
-- return `#N/A` only when a worksheet host should exist but cannot be resolved reliably.
+- return `1900` when no worksheet host can be identified, under the documented 1900 serial contract;
+- return `#N/A` only when an identifiable worksheet host should be readable but its date system cannot be resolved reliably.
 
-## Error taxonomy
+Only this diagnostic is deliberately volatile; the date calculations remain non-volatile.
+
+## Error taxonomy and provenance
 
 - `#VALUE!` — uninterpretable or contract-invalid input;
 - `#NUM!` — well-formed value outside the supported date/numerical domain;
-- `#N/A` — result unavailable in the current host configuration;
+- `#N/A` produced by the library — result unavailable in the current host configuration;
 - incoming native errors — propagated unchanged.
+
+A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` are intentionally identical Excel error values. Their provenance cannot be inferred from the returned value alone. For an identifiable worksheet caller, evaluate volatile `KPR_Dates_HostDateSystem()`: `1904` identifies host refusal, while `1900` leaves an incoming `#N/A` or another documented input path as the source.
 
 ## Acceptance criteria
 
 - [ ] Every public worksheet call performs the date-system guard once, not once per array element.
-- [ ] A 1904 worksheet call cannot return a plausible shifted scalar or array.
-- [ ] Direct VBA calls and `KPR_Test_RunAll` execute under the documented 1900 contract.
-- [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and VBA callers.
+- [ ] A 1904 worksheet `Range` call cannot return a plausible shifted scalar or array.
+- [ ] Direct VBA calls, the Immediate window, `Application.Run` and `KPR_Test_RunAll` execute under the documented 1900 contract.
+- [ ] The implementation and documentation say “no worksheet host could be identified”; they do not treat every non-`Range` caller as proven direct VBA.
+- [ ] Unsupported non-`Range` Excel host contexts are named and delegated to #29's probe/not-covered evidence.
+- [ ] `HostDateSystem` calls `Application.Volatile True` and refreshes on ordinary recalculation between 1900 and 1904 worksheet cases without requiring a full calculation rebuild.
+- [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and certified direct-VBA callers.
+- [ ] The documented conditions produce the three library error categories in both scalar and array cases.
+- [ ] Tests explicitly prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available.
 - [ ] No active-workbook fallback exists.
-- [ ] The three native-error categories remain distinct in scalar and array cases.
-- [ ] Windows certification exercises 1900 and 1904 worksheets plus direct VBA calls.
+- [ ] Windows certification exercises 1900 and 1904 worksheet callers, certified direct-VBA callers and the unsupported-context probes.
 
 ## Dependencies
 
@@ -715,9 +750,11 @@ Generate deterministic expected results independently of the VBA implementation 
 
 ## Fixture contract
 
-Each case must have a stable ID, suite, input-kind metadata, arguments, expected result type, expected value or native error, and a short rationale. The generated VBA module is derived from the canonical TSV and must not be hand-edited.
+Each case must have a stable ID, suite, input-kind metadata, arguments, expected result type, expected value or native error, originating-condition metadata, and a short rationale. The generated VBA module is derived from the canonical TSV and must not be hand-edited.
 
 The generator may use Python standard-library date primitives, but must not invoke KPR code or mechanically translate the same VBA algorithm line for line.
+
+Native-error cases record both the expected Excel error code and why that error is expected. A host-generated `#N/A` and a propagated input `#N/A` therefore have separate stable case IDs and provenance even though their expected Excel values are identical.
 
 ## Acceptance criteria
 
@@ -727,7 +764,8 @@ The generator may use Python standard-library date primitives, but must not invo
 - [ ] Fixtures cover accepted/rejected inputs, `1900-03-01 .. 9999-12-31`, leap years, date boundaries, arithmetic, pillar modes and weekday bases.
 - [ ] Shape fixtures cover scalar, 1×1, row, column, rectangle, 1-D VBA arrays, optional-argument rejection and shape mismatch.
 - [ ] Capacity fixtures cover exactly 100,000 and 100,001 elements.
-- [ ] Expected `#VALUE!`, `#NUM!`, `#N/A` and propagated native errors are encoded explicitly.
+- [ ] Expected `#VALUE!`, `#NUM!`, host-generated `#N/A` and propagated native errors are encoded explicitly with originating-condition metadata.
+- [ ] Separate fixtures encode the value-identical host-generated and propagated `#N/A` paths.
 - [ ] Fixture IDs and ordering remain stable unless a reviewed contract change requires an update.
 - [ ] Calendar, weekend-mask, holiday and business-day fixtures are absent.
 
@@ -811,7 +849,7 @@ Exercise the complete single public date surface and prove scalar/array parity w
 
 ## Required coverage
 
-Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years and 29 February; month, quarter and year boundaries; `AddDays`, `AddWeeks`, `AddMonths` and `AddYears`; clipping/preservation rules; pillar parse/format and all three rounding modes; non-invariant rounded round trips; weekday bases and locators; all 22 public names; scalar, 1×1, row, column and rectangular inputs; 1-D VBA arrays as 1×N; scalar expansion; non-scalar `Opt_` rejection; shape mismatches; blanks; mixed validity; native errors; exactly 100,000 versus 100,001 elements; overflow; repeatability; state restoration; worksheet/VBA caller distinction; `HostDateSystem`; and 1904 worksheet refusal.
+Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years and 29 February; month, quarter and year boundaries; `AddDays`, `AddWeeks`, `AddMonths` and `AddYears`; clipping/preservation rules; pillar parse/format and all three rounding modes; non-invariant rounded round trips; weekday bases and locators; all 22 public names; scalar, 1×1, row, column and rectangular inputs; 1-D VBA arrays as 1×N; scalar expansion; non-scalar `Opt_` rejection; shape mismatches; blanks; mixed validity; native errors and their originating conditions; exactly 100,000 versus 100,001 elements; overflow; repeatability; state restoration; worksheet/VBA caller distinction; volatile `HostDateSystem` recalculation; and 1904 worksheet refusal.
 
 ## Acceptance criteria
 
@@ -819,9 +857,11 @@ Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years
 - [ ] Every value-taking function is compared across scalar, 1×1 and corresponding array elements.
 - [ ] Row, column and rectangle orientation is asserted, not inferred from displayed values.
 - [ ] Mixed arrays prove that one invalid/error element does not corrupt valid neighbors.
-- [ ] `#VALUE!`, `#NUM!`, `#N/A` and propagated input errors remain distinct.
+- [ ] The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A` and propagated input errors in scalar and array cases.
+- [ ] Host-generated and propagated `#N/A` cases assert the same Excel value while retaining separate case provenance; `HostDateSystem()` supplies caller context for the worksheet cases.
 - [ ] Direct VBA tests run under the 1900 contract without a worksheet caller.
 - [ ] 1900 worksheet calls succeed and 1904 worksheet calls return one call-level `#N/A`.
+- [ ] `HostDateSystem()` refreshes between 1900 and 1904 worksheet cases after ordinary recalculation, without relying on a full rebuild.
 - [ ] State restoration is tested after both passing and deliberately failing cases.
 - [ ] Two consecutive runs produce identical case results.
 - [ ] The suite contains no `_Spill` name, calendar, weekend-mask, holiday or business-day arithmetic case.
@@ -1057,11 +1097,12 @@ Reserve `KPR_Cal_*` without creating placeholder modules or functions. Do not re
 
 ## Objective
 
-Extend the existing repository-integrity gate to cover the final single-surface date architecture while keeping Excel execution claims separate.
+Extend the existing repository-integrity gate to cover the final single-surface date architecture and the canonical plan/issue register while keeping Excel execution claims separate.
 
 ## New checks
 
 - Required production, test, fixture, RibbonX, demo and contract files exist.
+- `docs/IMPLEMENTATION_PLAN.md` is an explicit required file.
 - The production inventory contains the eight approved modules and no `KPR_Dates_Spill.bas` or calendar placeholder.
 - Every VBA export has a matching unique `Attribute VB_Name` and `Option Explicit`; internal core modules also declare `Option Private Module`.
 - Module inventory and public/core/UI/test naming boundaries match the approved architecture.
@@ -1073,10 +1114,28 @@ Extend the existing repository-integrity gate to cover the final single-surface 
 - No generated Office binary, test-results output, `_Spill` API or calendar/business-day production placeholder is tracked.
 - Existing repository checks continue to pass.
 
+## Milestone-register drift control
+
+Add `tools/sync_milestone_register.py` as the canonical renderer for the terminal register in `docs/IMPLEMENTATION_PLAN.md`.
+
+- Render issues assigned to milestone v0.0.2 in ascending issue-number order.
+- Include each issue's number, title, state, assignees, labels, milestone, URL and complete body.
+- Bound the generated region with stable begin/end comments so hand-maintained plan text is not rewritten.
+- `--write` replaces only the generated register.
+- `--check` fetches the live GitHub milestone, renders the same canonical text and fails on any drift.
+- The check covers title, body, state, assignees, labels, milestone membership, URL, ordering, missing issues and unexpected issues.
+- The static workflow runs the check on push, pull request and relevant `issues` events, including edits, state changes, assignment, labels and milestone changes.
+- Workflow permissions remain least-privilege and read-only: repository contents and issues are read, never modified.
+- Local and hosted failures name the first mismatched issue or register field and provide the regeneration command.
+
 ## Acceptance criteria
 
 - [ ] Positive checks pass on the complete candidate tree.
 - [ ] Focused negative self-tests fail for every new rule with actionable messages.
+- [ ] Removing `docs/IMPLEMENTATION_PLAN.md` fails the required-file rule.
+- [ ] Editing any registered live issue field causes the register `--check` mode to fail until the plan is regenerated.
+- [ ] The register renderer changes only the bounded generated region and produces byte-identical output on repeated runs.
+- [ ] Relevant GitHub issue events execute the drift check against the default-branch plan.
 - [ ] Static checks do not claim that VBA imports, compiles or executes in Excel.
 - [ ] The hosted workflow remains read-only, deterministic and pinned.
 - [ ] The JSON artifact and Actions summary report all new rule results.
@@ -1158,8 +1217,9 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - Import every production, test and demo VBE export into supported Windows Excel.
 - Compile the VBA project with no compile error or missing reference.
 - Run scalar cases through direct VBA calls under the documented 1900 contract.
-- Exercise worksheet calls in a 1900 workbook.
-- Exercise a 1904 workbook and prove that each public worksheet call returns one call-level `#N/A` rather than a shifted result.
+- Exercise worksheet `Range` calls in a 1900 workbook.
+- Exercise a 1904 workbook and prove that each public worksheet `Range` call returns one call-level `#N/A` rather than a shifted result.
+- Recalculate volatile `KPR_Dates_HostDateSystem()` normally between 1900 and 1904 worksheet cases and prove that it refreshes without a full calculation rebuild.
 - On dynamic-array Excel, run the complete multi-cell shape, broadcasting, optional-argument, per-element error and 100,000-element suites.
 - Make no CSE or legacy multi-cell claim unless separately tested and evidenced.
 - Run the full deterministic regression harness and cross-oracle suite.
@@ -1171,14 +1231,31 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - Record Excel/Windows environment, exact SHA, caller contexts, case totals and failures in the committed evidence schema.
 - Keep run records under ignored `test-results/` and attach them to this issue and the GitHub pre-release.
 
+## Caller-context probe and not-covered statement
+
+In both a 1900 and a 1904 workbook, record `Application.Caller` type/value and `HostDateSystem()` behavior for:
+
+- worksheet-cell `Range` evaluation;
+- direct VBA, the Immediate window, `Application.Run` and the regression harness;
+- a macro-attached shape that presents a String caller;
+- data-validation, chart-series and defined-name evaluation where the Excel version permits a controlled probe;
+- any other reproducible non-`Range` caller form observed during certification.
+
+The first two groups are the certified v0.0.2 caller contexts. Macro-attached shapes, data validation, chart series, defined-name evaluation and other non-`Range` Excel host contexts are explicitly not covered by the v0.0.2 compatibility claim. Where no worksheet host can be identified, the documented 1900 serial contract applies; the evidence must not describe that result as proof that the context was direct VBA or safe in a 1904 workbook.
+
+A probe that Excel cannot execute reproducibly must be recorded as not testable in the certified environment rather than silently omitted.
+
 ## Exit gate
 
 - [ ] Every issue in the v0.0.2 milestone is complete or this certification issue is the only remaining open item.
 - [ ] Hosted static checks pass at the exact candidate SHA.
 - [ ] Fresh import and VBA compilation pass in Windows Excel.
 - [ ] All deterministic regression and allowed cross-oracle cases pass.
-- [ ] Scalar/array parity, shapes, capacity, native errors, direct-VBA behavior and caller-state restoration pass.
-- [ ] 1900 worksheet behavior and 1904 worksheet refusal pass.
+- [ ] Scalar/array parity, shapes, capacity, native errors and their originating conditions, certified direct-VBA behavior and caller-state restoration pass.
+- [ ] Host-generated and propagated `#N/A` are proven value-identical, with `HostDateSystem()` used as the worksheet-context discriminator.
+- [ ] 1900 worksheet behavior, 1904 worksheet refusal and ordinary-recalculation refresh of volatile `HostDateSystem()` pass.
+- [ ] The caller-context probe matrix is attached and every untestable context is identified.
+- [ ] Release documentation explicitly lists the non-`Range` Excel host contexts that are not covered.
 - [ ] MacroOptions, Ribbon and CommandBars lifecycles are idempotent.
 - [ ] Demo and source round-trip evidence are attached.
 - [ ] Compatibility claims distinguish scalar support from dynamic-array-only multi-cell support and make no unevidenced CSE claim.
@@ -1193,3 +1270,5 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - [ ] #28
 
 </details>
+
+<!-- END GENERATED MILESTONE ISSUE REGISTER -->
