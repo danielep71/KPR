@@ -3,12 +3,17 @@
 Status: normative target contract for v0.0.2 implementation, registration,
 regression tests, demo material, and user documentation.
 
-This document freezes observable behaviour. The implementation plan defines
-delivery order and repository architecture; this document defines what a
-conforming date-layer call means. If descriptive material elsewhere conflicts
-with this document, this document governs v0.0.2 behaviour. A contract change
-requires an explicit, reviewed behavioural decision rather than an incidental
-implementation change.
+This document freezes observable behaviour. It and
+[the implementation plan](IMPLEMENTATION_PLAN.md) are complementary and
+non-overlapping in authority:
+
+- the plan governs scope, architecture, sequencing, and evidence;
+- this contract governs observable behaviour; and
+- where both state a behavioural rule, this contract governs.
+
+If descriptive material elsewhere conflicts with this document, this document
+governs v0.0.2 behaviour. A contract change requires an explicit, reviewed
+behavioural decision rather than an incidental implementation change.
 
 The pre-v0.0.2 `KPR_Dates_Days.bas` baseline does not yet conform to this
 contract. In particular, this document does not assert that the current VBA
@@ -51,7 +56,7 @@ value arguments precede optional controls, and every optional control is last.
 ```vb
 Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant, Optional ByVal Opt_WeekBaseMonday As Variant = True) As Variant
 Public Function KPR_Dates_DaysInMonth(ByVal DateIn As Variant) As Variant
-Public Function KPR_Dates_DaysInYear(ByVal DateIn As Variant) As Variant
+Public Function KPR_Dates_DaysInYear(ByVal YearIn As Variant) As Variant
 Public Function KPR_Dates_BeginOfMonth(ByVal DateIn As Variant) As Variant
 Public Function KPR_Dates_EndOfMonth(ByVal DateIn As Variant) As Variant
 Public Function KPR_Dates_BeginOfQuarter(ByVal DateIn As Variant) As Variant
@@ -61,7 +66,7 @@ Public Function KPR_Dates_EndOfYear(ByVal DateIn As Variant) As Variant
 Public Function KPR_Dates_IsMonthEnd(ByVal DateIn As Variant) As Variant
 Public Function KPR_Dates_IsQuarterEnd(ByVal DateIn As Variant) As Variant
 Public Function KPR_Dates_IsYearEnd(ByVal DateIn As Variant) As Variant
-Public Function KPR_Dates_IsLeapYear(ByVal DateIn As Variant) As Variant
+Public Function KPR_Dates_IsLeapYear(ByVal YearIn As Variant) As Variant
 Public Function KPR_Dates_AddDays(ByVal DateIn As Variant, ByVal nDays As Variant) As Variant
 Public Function KPR_Dates_AddWeeks(ByVal DateIn As Variant, ByVal nWeeks As Variant) As Variant
 Public Function KPR_Dates_AddMonths(ByVal DateIn As Variant, ByVal nMonths As Variant, Optional ByVal Opt_KeepEOM As Variant = False) As Variant
@@ -112,79 +117,139 @@ Date parsing is independent of Windows and Excel locale. Production code must
 not use `CDate`, `IsDate`, or an equivalent permissive conversion to interpret
 text.
 
-| Input at one value position | Result |
-| --- | --- |
-| Incoming native Excel error (`CVErr`) | Propagate the same error value verbatim. |
-| Native VBA `Date` | Accept, remove the time component, then apply the supported-window gate. |
-| Native numeric scalar | Interpret under the call's documented 1900 serial contract, remove any fractional time component, then apply the supported-window gate. |
-| Text exactly `YYYY-MM-DD` | Parse ASCII digits and hyphens only; validate year, month, day, month length, and leap day without rollover. |
-| Locale-formatted text such as `31/12/2026` or `12/31/2026` | `#VALUE!`. |
-| Numeric-looking text such as `61`, `45292`, or `45292.5` | `#VALUE!`; never reinterpret it as a serial. |
-| Malformed ISO text, impossible ISO date, empty text, or whitespace-padded text | `#VALUE!`. |
-| Required blank cell, `Empty`, `Null`, or Boolean | `#VALUE!`. |
-| Range or supported in-memory array | Classify through the shape rules in section 5, then apply this matrix per element. |
-| Non-Range object or unsupported array form | Call-level `#VALUE!`. |
+| Input at one value position | Condition ID | Result |
+| --- | --- | --- |
+| Incoming native Excel error (`CVErr`) | `INPUT_ERROR_PROPAGATED` | Propagate the same error value verbatim. |
+| Native VBA `Date` | — | Accept, remove the time component, then apply the supported-window gate. |
+| Native numeric scalar | — | Interpret under the call's documented 1900 serial contract, remove any fractional time component, then apply the supported-window gate. |
+| Text exactly `YYYY-MM-DD` | — | Parse ASCII digits and hyphens only; validate year, month, day, month length, and leap day without rollover. |
+| Locale-formatted text such as `31/12/2026` or `12/31/2026` | `DATE_TEXT_LOCALE` | `#VALUE!`. |
+| Numeric-looking text such as `61`, `45292`, or `45292.5` | `DATE_TEXT_NUMERIC` | `#VALUE!`; never reinterpret it as a serial. |
+| Malformed ISO text, empty text, or whitespace-padded text | `DATE_TEXT_FORMAT` | `#VALUE!`. |
+| Syntactically exact but impossible ISO date such as `2025-02-29` | `DATE_TEXT_IMPOSSIBLE` | `#VALUE!`. |
+| Required blank cell or `Empty` | `INPUT_BLANK_REQUIRED` | `#VALUE!`. |
+| `Null` or Boolean | `DATE_TYPE_REJECTED` | `#VALUE!`. |
+| Accepted date value outside the supported window, including serial 60 and below | `DATE_WINDOW` | `#NUM!`. |
+| Range or supported in-memory array | — | Classify through the shape rules in section 5, then apply this matrix per element. |
+| Non-Range object or unsupported array form | `SHAPE_UNSUPPORTED` | Call-level `#VALUE!`. |
+
+A numeric serial carrying a time component, such as a cell holding `NOW()`, is
+accepted: the time is removed first and the supported-window gate is applied to
+the resulting date-only value. Truncation is never applied to integer
+arguments, which reject fractions outright.
 
 ISO text is exactly ten characters. It accepts no alternate separator, omitted
 zero, localized digit, time suffix, leading/trailing whitespace, or DateSerial
 rollover. A syntactically exact ISO date outside the supported window returns
-`#NUM!`; an impossible component such as `2025-02-29` returns `#VALUE!`.
+`#NUM!` under `DATE_WINDOW`; an impossible component such as `2025-02-29`
+returns `#VALUE!` under `DATE_TEXT_IMPOSSIBLE`.
 
 ### 3.2 Integer-value matrix
 
 `nDays`, `nWeeks`, `nMonths`, `nYears`, `YearIn`, `MonthIn`, `WdIndex`, and `n`
-use one strict integer parser at each output position.
+use one strict integer parser at each output position. `YearIn` is the argument
+of `DaysInYear`, `IsLeapYear`, `NthWeekdayOfMonth`, and `LastWeekdayOfMonth`.
 
-| Input | Result |
-| --- | --- |
-| Native numeric value that is mathematically integral and inside the VBA `Long` range | Accept as `Long`. |
-| Fractional numeric value | `#VALUE!`; no truncation, banker's rounding, or other rounding is permitted. |
-| Numeric value outside the VBA `Long` range | `#NUM!`. |
-| Boolean, Date, text (including numeric-looking text), blank, `Empty`, `Null`, or unsupported object | `#VALUE!`. |
-| Incoming native Excel error | Propagate verbatim at that output position. |
+| Input | Condition ID | Result |
+| --- | --- | --- |
+| Native numeric value that is mathematically integral and inside the VBA `Long` range | — | Accept as `Long`. |
+| Fractional numeric value | `INTEGER_FRACTION` | `#VALUE!`; no truncation, banker's rounding, or other rounding is permitted. |
+| Numeric value outside the VBA `Long` range | `INTEGER_RANGE` | `#NUM!`. |
+| Boolean, `Date`, text (including numeric-looking text), blank, `Empty`, `Null`, or unsupported object | `INTEGER_TYPE_REJECTED` | `#VALUE!`. |
+| Incoming native Excel error | `INPUT_ERROR_PROPAGATED` | Propagate verbatim at that output position. |
 
 After parsing, function-specific domains apply:
 
-- `YearIn` is 1900 through 9999, but a requested result before 1900-03-01 is
-  still outside the supported window and returns `#NUM!`.
-- `MonthIn` must be 1 through 12, `WdIndex` must be 1 through 7, and occurrence
-  `n` must be 1 through 5. A parsed integer outside one of these argument
-  domains returns `#VALUE!`.
+- `YearIn` is 1900 through 9999; a value outside that range returns `#VALUE!`
+  under `DOMAIN_YEAR`. For the weekday locators, a requested result before
+  1900-03-01 is still outside the supported window and returns `#NUM!` under
+  `RESULT_WINDOW`. `DaysInYear` and `IsLeapYear` construct no date, so no
+  window gate applies to them and year 1900 is fully in their domain.
+- `MonthIn` must be 1 through 12 (`DOMAIN_MONTH`), `WdIndex` must be 1 through 7
+  (`DOMAIN_WEEKDAY`), and occurrence `n` must be 1 through 5
+  (`DOMAIN_OCCURRENCE`). A parsed integer outside one of these argument domains
+  returns `#VALUE!`.
 - Date-shift integers may be negative, zero, or positive. A valid shift that
-  cannot produce a supported result returns `#NUM!`.
+  cannot produce a supported result returns `#NUM!` under `RESULT_WINDOW`.
 
 ### 3.3 Optional-control matrix
 
 An `Opt_` argument may be omitted, a scalar, or a 1x1 Range/array. It never
 vectorizes. A multi-cell or multi-element optional argument returns call-level
-`#VALUE!`.
+`#VALUE!` under `CONTROL_NOT_SCALAR`.
+
+Omitting a control and supplying `Empty`, including a reference to a blank
+cell, both select the documented default. This is the one place where `Empty` is
+not contract-invalid: at a required value position it remains `#VALUE!` under
+`INPUT_BLANK_REQUIRED`.
 
 | Control | Accepted values | Default | Invalid value |
 | --- | --- | --- | --- |
-| `Opt_WeekBaseMonday` | Native Boolean `True` or `False` only | `True` | Call-level `#VALUE!` |
-| `Opt_KeepEOM` | Native Boolean `True` or `False` only | `False` | Call-level `#VALUE!` |
-| `Opt_Rounding` | Text `NEAREST`, `FLOOR`, or `CEILING`, compared case-insensitively with no surrounding whitespace | `NEAREST` | Call-level `#VALUE!` |
+| `Opt_WeekBaseMonday` | Omitted, `Empty`, or native Boolean `True`/`False` | `True` | Call-level `#VALUE!` |
+| `Opt_KeepEOM` | Omitted, `Empty`, or native Boolean `True`/`False` | `False` | Call-level `#VALUE!` |
+| `Opt_Rounding` | Omitted, `Empty`, or text `NEAREST`, `FLOOR`, or `CEILING`; outer whitespace is trimmed and the token is compared case-insensitively | `NEAREST` | Call-level `#VALUE!` |
+
+The Boolean controls accept a native Boolean only. Numeric `0` and `1`,
+Boolean-looking text such as `"TRUE"`, `Null`, dates, and objects are rejected
+with call-level `#VALUE!` under `CONTROL_TYPE_REJECTED`. `Opt_Rounding` accepts
+text only and rejects every other type under the same identifier; a text value
+that is not one of the three recognized tokens returns call-level `#VALUE!`
+under `CONTROL_TOKEN_UNKNOWN`.
 
 An incoming scalar Excel error supplied as an optional control propagates
-verbatim as a call-level result.
+verbatim as a call-level result under `CONTROL_ERROR_PROPAGATED`.
 
 ### 3.4 Pillar-token matrix
 
-At each `Pillar` value position, `KPR_Dates_DateFromPillar` accepts case-
-insensitive ASCII text with this grammar:
+The accepted grammar is deliberately wider than the emitted grammar. Parsing
+accepts every form a caller may reasonably write; formatting emits one canonical
+subset.
+
+#### Accepted grammar
+
+At each `Pillar` value position, `KPR_Dates_DateFromPillar` accepts
+case-insensitive ASCII text with this grammar:
 
 ```text
-[+|-] (ON | O/N | TN | T/N | ([0-9]+[YMWD])+)
+[+|-] (ON | O/N | TN | T/N | [0-9]+[YMWD] {1,4 components, each unit at most once})
 ```
 
-The sign applies to the complete token. `ON`/`O/N` means `1D`; `TN`/`T/N`
-means `2D`. Generic components may repeat and are accumulated. Year and month
-components form one signed month delta; week and day components form one signed
-day delta. The month delta is applied first with clip semantics, followed by
-the exact day delta. No inner or surrounding whitespace, decimal quantity,
-missing quantity, unknown unit, or partial parse is accepted. A malformed or
-non-text token returns `#VALUE!`; a valid token whose aggregate or result is
-outside the numerical/date domain returns `#NUM!`.
+- Outer whitespace is trimmed before parsing. Internal whitespace is rejected:
+  `1 M` and `1M 2W` are malformed.
+- The optional sign applies to the complete token.
+- `ON` and `O/N` mean `1D`; `TN` and `T/N` mean `2D`. Aliases are matched whole
+  and never combined with other components.
+- Units are case-insensitive and may appear in any order, so `2W3D` and `3D2W`
+  are the same interval.
+- **A unit may appear at most once.** `1M2M` is rejected under
+  `PILLAR_DUPLICATE_UNIT` rather than accumulated into `3M`. A repeated unit is
+  far more likely a typing error than an intended sum.
+- Year and month components form one signed month delta; week and day components
+  form one signed day delta. The month delta is applied first with clip
+  semantics, followed by the exact day delta.
+- No decimal quantity, missing quantity, unknown unit, or partial parse is
+  accepted.
+
+| Token condition | Condition ID | Result |
+| --- | --- | --- |
+| Non-text payload | `PILLAR_TYPE_REJECTED` | `#VALUE!`. |
+| Malformed token: internal whitespace, missing quantity, decimal quantity, unknown unit, sign with no body, empty text, or partial parse | `PILLAR_TOKEN_MALFORMED` | `#VALUE!`. |
+| Repeated unit such as `1M2M` or `3D4D` | `PILLAR_DUPLICATE_UNIT` | `#VALUE!`. |
+| Valid token whose aggregate or resulting date falls outside the numerical or supported date domain | `PILLAR_AGGREGATE_RANGE` | `#NUM!`. |
+
+#### Emitted grammar
+
+`KPR_Dates_PillarFromDates` emits only this canonical subset:
+
+```text
+[-] (0D | [1-9][0-9]*D | [1-9][0-9]*W | [1-9][0-9]*Y | [1-9][0-9]*M | [1-9][0-9]*Y[1-9][0-9]*M)
+```
+
+Day tokens are emitted only for an absolute interval shorter than seven days.
+An alias, a leading `+`, outer whitespace, a mixed week-and-month form such as
+`1M2W`, and a zero-quantity component are never emitted. Every emitted token is
+re-parseable by `DateFromPillar`; the reverse does not hold, because the
+accepted grammar is wider.
 
 ## 4. Caller and workbook date-system contract
 
@@ -196,10 +261,12 @@ only from an identifiable worksheet caller:
    `Application.Caller.Parent.Parent.Date1904` from that exact workbook.
 2. If that workbook uses the 1900 date system, evaluate normally.
 3. If that workbook uses the 1904 date system, every value-taking public
-   function returns one call-level library-produced `#N/A`. It must never
-   return a plausible value shifted by 1,462 days.
+   function returns one call-level library-produced `#N/A` under
+   `HOST_DATE1904`. It must never return a plausible value shifted by
+   1,462 days.
 4. If an identifiable worksheet host should be readable but its date system
-   cannot be resolved reliably, return one call-level library-produced `#N/A`.
+   cannot be resolved reliably, return one call-level library-produced `#N/A`
+   under `HOST_UNRESOLVED`.
 5. If no worksheet host can be identified, apply the documented 1900 serial
    contract. Never consult `ActiveWorkbook`, `ThisWorkbook`, or another
    unrelated workbook as a fallback.
@@ -265,17 +332,20 @@ The public boundary applies these stages once per call:
 
 Consequently:
 
-- a 1904 or unreadable identifiable worksheet host returns call-level `#N/A`;
+- a 1904 or unreadable identifiable worksheet host returns call-level `#N/A`
+  (`HOST_DATE1904`, `HOST_UNRESOLVED`);
 - an unsupported input shape, shape mismatch, or non-scalar `Opt_` argument
-  returns call-level `#VALUE!`;
+  returns call-level `#VALUE!` (`SHAPE_UNSUPPORTED`, `SHAPE_MISMATCH`,
+  `CONTROL_NOT_SCALAR`);
 - a resolved target of at most 100,000 elements is permitted;
-- a resolved target of 100,001 or more elements returns call-level `#NUM!`;
+- a resolved target of 100,001 or more elements returns call-level `#NUM!`
+  (`CAPACITY_EXCEEDED`);
 - a blank or otherwise invalid required element returns `#VALUE!` only at that
   position;
 - an element result outside the supported numerical/date domain returns
   `#NUM!` only at that position; and
 - an incoming native error propagates unchanged at that position without
-  suppressing valid neighbours.
+  suppressing valid neighbours (`INPUT_ERROR_PROPAGATED`).
 
 Where more than one value argument at the same output position contains an
 incoming error, the first error in signature order is propagated. Call-level
@@ -300,17 +370,78 @@ originating-condition metadata. For an identifiable worksheet caller, volatile
 `KPR_Dates_HostDateSystem()` supplies context: `1904` identifies host refusal;
 `1900` leaves propagation or another documented input condition as the source.
 
-## 7. Function semantics
+Provenance is carried by the condition identifiers in section 7, not by the
+returned error value.
+
+## 7. Condition identifier registry
+
+Every condition that produces an error or reports host unavailability has a
+stable semantic identifier. Successful evaluation has no identifier.
+
+Identifiers exist so that fixtures, the evidence schema, and certification
+records can cite an originating condition that the returned Excel value cannot
+express. Two conditions that return the same Excel error remain distinguishable
+by identifier; `HOST_DATE1904` and `INPUT_ERROR_PROPAGATED` both surface as
+`#N/A` when the propagated error is `#N/A`, and only the identifier separates
+them.
+
+Registry rules:
+
+- Condition ID, expected Excel error, and call/element level are three separate
+  fields. Never merge them, and never derive one from another.
+- Identifiers are semantic, never numbered.
+- An identifier is never renamed, renumbered, or reused. A retired identifier
+  stays retired and its meaning is not reassigned to a different condition.
+- A new documented condition requires a new identifier in this registry.
+- Fixtures (#19), the evidence schema (#20), and certification records (#29)
+  cite these identifiers.
+
+| Condition ID | Condition | Excel error | Level |
+| --- | --- | --- | --- |
+| `DATE_TEXT_FORMAT` | Text is not exactly `YYYY-MM-DD`: alternate separator, omitted zero, time suffix, padding, empty text | `#VALUE!` | Element |
+| `DATE_TEXT_LOCALE` | Locale-formatted date text | `#VALUE!` | Element |
+| `DATE_TEXT_NUMERIC` | Numeric-looking text offered as a date | `#VALUE!` | Element |
+| `DATE_TEXT_IMPOSSIBLE` | Syntactically exact ISO text naming a date that does not exist | `#VALUE!` | Element |
+| `DATE_TYPE_REJECTED` | `Null`, Boolean, or another prohibited type at a date position | `#VALUE!` | Element |
+| `DATE_WINDOW` | Accepted date or serial outside 1900-03-01 through 9999-12-31, including serial 60 and below | `#NUM!` | Element |
+| `INPUT_BLANK_REQUIRED` | Blank cell or `Empty` at a required value position | `#VALUE!` | Element |
+| `INPUT_ERROR_PROPAGATED` | Incoming native Excel error at a value position, returned verbatim | Incoming error | Element |
+| `INTEGER_FRACTION` | Fractional numeric value at an integer position | `#VALUE!` | Element |
+| `INTEGER_TYPE_REJECTED` | Boolean, `Date`, text including numeric-looking text, `Null`, or object at an integer position | `#VALUE!` | Element |
+| `INTEGER_RANGE` | Integral value outside the VBA `Long` range | `#NUM!` | Element |
+| `DOMAIN_YEAR` | `YearIn` outside 1900 through 9999 | `#VALUE!` | Element |
+| `DOMAIN_MONTH` | `MonthIn` outside 1 through 12 | `#VALUE!` | Element |
+| `DOMAIN_WEEKDAY` | `WdIndex` outside 1 through 7 | `#VALUE!` | Element |
+| `DOMAIN_OCCURRENCE` | Occurrence `n` outside 1 through 5 | `#VALUE!` | Element |
+| `OCCURRENCE_ABSENT` | Valid locator request for an occurrence that does not exist in that month | `#NUM!` | Element |
+| `RESULT_WINDOW` | Valid operation whose result or intermediate value falls outside the supported window, including arithmetic overflow | `#NUM!` | Element |
+| `PILLAR_TYPE_REJECTED` | Non-text payload at a `Pillar` position | `#VALUE!` | Element |
+| `PILLAR_TOKEN_MALFORMED` | Token violates the accepted grammar: internal whitespace, missing or decimal quantity, unknown unit, sign with no body, partial parse | `#VALUE!` | Element |
+| `PILLAR_DUPLICATE_UNIT` | A unit appears more than once in one token | `#VALUE!` | Element |
+| `PILLAR_AGGREGATE_RANGE` | Grammatically valid token whose aggregate or resulting date leaves the supported domain | `#NUM!` | Element |
+| `CONTROL_TYPE_REJECTED` | Optional control of a prohibited type: non-Boolean for a Boolean control, non-text for `Opt_Rounding`, or `Null` | `#VALUE!` | Call |
+| `CONTROL_TOKEN_UNKNOWN` | `Opt_Rounding` text that is not `NEAREST`, `FLOOR`, or `CEILING` after trimming and case folding | `#VALUE!` | Call |
+| `CONTROL_NOT_SCALAR` | Optional control larger than 1x1 | `#VALUE!` | Call |
+| `CONTROL_ERROR_PROPAGATED` | Incoming native Excel error supplied as an optional control, returned verbatim | Incoming error | Call |
+| `SHAPE_UNSUPPORTED` | Multi-area Range, jagged, empty, higher-dimensional, or non-Range object input | `#VALUE!` | Call |
+| `SHAPE_MISMATCH` | Non-scalar value arguments whose row/column dimensions differ | `#VALUE!` | Call |
+| `CAPACITY_EXCEEDED` | Resolved output target of 100,001 or more elements | `#NUM!` | Call |
+| `HOST_DATE1904` | Identifiable worksheet caller in a 1904 workbook | `#N/A` | Call |
+| `HOST_UNRESOLVED` | Identifiable worksheet host whose date system cannot be resolved reliably | `#N/A` | Call |
+
+
+## 8. Function semantics
 
 All functions use the parsing, host, array, and error rules above.
 
-### 7.1 Boundaries and predicates
+### 8.1 Boundaries and predicates
 
 - `DayOfWeek` returns 1 through 7. With `Opt_WeekBaseMonday=True`, Monday is 1
   and Sunday is 7. With `False`, Sunday is 1 and Saturday is 7.
 - `DaysInMonth` returns the Gregorian length of the containing month.
 - `DaysInYear` returns 366 for a Gregorian leap year and 365 otherwise. A year
-  is leap when divisible by 4 except centuries not divisible by 400.
+  is leap when divisible by 4 except centuries not divisible by 400. It takes a
+  calendar year, not a date.
 - `BeginOfMonth` and `EndOfMonth` return the first and last dates of the
   containing month.
 - `BeginOfQuarter` and `EndOfQuarter` use calendar quarters Jan-Mar, Apr-Jun,
@@ -318,9 +449,30 @@ All functions use the parsing, host, array, and error rules above.
 - `BeginOfYear` and `EndOfYear` return 1 January and 31 December of the
   containing year.
 - `IsMonthEnd`, `IsQuarterEnd`, and `IsYearEnd` test those same boundaries.
-- `IsLeapYear` applies the Gregorian rule to the input date's year.
+- `IsLeapYear` applies the same Gregorian rule and also takes a calendar year.
 
-### 7.2 Date arithmetic
+`DaysInYear` and `IsLeapYear` are the two year-taking functions. Their argument
+is `YearIn`, parsed by the strict integer rules in section 3.2 with the domain
+1900 through 9999. A date, a date serial, or ISO date text is not accepted and
+returns `#VALUE!` under `INTEGER_TYPE_REJECTED`; a caller holding a date
+supplies `YEAR(A1)` or an equivalent year value.
+
+Both functions are pure calendar predicates on a year. They construct no date,
+so the supported-window gate does not apply to them and `DATE_WINDOW` and
+`RESULT_WINDOW` cannot arise. Year 1900 is therefore in the domain even though
+1900-01-01 through 1900-02-28 are outside the supported date window:
+`KPR_Dates_IsLeapYear(1900)` returns `False` and `KPR_Dates_DaysInYear(1900)`
+returns 365, which are the correct Gregorian answers.
+
+A year argument cannot also accept a date. Every value in 1900 through 9999 is
+itself a valid Excel serial, so a dual-meaning argument would have to guess, and
+guessing is what the strict-parsing rules in section 3 exist to remove.
+
+`DaysInMonth` keeps a `DateIn` argument because it needs both a month and a
+year, and no comparable ambiguity arises. The mixed surface is deliberate: each
+function takes the smallest input that determines its answer.
+
+### 8.2 Date arithmetic
 
 - `AddDays` adds the parsed signed integer as exact calendar days.
 - `AddWeeks` adds exactly seven times the parsed signed integer as calendar
@@ -336,17 +488,19 @@ Every intermediate and final result is range-gated before conversion to a VBA
 `Date`. Arithmetic overflow or a result outside the supported window returns
 `#NUM!` rather than a runtime error or rollover.
 
-### 7.3 Weekday locators
+### 8.3 Weekday locators
 
 `NthWeekdayOfMonth` returns occurrence `n` of `WdIndex` in `YearIn`/`MonthIn`
 under the selected weekday base. A valid request for an occurrence that does
-not exist, such as a fifth weekday absent from that month, returns `#NUM!`.
+not exist, such as a fifth weekday absent from that month, returns `#NUM!`
+under `OCCURRENCE_ABSENT`.
 
 `LastWeekdayOfMonth` returns the final occurrence of `WdIndex` in the requested
 year/month. Its argument domains and weekday-base interpretation are identical.
-Any otherwise valid locator whose result is before 1900-03-01 returns `#NUM!`.
+Any otherwise valid locator whose result is before 1900-03-01 returns `#NUM!`
+under `RESULT_WINDOW`.
 
-### 7.4 Pillar formatting and rounding
+### 8.4 Pillar formatting and rounding
 
 `PillarFromDates` returns `0D` for equal dates. An absolute interval shorter
 than seven days returns the exact signed day token. Longer intervals compare
@@ -371,7 +525,9 @@ to a week candidate; equal-distance adjacent month candidates choose the
 ceiling month anchor. A mathematically possible remaining same-family tie also
 chooses the ceiling anchor. Exact anchors remain exact under every mode.
 
-`DateFromPillar` applies the grammar and month-then-day order in section 3.4.
+`DateFromPillar` applies the accepted grammar and month-then-day order in
+section 3.4, and `PillarFromDates` emits only the narrower canonical grammar
+recorded there.
 Pillar parsing and formatting are mutually consistent for every emitted token.
 Because `PillarFromDates` may round, this is deliberately not a general
 invariant:
@@ -382,7 +538,7 @@ DateFromPillar(StartDate, PillarFromDates(StartDate, EndDate)) = EndDate
 
 Tests and documentation must not imply that equality for rounded intervals.
 
-## 8. Excel-version compatibility
+## 9. Excel-version compatibility
 
 Scalar calls and multi-cell calls have separate compatibility claims:
 
@@ -397,7 +553,7 @@ The implementation performs no Excel-version detection and does not create or
 simulate Excel's placement-level `#SPILL!` error. Spill placement remains
 Excel's responsibility.
 
-## 9. Supported API boundary and future namespaces
+## 10. Supported API boundary and future namespaces
 
 The 22 names in section 2 are the complete supported v0.0.2 calculation API.
 VBA may require other procedures to be technically `Public` for cross-module
@@ -421,19 +577,22 @@ The following are explicitly outside v0.0.2:
 - duplicate `_Spill` functions or `KPR_Dates_Spill.bas`; and
 - generated `.xlsm`, `.xlam`, `.xlsx`, or other Office binaries in git.
 
-## 10. Issue #9 acceptance traceability
+## 11. Issue #9 acceptance traceability
 
-| Acceptance criterion | Normative coverage |
-| --- | --- |
-| Exact signatures, semantic return types, and vectorization for all 22 names | Section 2 |
-| Input-type and native-error matrices contain no locale-dependent parsing | Sections 3 and 6 |
-| Supported-window and caller/date-system policy are unambiguous | Sections 1 and 4 |
-| `#VALUE!`, `#NUM!`, host `#N/A`, and verbatim propagated errors have explicit conditions | Sections 3, 5, and 6 |
-| Host and propagated `#N/A` are value-identical and caller context is documented | Sections 4 and 6 |
-| `HostDateSystem()` is volatile and ordinary-recalculation behaviour is specified | Section 4 |
-| Certified direct-VBA uses are distinct from unsupported non-Range Excel contexts | Section 4 |
-| Scalar expansion, controls, orientation, 1-D arrays, blanks, capacity, and per-element errors are specified | Sections 3 and 5 |
-| Scalar and dynamic-array claims are separate, with no CSE claim | Section 8 |
-| Pillar tie-breaking, negative intervals, and non-invariant round trips are defined | Sections 3.4 and 7.4 |
-| Supported-API boundary and reserved `KPR_Cal_*` namespace are recorded | Section 9 |
-| Calendars, weekends, holidays, business days, and roll conventions are out of scope | Section 9 |
+Issue #9 states twelve acceptance criteria. Each is listed below in issue order
+with its normative coverage in this document.
+
+| # | Acceptance criterion | Normative coverage |
+| ---: | --- | --- |
+| 1 | Every one of the 22 supported names has an exact VBA signature, semantic return type, and vectorization classification | Section 2 |
+| 2 | The input-type and native-error matrices contain no locale-dependent parsing path | Sections 3.1 through 3.4, 6, and 7 |
+| 3 | The `1900-03-01 .. 9999-12-31` gate and caller/date-system policy are unambiguous | Sections 1 and 4 |
+| 4 | The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A`, and verbatim propagated errors as specified | Sections 3, 5.2, 6, and 7 |
+| 5 | Host-generated and propagated `#N/A` are indistinguishable at the Excel-value level, and `HostDateSystem()` supplies caller context | Sections 4, 6, and 7 |
+| 6 | `HostDateSystem()` is volatile and its recalculation behaviour is specified | Section 4 |
+| 7 | Certified direct-VBA uses are distinguished from unsupported non-Range Excel host contexts | Section 4 |
+| 8 | Scalar expansion, optional-argument rules, orientation, 1-D arrays, blanks, the 100,000-element cap, and per-element error propagation are specified | Sections 3.3, 5.1, and 5.2 |
+| 9 | Scalar and dynamic-array compatibility claims are stated separately with no CSE claim | Section 9 |
+| 10 | Pillar rounding is defined with tie-breaking, negative intervals, and non-invariant round trips | Sections 3.4 and 8.4 |
+| 11 | The supported-API boundary and reserved `KPR_Cal_*` namespace are recorded | Section 10 |
+| 12 | Calendars, weekend masks, holidays, business-day arithmetic, and roll conventions are explicitly out of scope | Sections 1 and 10 |

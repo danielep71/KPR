@@ -52,6 +52,7 @@ REQUIRED_FILES = (
     "SECURITY.md",
     "VERSION",
     "assets/social-preview.png",
+    "docs/DATE_LAYER_CONTRACT.md",
     "docs/VBE_EXPORT.md",
     "src/modules/KPR_Dates_Days.bas",
     "tools/check_repo.py",
@@ -1057,6 +1058,7 @@ def _positive_fixture(root: Path) -> None:
     )
     write("VERSION", "0.0.1\n")
     write("tools/check_repo.py", "# self-test placeholder\n")
+    write("docs/DATE_LAYER_CONTRACT.md", "# Contract\n")
     write("docs/VBE_EXPORT.md", "# Export\n")
     write(
         "src/modules/KPR_Dates_Days.bas",

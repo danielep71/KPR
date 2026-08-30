@@ -12,6 +12,9 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 - A documented VBE export format for tracked VBA source, with a static rule that
   requires a unique `Attribute VB_Name` header matching each file name and
   rejects procedure-level description attributes.
+- A stable condition-identifier registry in the date-layer contract, so fixtures
+  and certification evidence can cite an originating condition that the returned
+  Excel error value cannot express.
 
 ### Changed
 
@@ -25,6 +28,18 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   archives remain self-contained.
 - Removed stale repository-policy references to nonexistent distribution
   directories and aligned visual-asset policy with tracked content.
+- Changed `KPR_Dates_DaysInYear` and `KPR_Dates_IsLeapYear` to take a calendar
+  year rather than a date, removing an ambiguity in which a bare year such as
+  `2024` was a valid serial and silently answered for 1905. A date argument is
+  now rejected; year 1900 is in the domain because neither function constructs
+  a date.
+- Tightened the date-layer contract: pillar tokens reject a repeated unit
+  instead of accumulating it, pillar parsing trims outer whitespace while
+  rejecting internal whitespace, the emitted pillar grammar is stated as a
+  narrower canonical subset, and an omitted or blank optional control selects
+  its documented default.
+- Made the plan and the date-layer contract cite each other with an explicit
+  authority split, and required the contract in the static file inventory.
 
 ## [0.0.1] - 2026-08-29
 

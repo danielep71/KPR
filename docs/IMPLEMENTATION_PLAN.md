@@ -8,6 +8,15 @@ Status: approved for issue-driven implementation. No production implementation o
 - Published protected baseline: `v0.0.1` at `abf38786eb48b3db1edced8ae26c756d9c7f5328`
 - Version before candidate assembly: `0.0.1`
 
+## Authority
+
+This plan and [the date-layer behavioural contract](DATE_LAYER_CONTRACT.md) are
+complementary and non-overlapping in authority:
+
+- this plan governs scope, architecture, sequencing, and evidence;
+- the contract governs observable behaviour; and
+- where both state a behavioural rule, the contract governs.
+
 ## Goal
 
 Deliver the first functional KPR date layer as a source-first pre-release: pure Gregorian date primitives, strict parsing, one scalar/array-capable public surface, registration and Excel UI infrastructure, deterministic tests, a reproducible demo builder, and exact-source Windows Excel certification.
@@ -48,7 +57,7 @@ The following signatures are the target contract. All worksheet-reachable inputs
 | ---: | --- | --- |
 | 1 | `KPR_Dates_DayOfWeek(DateIn As Variant, Optional Opt_WeekBaseMonday As Variant = True) As Variant` | `Long` 1–7 |
 | 2 | `KPR_Dates_DaysInMonth(DateIn As Variant) As Variant` | `Long` 28–31 |
-| 3 | `KPR_Dates_DaysInYear(DateIn As Variant) As Variant` | `Long` 365 or 366 |
+| 3 | `KPR_Dates_DaysInYear(YearIn As Variant) As Variant` | `Long` 365 or 366 |
 | 4 | `KPR_Dates_BeginOfMonth(DateIn As Variant) As Variant` | `Date` |
 | 5 | `KPR_Dates_EndOfMonth(DateIn As Variant) As Variant` | `Date` |
 | 6 | `KPR_Dates_BeginOfQuarter(DateIn As Variant) As Variant` | `Date` |
@@ -58,7 +67,7 @@ The following signatures are the target contract. All worksheet-reachable inputs
 | 10 | `KPR_Dates_IsMonthEnd(DateIn As Variant) As Variant` | `Boolean` |
 | 11 | `KPR_Dates_IsQuarterEnd(DateIn As Variant) As Variant` | `Boolean` |
 | 12 | `KPR_Dates_IsYearEnd(DateIn As Variant) As Variant` | `Boolean` |
-| 13 | `KPR_Dates_IsLeapYear(DateIn As Variant) As Variant` | `Boolean` |
+| 13 | `KPR_Dates_IsLeapYear(YearIn As Variant) As Variant` | `Boolean` |
 | 14 | `KPR_Dates_AddDays(DateIn As Variant, nDays As Variant) As Variant` | `Date` |
 | 15 | `KPR_Dates_AddWeeks(DateIn As Variant, nWeeks As Variant) As Variant` | `Date` |
 | 16 | `KPR_Dates_AddMonths(DateIn As Variant, nMonths As Variant, Optional Opt_KeepEOM As Variant = False) As Variant` | `Date` |
@@ -68,6 +77,10 @@ The following signatures are the target contract. All worksheet-reachable inputs
 | 20 | `KPR_Dates_PillarFromDates(StartDate As Variant, EndDate As Variant, Optional Opt_Rounding As Variant = "NEAREST") As Variant` | `String` |
 | 21 | `KPR_Dates_DateFromPillar(StartDate As Variant, Pillar As Variant) As Variant` | `Date` |
 | 22 | `KPR_Dates_HostDateSystem() As Variant` | `Long` 1900 or 1904 |
+
+`KPR_Dates_DaysInYear` and `KPR_Dates_IsLeapYear` take a calendar year rather
+than a date. That signature was revised after #9 by explicit review; the
+contract records the decision and its rationale.
 
 The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument and calls `Application.Volatile True` so ordinary recalculation refreshes the diagnostic. The other date functions remain non-volatile. `KPR_Dates_DateFromPillar` replaces the current plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
 
@@ -194,7 +207,7 @@ The demo uses the single public function surface for both scalar and array examp
 
 ## Planned plan/register controls
 
-Issue #27 will add `docs/IMPLEMENTATION_PLAN.md` to the required-file inventory and will implement `tools/sync_milestone_register.py`. Neither control exists in the current 11-rule static gate.
+Issue #27 will add `docs/IMPLEMENTATION_PLAN.md` to the required-file inventory and will implement `tools/sync_milestone_register.py`. Neither control exists in the current 12-rule static gate.
 
 The implementation deliberately separates deterministic tree validation from mutable live-state monitoring:
 

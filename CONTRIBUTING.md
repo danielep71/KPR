@@ -158,6 +158,10 @@ their relationship to source is documented.
 Every public financial function or pricing model must define its contract before
 its implementation is reviewed.
 
+The v0.0.2 date layer already has one. Its observable behaviour is frozen in
+[docs/DATE_LAYER_CONTRACT.md](docs/DATE_LAYER_CONTRACT.md), which governs where
+it and other documentation disagree about behaviour.
+
 ### Contract map
 
 State whichever elements are relevant:
