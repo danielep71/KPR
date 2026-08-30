@@ -299,18 +299,18 @@ Add a source-controlled date-layer contract document that is the normative refer
 
 ## Acceptance criteria
 
-- [ ] Every one of the 22 supported names has an exact VBA signature, semantic return type and vectorization classification.
-- [ ] The input-type and native-error matrices contain no locale-dependent parsing path.
-- [ ] The `1900-03-01 .. 9999-12-31` gate and caller/date-system policy are unambiguous.
-- [ ] The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A` and verbatim propagated errors as specified.
-- [ ] The contract states that host-generated and propagated `#N/A` values are indistinguishable at the Excel-value level and documents how `HostDateSystem()` supplies caller context where available.
-- [ ] `HostDateSystem()` is volatile and its recalculation behavior is specified.
-- [ ] Certified direct-VBA uses are distinguished from unsupported non-Range Excel host contexts.
-- [ ] Scalar expansion, optional-argument rules, orientation, 1-D arrays, blanks, the 100,000-element cap and per-element error propagation are specified.
-- [ ] Scalar and dynamic-array compatibility claims are stated separately with no CSE claim.
-- [ ] Pillar rounding is defined with tie-breaking, negative intervals and non-invariant round trips.
-- [ ] The supported-API boundary and reserved `KPR_Cal_*` namespace are recorded.
-- [ ] Calendars, weekend masks, holidays, business-day arithmetic and roll conventions are explicitly out of scope.
+- [x] Every one of the 22 supported names has an exact VBA signature, semantic return type and vectorization classification.
+- [x] The input-type and native-error matrices contain no locale-dependent parsing path.
+- [x] The `1900-03-01 .. 9999-12-31` gate and caller/date-system policy are unambiguous.
+- [x] The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A` and verbatim propagated errors as specified.
+- [x] The contract states that host-generated and propagated `#N/A` values are indistinguishable at the Excel-value level and documents how `HostDateSystem()` supplies caller context where available.
+- [x] `HostDateSystem()` is volatile and its recalculation behavior is specified.
+- [x] Certified direct-VBA uses are distinguished from unsupported non-Range Excel host contexts.
+- [x] Scalar expansion, optional-argument rules, orientation, 1-D arrays, blanks, the 100,000-element cap and per-element error propagation are specified.
+- [x] Scalar and dynamic-array compatibility claims are stated separately with no CSE claim.
+- [x] Pillar rounding is defined with tie-breaking, negative intervals and non-invariant round trips.
+- [x] The supported-API boundary and reserved `KPR_Cal_*` namespace are recorded.
+- [x] Calendars, weekend masks, holidays, business-day arithmetic and roll conventions are explicitly out of scope.
 
 ## Dependencies
 
