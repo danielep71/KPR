@@ -308,7 +308,7 @@ None. This issue is the normative dependency for all behavior-changing implement
 <details>
 <summary><strong>#10 — Adopt VBE export format and assert `Attribute VB_Name`</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `ci`, `P2`, `repository`
 - Milestone: `v0.0.2`
@@ -330,11 +330,11 @@ Make every tracked VBA module a deterministic, importable VBE export rather than
 
 ## Acceptance criteria
 
-- [ ] Every production, test and demo `.bas` file is a valid VBE-style export with a unique matching `Attribute VB_Name`.
-- [ ] Static checks reject a missing header, a mismatched filename/module name and duplicate module names.
-- [ ] The checker continues to require `Option Explicit`.
-- [ ] A documented Windows VBE export/import round trip is reserved for final certification.
-- [ ] This issue makes no Excel compilation or execution claim.
+- [x] Every production, test and demo `.bas` file is a valid VBE-style export with a unique matching `Attribute VB_Name`.
+- [x] Static checks reject a missing header, a mismatched filename/module name and duplicate module names.
+- [x] The checker continues to require `Option Explicit`.
+- [x] A documented Windows VBE export/import round trip is reserved for final certification.
+- [x] This issue makes no Excel compilation or execution claim.
 
 ## Dependencies
 
