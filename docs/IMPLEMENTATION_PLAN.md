@@ -220,7 +220,7 @@ The demo uses the single public function surface for both scalar and array examp
 
 ## Planned plan/register controls
 
-Issue #27 will add `docs/IMPLEMENTATION_PLAN.md` to the required-file inventory and will implement `tools/sync_milestone_register.py`. Neither control exists in the current 12-rule static gate.
+Issue #27 will add `docs/IMPLEMENTATION_PLAN.md` to the required-file inventory and will implement `tools/sync_milestone_register.py`. Neither control exists in the current static gate.
 
 The implementation deliberately separates deterministic tree validation from mutable live-state monitoring:
 
