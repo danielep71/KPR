@@ -13,28 +13,19 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   runtime error can reach the worksheet.
 '
 ' SCOPE (THIS REVISION)
-'   - TryParseDateScalar   scalar -> date-only VBA Date
-'
-'   This revision migrates the baseline acceptance policy unchanged, including
-'   two behaviours the frozen contract removes:
-'
-'     * date-like text is accepted under host locale rules (CDate / IsDate)
-'     * numeric-looking text is reinterpreted as an Excel serial
-'
-'   Both are contract-invalid and are replaced by strict ISO-8601-only parsing
-'   in issue #12, together with verbatim propagation of an incoming Excel error
-'   in place of the outright rejection below. They are preserved here only so
-'   that this migration changes structure without changing behaviour.
+'   - TryParseDateScalar   scalar -> normalized, in-window VBA Date
+'   - TryParseLongScalar   scalar -> exact VBA Long
+'   - TryParseBoolControl  scalar optional control -> Boolean/default
 '
 ' SCOPE BOUNDARY
 '   - Shape is NOT handled here. Callers pass a scalar already unwrapped by
 '     KPR_Core_Array.TryUnwrapScalar.
-'   - The supported date window is NOT applied here. The window is a calendar
-'     fact owned by KPR_Core_Dates and is applied by the facade immediately
-'     after parsing. The baseline applied it inside its combined parser; the
-'     single-gate invariant is preserved, only its location changed.
-'   - Integer and optional-control parsing are owned by issue #12 and are
-'     deliberately absent rather than stubbed.
+'   - The supported date window is applied here after date-only normalization.
+'     The serial/year bounds are restated because this module may not depend on
+'     KPR_Core_Dates; the static gate pins both representations against each
+'     other so they cannot drift.
+'   - Incoming Excel errors are not parser failures. The public/element boundary
+'     returns them verbatim before calling these routines.
 '
 ' TYPE HANDOFF
 '   A single-cell Range arrives from KPR_Core_Array read through Value2, so a
@@ -49,8 +40,8 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   Nothing here is supported API.
 '
 ' ALLOWED DEPENDENCIES
-'   KPR_Core_Err. Not referenced in this revision; every failure is reported
-'   through the Boolean return rather than as a worksheet error value.
+'   KPR_Core_Err, for the shared KPR_Condition vocabulary. Every parser failure
+'   is still reported through its Boolean return and condition ByRef output.
 '
 ' UPDATED
 '   2026-08-31
@@ -153,8 +144,9 @@ Public Function TryParseDateScalar( _
 '   - A native Date or numeric serial has its time component removed by flooring
 '     the serial, then the supported window is applied to the resulting
 '     date-only value.
-'   - No locale-sensitive conversion is used anywhere: CDate and IsDate do not
-'     appear in this module.
+'   - No locale-sensitive text conversion is used. IsDate, DateValue, CVDate and
+'     IsNumeric do not appear; CDate is reached only after a numeric serial has
+'     been normalized and window-validated.
 '
 ' ERROR POLICY
 '   - Does not raise. Every failure path returns FALSE with a condition.
@@ -227,6 +219,12 @@ Public Function TryParseDateScalar( _
         Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte
             'Native numeric serial => remove the time component
                 Serial = KPR_FloorSerial(CDbl(ScalarIn))
+
+#If Win64 Then
+        Case vbLongLong
+            'LongLong is a native numeric subtype on 64-bit VBA
+                Serial = KPR_FloorSerial(CDbl(ScalarIn))
+#End If
 
         Case Else
             'Anything else is outside the accepted type set
@@ -509,6 +507,13 @@ Public Function TryParseLongScalar( _
         Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal, vbByte
             'Accepted numeric types; coerce once to a common working type
                 X = CDbl(ScalarIn)
+
+#If Win64 Then
+        Case vbLongLong
+            'LongLong is native numeric on 64-bit VBA; the Long gate still owns
+            'whether its value can be accepted by this parser
+                X = CDbl(ScalarIn)
+#End If
 
         Case Else
             'Boolean, Date, text, Null, objects and errors are all rejected
