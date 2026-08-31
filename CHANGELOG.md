@@ -9,6 +9,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- A five-module calculation architecture: `KPR_Core_Err`, `KPR_Core_Parse`,
+  `KPR_Core_Dates` and `KPR_Core_Array` behind the worksheet facade
+  `KPR_DATES_DAYS`, replacing the monolithic `KPR_Dates_Days` module. The
+  migration is structural: the sixteen existing functions keep their behaviour.
+- Static rules for module visibility, the allowed-dependency matrix, and public
+  worksheet functions being declared only in a non-private facade module.
 - A documented VBE export format for tracked VBA source, with a static rule that
   requires a unique `Attribute VB_Name` header matching each file name and
   rejects procedure-level description attributes.
@@ -17,6 +23,10 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   Excel error value cannot express.
 
 ### Changed
+
+- Component-name uniqueness is now compared case-insensitively, matching VBA's
+  case-insensitive component namespace. File-stem matching stays case-sensitive
+  for export fidelity.
 
 - Refined the KPR social preview by removing the maintainer footer and adding
   clearer financial-market imagery and pricing formulas.

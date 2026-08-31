@@ -54,7 +54,11 @@ REQUIRED_FILES = (
     "assets/social-preview.png",
     "docs/DATE_LAYER_CONTRACT.md",
     "docs/VBE_EXPORT.md",
-    "src/modules/KPR_Dates_Days.bas",
+    "src/modules/KPR_Core_Array.bas",
+    "src/modules/KPR_Core_Dates.bas",
+    "src/modules/KPR_Core_Err.bas",
+    "src/modules/KPR_Core_Parse.bas",
+    "src/modules/KPR_DATES_DAYS.bas",
     "tools/check_repo.py",
 )
 
@@ -65,6 +69,24 @@ VBA_PROCEDURE_ATTRIBUTE_PREFIXES = (
     "Attribute VB_Description",
     "Attribute VB_ProcData",
 )
+
+VBA_PRIVATE_MODULE_DIRECTIVE = "Option Private Module"
+VBA_FACADE_STEM_PREFIX = "kpr_dates_"
+VBA_INTERNAL_MODULE_PREFIX = "kpr_core_"
+VBA_PUBLIC_FUNCTION_PREFIX = "kpr_dates_"
+
+# Allowed production dependencies, keyed by component name folded to lower case.
+# Mirrors the matrix in docs/IMPLEMENTATION_PLAN.md; a module may reference only
+# the public members of the components listed for it.
+VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
+    "kpr_core_err": frozenset(),
+    "kpr_core_dates": frozenset(),
+    "kpr_core_parse": frozenset({"kpr_core_err"}),
+    "kpr_core_array": frozenset({"kpr_core_err"}),
+    "kpr_dates_days": frozenset(
+        {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_core_array"}
+    ),
+}
 
 TEXT_SUFFIXES = {
     ".bas",
@@ -896,23 +918,171 @@ def check_vba_export_header(repo: Repository) -> dict[str, object]:
                     number,
                 )
             )
-        previous = declared.get(name)
+        # VBA component names are case-insensitive, so uniqueness folds case even
+        # though the file-stem match above stays case-sensitive for export fidelity.
+        previous = declared.get(name.casefold())
         if previous is not None:
             failures.append(
                 finding(
                     path,
-                    f"Component name {name!r} is already declared by {previous}; VBA component "
-                    "names are unique across the whole project.",
+                    f"Component name {name!r} collides with {previous}; VBA component names are "
+                    "unique across the whole project and are compared without regard to case.",
                     number,
                 )
             )
         else:
-            declared[name] = path
+            declared[name.casefold()] = path
     return rule_result(
         "vba-export-header",
         "VBA export headers and component names",
         failures,
         f"All {checked} VBA source files carry a unique matching Attribute VB_Name",
+    )
+
+
+def _vba_sources(repo: Repository) -> list[tuple[str, str]]:
+    """Return (path, text) for every tracked VBA source, skipping unreadable files."""
+    sources: list[tuple[str, str]] = []
+    for path in repo.files:
+        if PurePosixPath(path).suffix.casefold() not in VBA_SOURCE_SUFFIXES:
+            continue
+        try:
+            sources.append((path, repo.text(path)))
+        except (OSError, UnicodeError):
+            continue
+    return sources
+
+
+def _strip_vba_comments(text: str) -> str:
+    """Drop whole-line VBA comments so documentation never satisfies a code rule."""
+    return "\n".join(
+        line for line in text.splitlines() if not line.lstrip().startswith("'")
+    )
+
+
+def check_vba_module_visibility(repo: Repository) -> dict[str, object]:
+    """Internal core modules are project-private; the worksheet facade is not.
+
+    `Option Private Module` is what keeps a core helper out of the worksheet, the
+    Function Wizard and the macro list. Module role is decided by the component
+    name prefix, which is a role marker rather than a casing convention: casing
+    itself is deliberately not enforced.
+    """
+    failures: list[dict[str, object]] = []
+    checked = 0
+    for path, text in _vba_sources(repo):
+        stem = PurePosixPath(path).stem.casefold()
+        declares = any(
+            line.strip().startswith(VBA_PRIVATE_MODULE_DIRECTIVE)
+            for line in text.splitlines()
+        )
+        if stem.startswith(VBA_INTERNAL_MODULE_PREFIX):
+            checked += 1
+            if not declares:
+                failures.append(
+                    finding(path, "Internal core module must declare Option Private Module.")
+                )
+        elif stem.startswith(VBA_FACADE_STEM_PREFIX):
+            checked += 1
+            if declares:
+                failures.append(
+                    finding(
+                        path,
+                        "Worksheet facade must not declare Option Private Module; its members "
+                        "have to reach the worksheet.",
+                    )
+                )
+    return rule_result(
+        "vba-module-visibility",
+        "VBA module visibility",
+        failures,
+        f"All {checked} role-bearing VBA modules declare the expected visibility",
+    )
+
+
+def check_vba_public_surface(repo: Repository) -> dict[str, object]:
+    """Supported worksheet functions live only in a non-private facade module.
+
+    The test is by module role, not by file name casing: a `KPR_Dates_*` public
+    function must sit in a module whose stem belongs to the facade family and
+    which does not declare `Option Private Module`.
+    """
+    failures: list[dict[str, object]] = []
+    declaration = re.compile(r"^\s*Public\s+Function\s+(KPR_Dates_\w+)", re.IGNORECASE)
+    found = 0
+    for path, text in _vba_sources(repo):
+        stem = PurePosixPath(path).stem.casefold()
+        is_private = any(
+            line.strip().startswith(VBA_PRIVATE_MODULE_DIRECTIVE)
+            for line in text.splitlines()
+        )
+        is_facade = stem.startswith(VBA_FACADE_STEM_PREFIX) and not is_private
+        for number, line in enumerate(text.splitlines(), start=1):
+            match = declaration.match(line)
+            if match is None:
+                continue
+            found += 1
+            if not is_facade:
+                failures.append(
+                    finding(
+                        path,
+                        f"Public worksheet function {match.group(1)} is declared outside the "
+                        "facade; supported functions belong in a non-private KPR_Dates_* module.",
+                        number,
+                    )
+                )
+    return rule_result(
+        "vba-public-surface",
+        "VBA public worksheet surface",
+        failures,
+        f"All {found} public worksheet functions are declared in a facade module",
+    )
+
+
+def check_vba_module_dependencies(repo: Repository) -> dict[str, object]:
+    """Enforce the allowed-dependency matrix recorded in the implementation plan.
+
+    Public members of each known component are collected first, then every other
+    component's code is scanned for references to them. Comments are stripped, so
+    a module header may name a dependency it is not permitted to call.
+    """
+    failures: list[dict[str, object]] = []
+    exported: dict[str, set[str]] = {}
+    bodies: dict[str, tuple[str, str]] = {}
+    member = re.compile(
+        r"^\s*Public\s+(?:Function|Sub|Const)\s+(\w+)", re.IGNORECASE
+    )
+    for path, text in _vba_sources(repo):
+        stem = PurePosixPath(path).stem.casefold()
+        if stem not in VBA_ALLOWED_DEPENDENCIES:
+            continue
+        exported[stem] = {
+            match.group(1)
+            for line in text.splitlines()
+            if (match := member.match(line))
+        }
+        bodies[stem] = (path, _strip_vba_comments(text))
+    for stem, (path, code) in sorted(bodies.items()):
+        allowed = VBA_ALLOWED_DEPENDENCIES[stem]
+        for other, names in sorted(exported.items()):
+            if other == stem or other in allowed:
+                continue
+            hits = sorted(
+                name for name in names if re.search(rf"\b{re.escape(name)}\b", code)
+            )
+            if hits:
+                failures.append(
+                    finding(
+                        path,
+                        f"Module may not depend on {other}; it references "
+                        f"{', '.join(hits)}.",
+                    )
+                )
+    return rule_result(
+        "vba-module-dependencies",
+        "VBA module dependency matrix",
+        failures,
+        f"All {len(bodies)} architecture modules respect the allowed-dependency matrix",
     )
 
 
@@ -929,6 +1099,9 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_git_diff,
     check_vba_option_explicit,
     check_vba_export_header,
+    check_vba_module_visibility,
+    check_vba_public_surface,
+    check_vba_module_dependencies,
 )
 
 
@@ -1060,9 +1233,16 @@ def _positive_fixture(root: Path) -> None:
     write("tools/check_repo.py", "# self-test placeholder\n")
     write("docs/DATE_LAYER_CONTRACT.md", "# Contract\n")
     write("docs/VBE_EXPORT.md", "# Export\n")
+    for internal in ("KPR_Core_Err", "KPR_Core_Parse", "KPR_Core_Dates", "KPR_Core_Array"):
+        write(
+            f"src/modules/{internal}.bas",
+            f'Attribute VB_Name = "{internal}"\nOption Explicit\nOption Private Module\n',
+            newline="\r\n",
+        )
     write(
-        "src/modules/KPR_Dates_Days.bas",
-        'Attribute VB_Name = "KPR_Dates_Days"\nOption Explicit\n',
+        "src/modules/KPR_DATES_DAYS.bas",
+        'Attribute VB_Name = "KPR_DATES_DAYS"\nOption Explicit\n'
+        'Public Function KPR_Dates_DayOfWeek() As Variant\nEnd Function\n',
         newline="\r\n",
     )
     _initialize_fixture(root)
@@ -1107,7 +1287,7 @@ def run_self_tests(root: Path) -> None:
         readme = case / "README.md"
         readme.write_text(readme.read_text(encoding="utf-8") + "\n[missing](docs/not-here.md)\n", encoding="utf-8")
 
-    module_relative = "src/modules/KPR_Dates_Days.bas"
+    module_relative = "src/modules/KPR_DATES_DAYS.bas"
 
     def rewrite_module(case: Path, transform: Callable[[str], str]) -> None:
         module = case / module_relative
@@ -1121,14 +1301,60 @@ def run_self_tests(root: Path) -> None:
         rewrite_module(case, lambda text: text.split("\n", 1)[1])
 
     def mismatched_module_name(case: Path) -> None:
-        rewrite_module(case, lambda text: text.replace('"KPR_Dates_Days"', '"KPR_Dates_Day"', 1))
+        rewrite_module(case, lambda text: text.replace('"KPR_DATES_DAYS"', '"KPR_DATES_DAY"', 1))
 
     def duplicate_module_name(case: Path) -> None:
         source = case / module_relative
-        duplicate = case / "test/modules/KPR_Dates_Days.bas"
+        duplicate = case / "test/modules/KPR_DATES_DAYS.bas"
         duplicate.parent.mkdir(parents=True, exist_ok=True)
         duplicate.write_text(source.read_text(encoding="utf-8"), encoding="utf-8", newline="\r\n")
         _run_git(case, "add", "-f", str(duplicate.relative_to(case)))
+
+    def case_only_duplicate_name(case: Path) -> None:
+        # VBA component names are case-insensitive, so these are one component.
+        duplicate = case / "test/modules/kpr_dates_days.bas"
+        duplicate.parent.mkdir(parents=True, exist_ok=True)
+        duplicate.write_text(
+            'Attribute VB_Name = "kpr_dates_days"\nOption Explicit\n',
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        _run_git(case, "add", "-f", str(duplicate.relative_to(case)))
+
+    def missing_private_module(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Parse.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8").replace("Option Private Module\n", ""),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def public_function_outside_facade(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Dates.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function KPR_Dates_EndOfYear() As Variant\nEnd Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def forbidden_dependency(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Err.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function Probe() As Variant\n"
+            + "    Probe = TryParseDateScalar(0, 0)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        parse = case / "src/modules/KPR_Core_Parse.bas"
+        parse.write_text(
+            parse.read_text(encoding="utf-8")
+            + "Public Function TryParseDateScalar() As Variant\nEnd Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
 
     def procedure_attribute(case: Path) -> None:
         rewrite_module(
@@ -1151,7 +1377,11 @@ def run_self_tests(root: Path) -> None:
         ("missing module name", "vba-export-header", missing_module_name),
         ("mismatched module name", "vba-export-header", mismatched_module_name),
         ("duplicate module name", "vba-export-header", duplicate_module_name),
+        ("case-only duplicate name", "vba-export-header", case_only_duplicate_name),
         ("procedure-level attribute", "vba-export-header", procedure_attribute),
+        ("missing Option Private Module", "vba-module-visibility", missing_private_module),
+        ("public function outside facade", "vba-public-surface", public_function_outside_facade),
+        ("forbidden module dependency", "vba-module-dependencies", forbidden_dependency),
     )
 
     with tempfile.TemporaryDirectory(prefix="kpr-static-self-test-") as temporary:
