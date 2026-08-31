@@ -37,13 +37,11 @@ Attribute VB_Name = "KPR_Core_Err"
 '
 ' NOTES
 '   - ErrNA is provided but not yet called. Host-configuration #N/A arrives
-'     with KPR_Dates_HostDateSystem in issue #17.
-'   - Incoming-error propagation is deliberately absent. The migrated baseline
-'     rejects an incoming Excel error rather than propagating it; issue #12
-'     changes that, and this module gains the classification helpers then.
-'     Once propagation exists, a caller's own error will reach the sheet
-'     without passing through this module, which is why the purpose above is
-'     scoped to values the library constructs.
+'     with KPR_Dates_HostDateSystem in issue #13.
+'   - Incoming errors are detected at the public/element boundary and returned
+'     verbatim without passing through this module. ErrForCondition deliberately
+'     refuses propagation identifiers so a discarded incoming value cannot be
+'     hidden behind a newly constructed error.
 '   - Each member is a function rather than a constant because VBA cannot hold
 '     an error value in a Const. The cost is one call per constructed error.
 '   - A caller that assigns a failure value before knowing whether it will fail
@@ -183,9 +181,8 @@ Public Function ErrNum() As Variant
 '   None. Construction only.
 '
 ' NOTES
-'   - The contract classifies an out-of-window date as DATE_WINDOW and requires
-'     this value. The migrated surface still returns #VALUE! there; issues #12
-'     and #13 move it.
+'   - The strict parser classifies an out-of-window date as DATE_WINDOW and the
+'     facade maps it here to #NUM!.
 '
 ' UPDATED
 '   2026-08-31
