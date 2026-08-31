@@ -211,7 +211,7 @@ At each `Pillar` value position, `KPR_Dates_DateFromPillar` accepts
 case-insensitive ASCII text with this grammar:
 
 ```text
-[+|-] (ON | O/N | TN | T/N | [0-9]+[YMWD] {1,4 components, each unit at most once})
+(ON | O/N | TN | T/N) | [+|-] [0-9]+[YMWD] {1,4 components, each unit at most once}
 ```
 
 - Outer whitespace is trimmed before parsing. Internal whitespace is rejected:
@@ -219,6 +219,10 @@ case-insensitive ASCII text with this grammar:
 - The optional sign applies to the complete token.
 - `ON` and `O/N` mean `1D`; `TN` and `T/N` mean `2D`. Aliases are matched whole
   and never combined with other components.
+- **An alias never carries a sign.** `-ON` and `+T/N` are rejected under
+  `PILLAR_ALIAS_SIGNED`. An alias names a fixed point at the short end of the
+  curve rather than a quantity, so there is nothing for a sign to negate. A
+  caller wanting a backward one-day shift writes `-1D`, which is unambiguous.
 - Units are case-insensitive and may appear in any order, so `2W3D` and `3D2W`
   are the same interval.
 - **A unit may appear at most once.** `1M2M` is rejected under
@@ -235,6 +239,7 @@ case-insensitive ASCII text with this grammar:
 | Non-text payload | `PILLAR_TYPE_REJECTED` | `#VALUE!`. |
 | Malformed token: internal whitespace, missing quantity, decimal quantity, unknown unit, sign with no body, empty text, or partial parse | `PILLAR_TOKEN_MALFORMED` | `#VALUE!`. |
 | Repeated unit such as `1M2M` or `3D4D` | `PILLAR_DUPLICATE_UNIT` | `#VALUE!`. |
+| Signed alias such as `-ON` or `+T/N` | `PILLAR_ALIAS_SIGNED` | `#VALUE!`. |
 | Valid token whose aggregate or resulting date falls outside the numerical or supported date domain | `PILLAR_AGGREGATE_RANGE` | `#NUM!`. |
 
 #### Emitted grammar
@@ -242,14 +247,15 @@ case-insensitive ASCII text with this grammar:
 `KPR_Dates_PillarFromDates` emits only this canonical subset:
 
 ```text
-[-] (0D | [1-9][0-9]*D | [1-9][0-9]*W | [1-9][0-9]*Y | [1-9][0-9]*M | [1-9][0-9]*Y[1-9][0-9]*M)
+[-] (0D | [1-9][0-9]*D | [1-3]W | [1-9][0-9]*Y | [1-9][0-9]*M | [1-9][0-9]*Y[1-9][0-9]*M)
 ```
 
 Day tokens are emitted only for an absolute interval shorter than seven days.
-An alias, a leading `+`, outer whitespace, a mixed week-and-month form such as
-`1M2W`, and a zero-quantity component are never emitted. Every emitted token is
-re-parseable by `DateFromPillar`; the reverse does not hold, because the
-accepted grammar is wider.
+Week tokens are emitted only for `1W`, `2W`, and `3W`; see the week-family cap
+in section 8.4. An alias, a leading `+`, outer whitespace, a mixed
+week-and-month form such as `1M2W`, and a zero-quantity component are never
+emitted. Every emitted token is re-parseable by `DateFromPillar`; the reverse
+does not hold, because the accepted grammar is wider.
 
 ## 4. Caller and workbook date-system contract
 
@@ -418,6 +424,7 @@ Registry rules:
 | `PILLAR_TYPE_REJECTED` | Non-text payload at a `Pillar` position | `#VALUE!` | Element |
 | `PILLAR_TOKEN_MALFORMED` | Token violates the accepted grammar: internal whitespace, missing or decimal quantity, unknown unit, sign with no body, partial parse | `#VALUE!` | Element |
 | `PILLAR_DUPLICATE_UNIT` | A unit appears more than once in one token | `#VALUE!` | Element |
+| `PILLAR_ALIAS_SIGNED` | A whole-token alias carries a leading sign, such as `-ON` or `+T/N` | `#VALUE!` | Element |
 | `PILLAR_AGGREGATE_RANGE` | Grammatically valid token whose aggregate or resulting date leaves the supported domain | `#NUM!` | Element |
 | `CONTROL_TYPE_REJECTED` | Optional control of a prohibited type: non-Boolean for a Boolean control, non-text for `Opt_Rounding`, or `Null` | `#VALUE!` | Call |
 | `CONTROL_TOKEN_UNKNOWN` | `Opt_Rounding` text that is not `NEAREST`, `FLOOR`, or `CEILING` after trimming and case folding | `#VALUE!` | Call |
@@ -516,6 +523,39 @@ whole-week anchors and calendar-month anchors generated from `StartDate` in the
 direction of `EndDate`. Month anchors use the same clip semantics as
 `DateFromPillar`; month counts of 12 or more format as years plus residual
 months.
+
+#### Week-family cap
+
+A week anchor is a candidate only for whole-week counts of 1, 2, and 3. Beyond
+`3W` the week family is not considered and the month family owns the label.
+
+The cap restricts the candidate set, not the selection rule, so it applies
+identically under `NEAREST`, `FLOOR`, and `CEILING`.
+
+The cap exists because week anchors and month anchors are not comparable on
+distance alone. A whole-week anchor always lands within three days of any
+target, while a calendar-month anchor can sit roughly fifteen days away, so an
+unrestricted distance rule gives the week family almost every long interval: an
+interval of ten years and two weeks would emit `524W`, which is arithmetically
+correct and useless as a curve bucket. Market convention runs weeks only at the
+short end.
+
+Two consequences are deliberate and must not be treated as defects:
+
+- `4W` and every longer week token are unreachable.
+- The `3W` to `1M` boundary falls at 25 days: 24 days emits `3W` and 25 days
+  emits `1M`. Convention would more often call 25 to 27 days `3W` or `4W`, so
+  labels in that band sit one pillar long. The boundary is left where the
+  rounding rule puts it rather than special-cased, because a boundary that
+  cannot be derived from the rule is the kind that drifts.
+
+An anchor that would fall outside the supported window is not a candidate. The
+restriction is positional, so a label can depend on where in the calendar the
+interval sits: an eleven-day interval emits `2W` everywhere except the final
+fortnight of year 9999, where the `2W` anchor leaves the window and the month
+family takes it as `1M`.
+
+#### Rounding modes
 
 Rounding operates on the absolute magnitude and then restores a leading minus
 sign for a negative interval:
