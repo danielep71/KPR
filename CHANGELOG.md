@@ -35,6 +35,10 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Changed
 
+- Restored the declared defaults on the existing optional Boolean controls,
+  avoiding any reliance on forwarding VBA's missing-argument marker through a
+  non-optional helper, and completed the scalar type matrix for all native
+  numeric Variant subtypes (including 64-bit `LongLong`) and rejected objects.
 - Value, integer and control arguments are declared `Variant`, so a fractional
   shift count or a numeric stand-in for a Boolean control is rejected instead of
   being silently coerced by Excel before the function is entered.
