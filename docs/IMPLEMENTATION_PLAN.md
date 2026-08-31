@@ -462,11 +462,11 @@ VBA component identity is case-insensitive. The VBE import documentation remains
 </details>
 
 <details>
-<summary><strong>#12 — Implement strict date and integer parsing with error propagation</strong></summary>
+<summary><strong>#12 — Implement strict scalar date and integer parsing with error propagation</strong></summary>
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `behavior-change`, `blocked`, `code`, `P1`, `tests`
+- Labels: `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/12
 
@@ -474,30 +474,35 @@ VBA component identity is case-insensitive. The VBE import documentation remains
 
 ## Objective
 
-Implement the input contract from #9 once in the core parsing layer so scalar and multi-cell evaluation cannot diverge.
+Implement the scalar input contract from #9 once in `KPR_Core_Parse` so scalar calls and per-element multi-cell evaluation cannot diverge.
+
+## Responsibility boundary
+
+- `KPR_Core_Parse` accepts one already-isolated scalar payload and owns strict date, integer and optional-control parsing.
+- `KPR_Core_Array` owns Range/array shape classification, wrapper rejection, 1×1 unwrapping and later multi-element traversal under #16.
+- An incoming `CVErr` is detected at the public/element boundary and returned unchanged; it must not be collapsed into an ordinary parser failure.
+- The worksheet/VBA caller distinction and 1904 host refusal are owned by #13, outside the scalar parser.
 
 ## Scope
 
 - Parse ISO text only in exact `YYYY-MM-DD` form and validate components without DateSerial rollover.
 - Reject locale-formatted dates, numeric-looking strings and permissive conversions.
-- Accept native VBA `Date` and numeric 1900-system serials only inside `1900-03-01 .. 9999-12-31`.
-- Reject Empty, Null, Boolean, blank required cells, non-Range objects and unsupported array wrappers intentionally.
+- Accept native VBA `Date` and numeric 1900-system serials only inside `1900-03-01 .. 9999-12-31`; discard any time fraction consistently.
+- Reject Empty, Null, Boolean, blank required cells, objects and non-scalar payloads intentionally at their owning boundary.
 - Parse integer arguments without silent truncation, Boolean coercion, banker's rounding or overflow.
-- Propagate incoming `CVErr` values unchanged.
 - Return `#VALUE!` for uninterpretable/contract-invalid inputs and `#NUM!` for well-formed values outside the supported domain.
 - Keep parsing free of UI, worksheet selection, active-workbook and locale state.
-
-The worksheet/VBA caller distinction and 1904 host refusal are owned by #13, outside the scalar parser.
 
 ## Acceptance criteria
 
 - [ ] No production path relies on locale-sensitive `CDate`, `IsDate` or equivalent permissive parsing.
 - [ ] ISO leap-day and component validation is exact.
 - [ ] The minimum and maximum supported dates are accepted and adjacent out-of-window values return `#NUM!`.
+- [ ] Native `Date` and numeric serial inputs normalize an allowed time fraction to the same date-only result.
 - [ ] Integer-required arguments reject fractions and Boolean values with `#VALUE!`; out-of-Long values return `#NUM!`.
-- [ ] Incoming native Excel errors propagate verbatim.
+- [ ] Incoming native Excel errors propagate verbatim at the public/element boundary.
 - [ ] Invalid input never yields a plausible date, a message string, a `MsgBox` or an unhandled VBA error.
-- [ ] Deterministic fixtures cover every accepted and rejected input class.
+- [ ] Focused deterministic tests enumerate every accepted and rejected scalar input class; #19 later owns independently generated milestone fixtures.
 
 ## Dependencies
 
@@ -506,7 +511,7 @@ The worksheet/VBA caller distinction and 1904 host refusal are owned by #13, out
 </details>
 
 <details>
-<summary><strong>#13 — Enforce the worksheet/VBA date-system policy and add `HostDateSystem`</strong></summary>
+<summary><strong>#13 — Enforce the worksheet/VBA date-system policy and add HostDateSystem</strong></summary>
 
 - State: `open`
 - Assignee: @danielep71
@@ -555,20 +560,24 @@ A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` ar
 
 The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition identifier. Defensive catch-all handlers are containment only and must be unreachable in contract-conforming execution. A catch-all activation is a defect against the contract and a regression/certification failure; it is never an expected fixture outcome and must not be normalized into a passing `#VALUE!`, `#NUM!` or `#N/A` case.
 
+## Validation boundary
+
+#13 closes on the date-system implementation plus focused exact-source Windows Excel evidence for the scalar caller paths available at that commit. #17 and #21 own array integration and full regression coverage; #29 owns final-candidate certification and the unsupported-context probe matrix.
+
 ## Acceptance criteria
 
-- [ ] Every public worksheet call performs the date-system guard once, not once per array element.
-- [ ] A 1904 worksheet `Range` call cannot return a plausible shifted scalar or array.
-- [ ] Direct VBA calls, the Immediate window, `Application.Run` and `KPR_Test_RunAll` execute under the documented 1900 contract.
+- [ ] Every worksheet-facing public entry point present when #13 lands performs the date-system guard once; #17 preserves that once-per-call placement across array traversal.
+- [ ] A 1904 worksheet `Range` scalar call cannot return a plausible shifted result; #21 and #29 own the complete array proof.
+- [ ] Focused direct-VBA, Immediate-window and `Application.Run` probes execute under the documented 1900 contract; the later `KPR_Test_RunAll` path is owned by #20 and #29.
 - [ ] The implementation and documentation say “no worksheet host could be identified”; they do not treat every non-`Range` caller as proven direct VBA.
-- [ ] Unsupported non-`Range` Excel host contexts are named and delegated to #29's probe/not-covered evidence.
+- [x] Unsupported non-`Range` Excel host contexts are named and delegated to #29's probe/not-covered evidence.
 - [ ] `HostDateSystem` calls `Application.Volatile True` and refreshes on ordinary recalculation between 1900 and 1904 worksheet cases without requiring a full calculation rebuild.
-- [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and certified direct-VBA callers.
-- [ ] The documented conditions produce the three library error categories in both scalar and array cases.
+- [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and focused direct-VBA callers.
+- [ ] The documented library-produced error categories and incoming-error propagation are covered for scalar calls; #21 owns the complete scalar/array matrix.
 - [ ] No `INTERNAL_UNEXPECTED` condition is exposed; every defensive catch-all remains unreachable in conforming tests, and any activation fails regression and certification.
-- [ ] Tests explicitly prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available.
+- [ ] Focused tests prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available; #21 owns the generated regression cases.
 - [ ] No active-workbook fallback exists.
-- [ ] Windows certification exercises 1900 and 1904 worksheet callers, certified direct-VBA callers and the unsupported-context probes.
+- [x] #29's certification scope explicitly includes 1900 and 1904 worksheet callers, certified direct-VBA callers and unsupported-context probes.
 
 ## Dependencies
 
@@ -610,22 +619,30 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 - Reject a whole-token alias carrying a leading sign, under `PILLAR_ALIAS_SIGNED`.
 - The optional sign applies only to the numeric-component branch of the grammar.
 
+## Already-landed baseline hardening
+
+Commit `3845077` rejects duplicate units and signed aliases, limits emitted nearest-mode week tokens to `1W .. 3W`, and excludes out-of-window anchors. This is preparatory hardening only: the public `Opt_Rounding` signature, `FLOOR`/`CEILING` implementation and focused mode matrix are still required, so no implementation criterion is checked from that commit alone.
+
+## Validation boundary
+
+#14 owns focused deterministic implementation tests for all modes and grammar branches. #19 owns the independent generated fixtures, and #21 owns execution in the complete regression suite.
+
 ## Acceptance criteria
 
-- [ ] Scalar and array calls reach one pillar core through the same public functions.
-- [ ] All three modes cover positive, negative, exact, tie and boundary cases.
+- [ ] Scalar calls reach one pillar core through the public functions; #17 later routes array elements through that same core.
+- [ ] Focused deterministic tests cover all three modes across positive, negative, exact, tie and boundary cases.
 - [ ] Month-end and leap-day anchors are deterministic.
 - [ ] Invalid modes return the contract's native error.
 - [ ] Formatting and parsing are mutually consistent for every supported pillar token.
-- [ ] Regression fixtures explicitly demonstrate non-invariant rounded round trips.
-- [ ] No emitted token names a week count above `3W`, and the `3W`/`1M` boundary is fixture-pinned at 25 days.
+- [ ] The focused case matrix demonstrates non-invariant rounded round trips for handoff to #19 and #21.
+- [ ] No emitted token names a week count above `3W`, and the `3W`/`1M` boundary is pinned at 25 days.
 - [ ] The week cap is exercised under `FLOOR` and `CEILING`, not only `NEAREST`.
 - [ ] A duplicate unit and a signed alias each return `#VALUE!` under their own condition identifier.
 - [ ] No duplicate pillar UDF or `_Spill` twin is created.
 
 ## Dependencies
 
-- [ ] #11
+- [x] #11
 - [ ] #12
 
 </details>
@@ -635,7 +652,7 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `enhancement`, `blocked`, `code`, `P2`, `tests`
+- Labels: `enhancement`, `behavior-change`, `blocked`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/15
 
@@ -650,6 +667,13 @@ Deliver the complete element-correct 22-name public date surface in `KPR_DATES_D
 Existing/re-signatured members: `DayOfWeek`, `DaysInMonth`, `DaysInYear`, `BeginOfMonth`, `EndOfMonth`, `IsMonthEnd`, `IsQuarterEnd`, `IsYearEnd`, `IsLeapYear`, `AddWeeks`, `AddMonths`, `AddYears`, `NthWeekdayOfMonth`, `LastWeekdayOfMonth`, `PillarFromDates`, and singular `DateFromPillar`.
 
 New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfYear`, and `HostDateSystem`.
+
+## Already-landed baseline hardening
+
+- Commit `92a9f7e` made `KPR_Core_Dates.DaysInMonth` the single month-length source and removed live `DateSerial(..., 0)` month-end construction.
+- Commit `cd9f609` added static checks for required core members, `Variant` facade return types and the day-zero ban.
+
+These commits reduce boundary risk but do not complete this issue: the facade still has only the migrated sixteen names and retains pre-contract signatures/behavior until #12–#14 and this issue land.
 
 ## Acceptance criteria
 
@@ -702,9 +726,13 @@ Create one internal array engine with deterministic orientation, broadcasting, o
 - Never intersect a supplied Range with `UsedRange` or silently shorten the requested output.
 - Own shape classification, broadcast resolution, allocation and 1×1 unwrapping only; contain no date algorithms and no generic function-pointer dispatch.
 
+## Already-landed baseline hardening
+
+Commit `2b6464c` made the current scalar boundary inspect object/array type before copying, reject unsupported ranks before reading bounds, and accept only scalar or 1×1 payloads. The row/column/rectangle engine, scalar expansion, exact-shape broadcasting, 100,000-element capacity gate and deterministic traversal remain unimplemented, so no acceptance criterion is checked from that commit alone.
+
 ## Acceptance criteria
 
-- [ ] Scalar, 1×1, row, column and rectangular fixtures preserve the documented result type and shape.
+- [ ] Scalar, 1×1, row, column and rectangular focused cases preserve the documented result type and shape.
 - [ ] Multi-argument scalar expansion works identically for Ranges and in-memory arrays.
 - [ ] One-dimensional VBA arrays are asserted as 1×N.
 - [ ] Non-scalar optional arguments, shape mismatches and unsupported arrays return the documented call-level error.
@@ -712,6 +740,7 @@ Create one internal array engine with deterministic orientation, broadcasting, o
 - [ ] Mixed-validity arrays preserve valid values and per-element errors.
 - [ ] Traversal is deterministic and does not select, activate or recalculate unrelated Excel state.
 - [ ] Caller calculation, events, screen updating and selection state remain unchanged.
+- [ ] #19 later encodes the independent generated shape/capacity fixtures; #21 owns their complete regression execution.
 
 ## Dependencies
 
@@ -805,7 +834,7 @@ Register the single supported worksheet surface consistently without mixing desc
 - [ ] Repeated registration produces the same MacroOptions state and no duplicate UI artifact.
 - [ ] Repeated best-effort unregistration is controlled and documented.
 - [ ] Registration can run through `Application.Run` under the direct-VBA 1900 contract.
-- [ ] Manifest completeness and uniqueness can be checked statically.
+- [ ] The manifest is machine-readable enough for #27 to compare completeness and uniqueness without parsing descriptive prose.
 - [ ] Only `KPR Dates` is registered.
 
 ## Dependencies
@@ -851,6 +880,7 @@ Native-error cases record both the expected Excel error code and why that error 
 - [ ] A `--check` mode fails when committed TSV or VBA output is stale.
 - [ ] The generated module is classified as generated source and remains a valid VBE export with `Option Explicit`.
 - [ ] Fixtures cover accepted/rejected inputs, `1900-03-01 .. 9999-12-31`, leap years, date boundaries, arithmetic, pillar modes and weekday bases.
+- [ ] Pillar fixtures include duplicate units, signed aliases, every rounding mode, positive/negative exact/tie/boundary cases, non-invariant rounded round trips, the `3W` cap and the 25-day `3W`/`1M` boundary.
 - [ ] Shape fixtures cover scalar, 1×1, row, column, rectangle, 1-D VBA arrays, optional-argument rejection and shape mismatch.
 - [ ] Capacity fixtures cover exactly 100,000 and 100,001 elements.
 - [ ] Expected `#VALUE!`, `#NUM!`, host-generated `#N/A` and propagated native errors are encoded explicitly with originating-condition metadata.
@@ -871,7 +901,7 @@ Native-error cases record both the expected Excel error code and why that error 
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `blocked`, `code`, `P1`, `tests`
+- Labels: `blocked`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/20
 
@@ -1035,7 +1065,7 @@ The tracked builder is authoritative. A generated workbook may be attached later
 - [ ] No example claims CSE compatibility, certified accuracy, production readiness or compatibility beyond the agreed evidence.
 - [ ] The builder preserves Excel state and never overwrites an existing path without a controlled error.
 - [ ] No `.xlsm`, `.xlam`, `.xlsx` or other generated Office binary is committed.
-- [ ] Demo generation is exercised during Windows certification.
+- [x] #29's exact-source certification scope explicitly includes deterministic demo generation.
 
 ## Dependencies
 
@@ -1069,6 +1099,10 @@ Add a modern Excel Ribbon surface whose callbacks delegate to registration, demo
 
 Use the Office 2010+ `customUI/2009/07` schema, stable KPR IDs, built-in `imageMso` icons and exact callback signatures for `onLoad`, actions and dynamic enabled/visible state. The release surface provides registration and demo actions. Any regression action is development-only and must not appear in the normal release package.
 
+## Validation boundary
+
+#24 owns deterministic XML/package tests and the production callback/injection implementation. #27 later folds RibbonX and callback consistency into the repository-wide static inventory; #29 owns the exact-candidate Windows load and exercise.
+
 ## Acceptance criteria
 
 - [ ] Callback names/signatures in RibbonX and VBA match exactly.
@@ -1078,7 +1112,8 @@ Use the Office 2010+ `customUI/2009/07` schema, stable KPR IDs, built-in `imageM
 - [ ] Package injection validates the ZIP package, content types and relationships before changing an untracked target.
 - [ ] Repeated injection replaces the KPR customUI part idempotently and creates no duplicate relationships.
 - [ ] A failed injection leaves the original target recoverable and produces no committed binary.
-- [ ] RibbonX parses in static checks and is loaded in Windows Excel certification.
+- [ ] Focused deterministic tests parse RibbonX and exercise valid, repeated and failed package injection without mutating the source artifact.
+- [x] #29's exact-source certification scope explicitly includes RibbonX loading and exercise.
 
 ## Dependencies
 
@@ -1117,7 +1152,7 @@ The release bar provides registration and demo commands. A regression command ma
 - [ ] Temporary controls do not persist uncontrolled Excel state after the host closes.
 - [ ] Callbacks delegate to registration, demo or test modules and contain no date calculations.
 - [ ] Failures restore alerts, events, status bar, active workbook/sheet and selection.
-- [ ] Windows certification covers install, repeat install, action dispatch, teardown and repeat teardown.
+- [x] #29's exact-source certification matrix explicitly covers install, repeat install, action dispatch, teardown and repeat teardown.
 
 ## Dependencies
 
