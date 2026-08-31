@@ -595,15 +595,29 @@ Private Sub Run_DateTypeCases()
 '
 
 '------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Obj         As Collection       'Representative rejected object type
+
+'------------------------------------------------------------------------------
 ' ACCEPTED TYPES
 '------------------------------------------------------------------------------
     'Native Date, with and without a time component
         AssertDateValue "date/native", DateSerial(2026, 3, 15), DateSerial(2026, 3, 15)
         AssertDateValue "date/native with time", DateSerial(2026, 3, 15) + 0.75, DateSerial(2026, 3, 15)
 
-    'Numeric serial, integral and fractional; both normalize to the same day
+    'Every native numeric Variant subtype accepted by the parser
+        AssertDateValue "serial/byte", CByte(255), CDate(255)
+        AssertDateValue "serial/integer", CInt(1000), CDate(1000)
+        AssertDateValue "serial/long", CLng(46096), DateSerial(2026, 3, 15)
+        AssertDateValue "serial/single", CSng(46096.75), DateSerial(2026, 3, 15)
         AssertDateValue "serial/integral", 46096#, DateSerial(2026, 3, 15)
         AssertDateValue "serial/fractional", 46096.75, DateSerial(2026, 3, 15)
+        AssertDateValue "serial/currency", CCur(46096.75), DateSerial(2026, 3, 15)
+        AssertDateValue "serial/decimal", CDec(46096.75), DateSerial(2026, 3, 15)
+#If Win64 Then
+        AssertDateValue "serial/longlong", CLngLng(46096), DateSerial(2026, 3, 15)
+#End If
 
     'Exact ISO text
         AssertDateValue "iso/exact", "2026-03-15", DateSerial(2026, 3, 15)
@@ -622,6 +636,10 @@ Private Sub Run_DateTypeCases()
     'Null and error payloads never parse
         AssertDateCondition "date/null", Null, False, "DATE_TYPE_REJECTED"
         AssertDateCondition "date/error payload", CVErr(xlErrNA), False, "DATE_TYPE_REJECTED"
+
+    'Objects are rejected rather than dereferenced through a default member
+        Set Obj = New Collection
+        AssertDateCondition "date/object", Obj, False, "DATE_TYPE_REJECTED"
 
 End Sub
 
@@ -733,13 +751,28 @@ Private Sub Run_IntegerCases()
 '
 
 '------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Obj         As Collection       'Representative rejected object type
+
+'------------------------------------------------------------------------------
 ' ACCEPTED
 '------------------------------------------------------------------------------
-    'Integral numerics across the sign range
+    'Every native numeric Variant subtype accepted by the parser
+        AssertLongCondition "long/byte", CByte(12), True, "NONE"
+        AssertLongCondition "long/integer", CInt(12), True, "NONE"
+        AssertLongCondition "long/long", CLng(12), True, "NONE"
+        AssertLongCondition "long/single", CSng(12), True, "NONE"
+        AssertLongCondition "long/double", CDbl(12), True, "NONE"
+        AssertLongCondition "long/currency", CCur(12), True, "NONE"
+        AssertLongCondition "long/decimal", CDec(12), True, "NONE"
+#If Win64 Then
+        AssertLongCondition "long/longlong", CLngLng(12), True, "NONE"
+#End If
+
+    'Integral values across the sign range
         AssertLongCondition "long/zero", 0, True, "NONE"
-        AssertLongCondition "long/positive", 12, True, "NONE"
         AssertLongCondition "long/negative", -12, True, "NONE"
-        AssertLongCondition "long/integral double", 12#, True, "NONE"
         AssertLongCondition "long/max", 2147483647#, True, "NONE"
         AssertLongCondition "long/min", -2147483648#, True, "NONE"
 
@@ -765,6 +798,8 @@ Private Sub Run_IntegerCases()
         AssertLongCondition "long/date", DateSerial(2026, 3, 15), False, "INTEGER_TYPE_REJECTED"
         AssertLongCondition "long/null", Null, False, "INTEGER_TYPE_REJECTED"
         AssertLongCondition "long/empty", Empty, False, "INPUT_BLANK_REQUIRED"
+        Set Obj = New Collection
+        AssertLongCondition "long/object", Obj, False, "INTEGER_TYPE_REJECTED"
 
 End Sub
 
@@ -778,6 +813,7 @@ Private Sub Run_ControlCases()
 '------------------------------------------------------------------------------
     Dim Parsed      As Boolean          'Control output
     Dim Cond        As KPR_Condition    'Reported condition
+    Dim Obj         As Collection       'Representative rejected object type
 
 '------------------------------------------------------------------------------
 ' ACCEPTED
@@ -815,6 +851,8 @@ Private Sub Run_ControlCases()
         AssertControlRejected "control/text true", "true"
         AssertControlRejected "control/null", Null
         AssertControlRejected "control/date", DateSerial(2026, 3, 15)
+        Set Obj = New Collection
+        AssertControlRejected "control/object", Obj
 
 End Sub
 
