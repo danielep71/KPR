@@ -9,6 +9,17 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- Strict scalar input parsing: ISO-8601 `YYYY-MM-DD` text only, validated
+  component by component, with locale-formatted and numeric-looking text
+  rejected rather than reinterpreted. Numeric-looking text is recognized by a
+  fixed rule rather than by `IsNumeric`, which consults the host locale and
+  reads `31.12.2026` as a number in some regions.
+- A condition vocabulary mirroring the contract's registry identifiers, so a
+  failure is classified rather than collapsed into a single error value.
+- Deterministic tests for every accepted and rejected scalar input class, and
+  static rules forbidding locale-sensitive date conversions in production and
+  pinning the two representations of the supported window against each other.
+
 - A five-module calculation architecture: `KPR_Core_Err`, `KPR_Core_Parse`,
   `KPR_Core_Dates` and `KPR_Core_Array` behind the worksheet facade
   `KPR_DATES_DAYS`, replacing the monolithic `KPR_Dates_Days` module. The
@@ -23,6 +34,13 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   Excel error value cannot express.
 
 ### Changed
+
+- Value, integer and control arguments are declared `Variant`, so a fractional
+  shift count or a numeric stand-in for a Boolean control is rejected instead of
+  being silently coerced by Excel before the function is entered.
+- An out-of-window date now returns `#NUM!` rather than `#VALUE!`, and an
+  incoming Excel error propagates verbatim instead of being collapsed into a
+  parse failure.
 
 - Component-name uniqueness is now compared case-insensitively, matching VBA's
   case-insensitive component namespace. File-stem matching stays case-sensitive

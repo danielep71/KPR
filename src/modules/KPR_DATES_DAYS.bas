@@ -118,26 +118,21 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   and month-end from KPR_Core_Dates.EndOfMonth, both of which are total.
 '
 ' KNOWN DIVERGENCES FROM THE FROZEN CONTRACT
-'   This revision migrates behaviour unchanged, so the following remain
-'   contract-invalid until their owning issues land. They are recorded here
-'   rather than left for a reader to discover:
+'   Issue #12 removed the input-handling divergences. What remains is owned by
+'   the issues named against each line:
 '
-'     - An out-of-window date returns #VALUE!. The contract classifies this as
-'       DATE_WINDOW and requires #NUM!.                             (#12, #13)
-'     - An incoming Excel error is rejected as #VALUE! rather than propagated
-'       verbatim.                                                   (#12)
-'     - Text dates are parsed under host locale rules, and numeric-looking text
-'       is reinterpreted as a serial.                               (#12)
-'     - Integer arguments are declared As Long and are silently coerced.  (#12)
-'     - Optional controls are declared As Boolean and are silently coerced.
-'                                                                   (#13, #16)
+'     - Optional controls accept a native Boolean only, which is correct, but
+'       the full Variant control semantics including Opt_Rounding arrive with
+'       issues #13 and #14.
+'     - Duplicate pillar units accumulate rather than being rejected.    (#15)
 '     - Pillar rounding is NEAREST only; Opt_Rounding is absent.         (#14)
 '     - No host date-system detection exists, so a 1904 workbook is answered
-'       with silently shifted values.                               (#17)
-'     - Multi-cell inputs are rejected rather than traversed.            (#16)
-'
-'   Duplicate pillar units are no longer in this list. They are now rejected,
-'   matching the contract; that change is owned by issue #15.
+'       with silently shifted values.                                    (#17)
+'     - Multi-cell inputs are rejected rather than traversed, and a control
+'       larger than 1x1 reports a shape rejection rather than the contract's
+'       distinct CONTROL_NOT_SCALAR condition.                           (#16)
+'     - DaysInYear and IsLeapYear still take a date rather than a calendar
+'       year, and DatesFromPillar keeps its plural name.                 (#15)
 '
 ' INTERNAL ERROR POLICY
 '   - Core routines are Try-style (Boolean return, result ByRef) or plain
@@ -176,7 +171,7 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 
 Public Function KPR_Dates_DayOfWeek( _
     ByVal DateIn As Variant, _
-    Optional ByVal Opt_WeekBaseMonday As Boolean = True) _
+    Optional ByVal Opt_WeekBaseMonday As Variant) _
     As Variant
 '
 '==============================================================================
@@ -247,6 +242,7 @@ Public Function KPR_Dates_DayOfWeek( _
 '------------------------------------------------------------------------------
     Dim ParsedDate      As Date          'Parsed date-only value (per TryResolveDate policy)
     Dim WkBase          As VbDayOfWeek   'Weekday() base selector (vbMonday or vbSunday)
+    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
     Dim FailErr         As Variant       'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -262,13 +258,16 @@ Public Function KPR_Dates_DayOfWeek( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
+
+    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+        If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' RESOLVE WEEKDAY BASE
 '------------------------------------------------------------------------------
     'Resolve Weekday() base once
-        If Opt_WeekBaseMonday Then
+        If WkMonday Then
             WkBase = vbMonday
         Else
             WkBase = vbSunday
@@ -374,7 +373,7 @@ Public Function KPR_Dates_DaysInMonth( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -482,7 +481,7 @@ Public Function KPR_Dates_DaysInYear( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -582,7 +581,7 @@ Public Function KPR_Dates_BeginOfMonth( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -667,7 +666,7 @@ Public Function KPR_Dates_EndOfMonth( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -753,7 +752,7 @@ Public Function KPR_Dates_IsMonthEnd( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -847,7 +846,7 @@ Public Function KPR_Dates_IsQuarterEnd( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -946,7 +945,7 @@ Public Function KPR_Dates_IsYearEnd( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -1036,7 +1035,7 @@ Public Function KPR_Dates_IsLeapYear( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -1073,7 +1072,7 @@ End Function
 
 Public Function KPR_Dates_AddWeeks( _
     ByVal DateIn As Variant, _
-    ByVal nWeeks As Long) _
+    ByVal nWeeks As Variant) _
     As Variant
 '
 '==============================================================================
@@ -1126,6 +1125,7 @@ Public Function KPR_Dates_AddWeeks( _
 '------------------------------------------------------------------------------
     Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim ResultD         As Double    'Shifted date serial before range gating
+    Dim nWeeksL         As Long      'Strictly parsed nWeeks
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1141,13 +1141,16 @@ Public Function KPR_Dates_AddWeeks( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric nWeeks
+        If Not TryResolveLong(nWeeks, nWeeksL, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' COMPUTE SHIFT
 '------------------------------------------------------------------------------
     'Compute the shifted serial in Double to avoid overflow on coercion
-        ResultD = CDbl(ParsedDate) + (7# * CDbl(nWeeks))
+        ResultD = CDbl(ParsedDate) + (7# * CDbl(nWeeksL))
 
     'Gate the result to the supported date window
         If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
@@ -1182,8 +1185,8 @@ End Function
 
 Public Function KPR_Dates_AddMonths( _
     ByVal DateIn As Variant, _
-    ByVal nMonths As Long, _
-    Optional ByVal Opt_KeepEOM As Boolean = False) _
+    ByVal nMonths As Variant, _
+    Optional ByVal Opt_KeepEOM As Variant) _
     As Variant
 '
 '==============================================================================
@@ -1253,6 +1256,8 @@ Public Function KPR_Dates_AddMonths( _
 '------------------------------------------------------------------------------
     Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim ResultDate      As Date      'Shifted date returned by the month core
+    Dim nMonthsL        As Long      'Strictly parsed nMonths
+    Dim KeepEOM         As Boolean   'Strictly parsed Opt_KeepEOM
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1268,13 +1273,19 @@ Public Function KPR_Dates_AddMonths( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric nMonths
+        If Not TryResolveLong(nMonths, nMonthsL, FailErr) Then GoTo Fail
+
+    'Accept only an omitted, blank or native Boolean Opt_KeepEOM
+        If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' COMPUTE SHIFT
 '------------------------------------------------------------------------------
     'Delegate to the single month shifter; failure here is always range-related
-        If Not TryAddMonths(ParsedDate, nMonths, Opt_KeepEOM, ResultDate) Then
+        If Not TryAddMonths(ParsedDate, nMonthsL, KeepEOM, ResultDate) Then
             FailErr = ErrNum()
             GoTo Fail
         End If
@@ -1306,8 +1317,8 @@ End Function
 
 Public Function KPR_Dates_AddYears( _
     ByVal DateIn As Variant, _
-    ByVal nYears As Long, _
-    Optional ByVal Opt_KeepEOM As Boolean = False) _
+    ByVal nYears As Variant, _
+    Optional ByVal Opt_KeepEOM As Variant) _
     As Variant
 '
 '==============================================================================
@@ -1369,6 +1380,8 @@ Public Function KPR_Dates_AddYears( _
     Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim MonthsD         As Double    'Year -> month conversion before Long gating
     Dim ResultDate      As Date      'Shifted date returned by the month core
+    Dim nYearsL         As Long      'Strictly parsed nYears
+    Dim KeepEOM         As Boolean   'Strictly parsed Opt_KeepEOM
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1384,13 +1397,19 @@ Public Function KPR_Dates_AddYears( _
 ' PARSE INPUT
 '------------------------------------------------------------------------------
     'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate) Then GoTo Fail
+        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric nYears
+        If Not TryResolveLong(nYears, nYearsL, FailErr) Then GoTo Fail
+
+    'Accept only an omitted, blank or native Boolean Opt_KeepEOM
+        If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' CONVERT YEARS TO MONTHS
 '------------------------------------------------------------------------------
     'Convert in Double to avoid intermediate overflow
-        MonthsD = 12# * CDbl(nYears)
+        MonthsD = 12# * CDbl(nYearsL)
 
     'Gate to Long range before coercion
         If (MonthsD < -2147483648#) Or (MonthsD > 2147483647#) Then
@@ -1402,7 +1421,7 @@ Public Function KPR_Dates_AddYears( _
 ' COMPUTE SHIFT
 '------------------------------------------------------------------------------
     'Delegate to the single month shifter; failure here is always range-related
-        If Not TryAddMonths(ParsedDate, CLng(MonthsD), Opt_KeepEOM, ResultDate) Then
+        If Not TryAddMonths(ParsedDate, CLng(MonthsD), KeepEOM, ResultDate) Then
             FailErr = ErrNum()
             GoTo Fail
         End If
@@ -1441,11 +1460,11 @@ End Function
 '
 
 Public Function KPR_Dates_NthWeekdayOfMonth( _
-    ByVal YearIn As Long, _
-    ByVal MonthIn As Long, _
-    ByVal WdIndex As Long, _
-    ByVal N As Long, _
-    Optional ByVal Opt_WeekBaseMonday As Boolean = True) _
+    ByVal YearIn As Variant, _
+    ByVal MonthIn As Variant, _
+    ByVal WdIndex As Variant, _
+    ByVal N As Variant, _
+    Optional ByVal Opt_WeekBaseMonday As Variant) _
     As Variant
 '
 '==============================================================================
@@ -1527,9 +1546,14 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
     Dim D0              As Date         'First calendar day of the target month
     Dim D0Serial        As Double       'Serial of D0, anchor for the occurrence walk
     Dim MonthLen        As Long         'Length in days of the target month
-    Dim Off             As Long         'Days from D0 to the first occurrence of WdIndex (0..6)
+    Dim Off             As Long         'Days from D0 to the first occurrence of WdIndexL (0..6)
     Dim OutSerial       As Double       'Serial of the requested occurrence, before gating
     Dim WkBase          As VbDayOfWeek  'Weekday() base selector (vbMonday or vbSunday)
+    Dim YearL           As Long      'Strictly parsed YearIn
+    Dim MonthL          As Long      'Strictly parsed MonthIn
+    Dim WdIndexL        As Long      'Strictly parsed WdIndex
+    Dim NL              As Long      'Strictly parsed N
+    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
     Dim FailErr         As Variant      'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1541,26 +1565,53 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Reject a fractional, out-of-range or non-numeric YearIn
+        If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric MonthIn
+        If Not TryResolveLong(MonthIn, MonthL, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric WdIndex
+        If Not TryResolveLong(WdIndex, WdIndexL, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric N
+        If Not TryResolveLong(N, NL, FailErr) Then GoTo Fail
+
+    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+        If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' VALIDATE INPUTS
 '------------------------------------------------------------------------------
     'Require a year inside the module supported window
-        If (YearIn < Year(KPR_MIN_DATE)) Or (YearIn > Year(KPR_MAX_DATE)) Then GoTo Fail
+        If (YearL < Year(KPR_MIN_DATE)) Or (YearL > Year(KPR_MAX_DATE)) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_YEAR)
+            GoTo Fail
+        End If
 
     'Require a valid calendar month
-        If (MonthIn < 1) Or (MonthIn > 12) Then GoTo Fail
+        If (MonthL < 1) Or (MonthL > 12) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_MONTH)
+            GoTo Fail
+        End If
 
     'Require a weekday index in 1..7 under the selected base
-        If (WdIndex < 1) Or (WdIndex > 7) Then GoTo Fail
+        If (WdIndexL < 1) Or (WdIndexL > 7) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY)
+            GoTo Fail
+        End If
 
     'Require an occurrence number in 1..5
-        If (N < 1) Or (N > 5) Then GoTo Fail
+        If (NL < 1) Or (NL > 5) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_OCCURRENCE)
+            GoTo Fail
+        End If
 
 '------------------------------------------------------------------------------
 ' RESOLVE WEEKDAY BASE
 '------------------------------------------------------------------------------
     'Resolve Weekday() base once
-        If Opt_WeekBaseMonday Then
+        If WkMonday Then
             WkBase = vbMonday
         Else
             WkBase = vbSunday
@@ -1570,17 +1621,17 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 ' COMPUTE REQUESTED OCCURRENCE
 '------------------------------------------------------------------------------
     'Anchor at the first day of the requested month
-        D0 = DateSerial(YearIn, MonthIn, 1)
+        D0 = DateSerial(YearL, MonthL, 1)
         D0Serial = CDbl(D0)
 
     'Length of the target month, read without constructing its month-end
-        MonthLen = DaysInMonth(YearIn, MonthIn)
+        MonthLen = DaysInMonth(YearL, MonthL)
 
     'Forward offset (0..6) from the anchor to the first requested weekday
-        Off = (WdIndex - Weekday(D0, WkBase) + 7) Mod 7
+        Off = (WdIndexL - Weekday(D0, WkBase) + 7) Mod 7
 
     'Walk to the requested occurrence on serials, not on dates
-        OutSerial = D0Serial + CDbl(Off) + (7# * CDbl(N - 1))
+        OutSerial = D0Serial + CDbl(Off) + (7# * CDbl(NL - 1))
 
     'Reject an occurrence that would spill past the end of the month
         If OutSerial > (D0Serial + CDbl(MonthLen) - 1#) Then
@@ -1620,10 +1671,10 @@ Err_Handler:
 End Function
 
 Public Function KPR_Dates_LastWeekdayOfMonth( _
-    ByVal YearIn As Long, _
-    ByVal MonthIn As Long, _
-    ByVal WdIndex As Long, _
-    Optional ByVal Opt_WeekBaseMonday As Boolean = True) _
+    ByVal YearIn As Variant, _
+    ByVal MonthIn As Variant, _
+    ByVal WdIndex As Variant, _
+    Optional ByVal Opt_WeekBaseMonday As Variant) _
     As Variant
 '
 '==============================================================================
@@ -1699,6 +1750,10 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
     Dim Diff            As Long         'Backward offset in days from EOM to the requested weekday (0..6)
     Dim OutSerial       As Double       'Serial of the located date, before gating
     Dim WkBase          As VbDayOfWeek  'Weekday() base selector (vbMonday or vbSunday)
+    Dim YearL           As Long      'Strictly parsed YearIn
+    Dim MonthL          As Long      'Strictly parsed MonthIn
+    Dim WdIndexL        As Long      'Strictly parsed WdIndex
+    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
     Dim FailErr         As Variant      'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1710,23 +1765,44 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Reject a fractional, out-of-range or non-numeric YearIn
+        If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric MonthIn
+        If Not TryResolveLong(MonthIn, MonthL, FailErr) Then GoTo Fail
+
+    'Reject a fractional, out-of-range or non-numeric WdIndex
+        If Not TryResolveLong(WdIndex, WdIndexL, FailErr) Then GoTo Fail
+
+    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+        If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' VALIDATE INPUTS
 '------------------------------------------------------------------------------
     'Require a year inside the module supported window
-        If (YearIn < Year(KPR_MIN_DATE)) Or (YearIn > Year(KPR_MAX_DATE)) Then GoTo Fail
+        If (YearL < Year(KPR_MIN_DATE)) Or (YearL > Year(KPR_MAX_DATE)) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_YEAR)
+            GoTo Fail
+        End If
 
     'Require a valid calendar month
-        If (MonthIn < 1) Or (MonthIn > 12) Then GoTo Fail
+        If (MonthL < 1) Or (MonthL > 12) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_MONTH)
+            GoTo Fail
+        End If
 
     'Require a weekday index in 1..7 under the selected base
-        If (WdIndex < 1) Or (WdIndex > 7) Then GoTo Fail
+        If (WdIndexL < 1) Or (WdIndexL > 7) Then
+            FailErr = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY)
+            GoTo Fail
+        End If
 
 '------------------------------------------------------------------------------
 ' RESOLVE WEEKDAY BASE
 '------------------------------------------------------------------------------
     'Resolve Weekday() base once
-        If Opt_WeekBaseMonday Then
+        If WkMonday Then
             WkBase = vbMonday
         Else
             WkBase = vbSunday
@@ -1736,10 +1812,10 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 ' COMPUTE LAST OCCURRENCE
 '------------------------------------------------------------------------------
     'Anchor at month-end, built inside the month rather than by rolling forward
-        EOM = DateSerial(YearIn, MonthIn, DaysInMonth(YearIn, MonthIn))
+        EOM = DateSerial(YearL, MonthL, DaysInMonth(YearL, MonthL))
 
     'Backward offset (0..6) from the anchor to the requested weekday
-        Diff = (Weekday(EOM, WkBase) - WdIndex + 7) Mod 7
+        Diff = (Weekday(EOM, WkBase) - WdIndexL + 7) Mod 7
 
     'Step back on serials; the result always stays inside the month
         OutSerial = CDbl(EOM) - CDbl(Diff)
@@ -1853,10 +1929,10 @@ Public Function KPR_Dates_PillarFromDates( _
 ' PARSE INPUTS
 '------------------------------------------------------------------------------
     'Parse the start date under module policy
-        If Not TryResolveDate(StartDate, ParsedStart) Then GoTo Fail
+        If Not TryResolveDate(StartDate, ParsedStart, FailErr) Then GoTo Fail
 
     'Parse the end date under module policy
-        If Not TryResolveDate(EndDate, ParsedEnd) Then GoTo Fail
+        If Not TryResolveDate(EndDate, ParsedEnd, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -1975,7 +2051,7 @@ Public Function KPR_Dates_DatesFromPillar( _
 ' PARSE INPUTS
 '------------------------------------------------------------------------------
     'Parse the start date under module policy
-        If Not TryResolveDate(StartDate, ParsedStart) Then GoTo Fail
+        If Not TryResolveDate(StartDate, ParsedStart, FailErr) Then GoTo Fail
 
     'Reduce the pillar argument under the same shape policy as StartDate
         If Not TryUnwrapScalar(Pillar, PillarScalar) Then GoTo Fail
@@ -2053,61 +2129,38 @@ End Function
 
 Private Function TryResolveDate( _
     ByVal DateIn As Variant, _
-    ByRef ParsedDate As Date) _
+    ByRef ParsedDate As Date, _
+    ByRef ErrOut As Variant) _
     As Boolean
 '
 '==============================================================================
 '                                TryResolveDate
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Resolves one worksheet date argument into a normalized, in-window VBA Date
-'   by composing the three core boundaries in a fixed order.
-'
-' WHY THIS EXISTS
-'   The pre-split baseline combined shape, value and window inside a single
-'   Parse_Date routine. The dependency matrix does not allow that: KPR_Core_Parse
-'   may depend on KPR_Core_Err alone, so it can call neither the shape helper in
-'   KPR_Core_Array nor the window constants in KPR_Core_Dates. Composition
-'   therefore belongs to the facade, which is allowed to call all four cores.
+'   Resolves one worksheet date argument into a normalized, in-window VBA Date,
+'   or assigns the exact worksheet error the contract requires.
 '
 ' SIGNATURE
-'   TryResolveDate(DateIn, ParsedDate) -> Boolean
-'
-' INPUTS
-'   DateIn
-'     Any Variant date argument, including a single-cell Range or 1x1 wrapper.
+'   TryResolveDate(DateIn, ParsedDate, ErrOut) -> Boolean
 '
 ' OUTPUTS
-'   ParsedDate (ByRef)
-'     Assigned ONLY on success, normalized to date-only and inside the window.
-'
-' RETURNS
-'   Boolean
-'     TRUE  => resolution succeeded; ParsedDate assigned
-'     FALSE => shape, value or window rejected the input
+'   ParsedDate (ByRef)   assigned ONLY on success
+'   ErrOut     (ByRef)   assigned ONLY on failure, to the value to return
 '
 ' BEHAVIOR
-'   1. KPR_Core_Array.TryUnwrapScalar reduces wrappers to one scalar.
-'   2. KPR_Core_Parse.TryParseDateScalar converts that scalar to a date.
-'   3. KPR_Core_Dates.IsDateInWindow applies the supported window once.
-'
-' ERROR POLICY
-'   - Does not raise. All failure paths return FALSE.
-'   - The caller maps FALSE to a worksheet error value.
-'
-' DEPENDENCIES
-'   - KPR_Core_Array.TryUnwrapScalar
-'   - KPR_Core_Parse.TryParseDateScalar
-'   - KPR_Core_Dates.IsDateInWindow
+'   1. KPR_Core_Array.TryUnwrapScalar reduces wrappers to one scalar. Failure is
+'      SHAPE_UNSUPPORTED.
+'   2. An incoming native Excel error is returned VERBATIM. This is the
+'      public/element propagation boundary: the error never reaches the parser
+'      and is never collapsed into an ordinary parse failure.
+'   3. KPR_Core_Parse.TryParseDateScalar classifies and window-gates the value.
+'   4. The condition is mapped through KPR_Core_Err.ErrForCondition, so a
+'      malformed value yields #VALUE! and an out-of-window value yields #NUM!.
 '
 ' NOTES
-'   - The three failure causes are indistinguishable to the caller in this
-'     revision, exactly as they were in the baseline. The contract separates
-'     them into distinct conditions with distinct errors; issues #12 and #13
-'     replace this Boolean with a classified outcome.
-'   - The two weekday locators do not use this helper, because they take a year
-'     and a month rather than a date. They carry their own window gate; see
-'     DESIGN / INPUT NORMALIZATION in the module header.
+'   - Propagation is deliberately not routed through ErrForCondition. The value
+'     to return is the incoming error itself, not an error chosen for a
+'     condition, and ErrForCondition raises rather than mapping propagation.
 '
 ' UPDATED
 '   2026-08-31
@@ -2117,8 +2170,9 @@ Private Function TryResolveDate( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ScalarValue     As Variant   'Payload after shape unwrapping
-    Dim Candidate       As Date      'Parsed candidate before the window gate
+    Dim ScalarValue     As Variant          'Payload after shape unwrapping
+    Dim Candidate       As Date             'Parsed candidate
+    Dim Condition       As KPR_Condition    'Classified failure condition
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
@@ -2130,19 +2184,28 @@ Private Function TryResolveDate( _
 ' RESOLVE SHAPE
 '------------------------------------------------------------------------------
     'Reduce a single-cell Range or 1x1 wrapper to its scalar payload
-        If Not TryUnwrapScalar(DateIn, ScalarValue) Then Exit Function
+        If Not TryUnwrapScalar(DateIn, ScalarValue) Then
+            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' PROPAGATE INCOMING ERRORS
+'------------------------------------------------------------------------------
+    'An incoming Excel error is the caller's answer, returned unchanged
+        If VarType(ScalarValue) = vbError Then
+            ErrOut = ScalarValue
+            Exit Function
+        End If
 
 '------------------------------------------------------------------------------
 ' RESOLVE VALUE
 '------------------------------------------------------------------------------
-    'Convert the scalar to a date-only VBA Date
-        If Not TryParseDateScalar(ScalarValue, Candidate) Then Exit Function
-
-'------------------------------------------------------------------------------
-' APPLY WINDOW
-'------------------------------------------------------------------------------
-    'One gate for every accepted path
-        If Not IsDateInWindow(Candidate) Then Exit Function
+    'Classify strictly and apply the supported window
+        If Not TryParseDateScalar(ScalarValue, Candidate, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
@@ -2152,5 +2215,170 @@ Private Function TryResolveDate( _
 
     'Contract: TRUE only when ParsedDate was assigned
         TryResolveDate = True
+
+End Function
+
+Private Function TryResolveLong( _
+    ByVal ValueIn As Variant, _
+    ByRef ParsedLong As Long, _
+    ByRef ErrOut As Variant) _
+    As Boolean
+'
+'==============================================================================
+'                                TryResolveLong
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Resolves one worksheet integer argument into a Long, or assigns the exact
+'   worksheet error the contract requires.
+'
+' BEHAVIOR
+'   Same four stages as TryResolveDate, with KPR_Core_Parse.TryParseLongScalar
+'   doing the classification. A fraction yields #VALUE! under INTEGER_FRACTION
+'   and a value outside the Long range yields #NUM! under INTEGER_RANGE.
+'
+' UPDATED
+'   2026-08-31
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim ScalarValue     As Variant          'Payload after shape unwrapping
+    Dim Candidate       As Long             'Parsed candidate
+    Dim Condition       As KPR_Condition    'Classified failure condition
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default return is failure unless every stage succeeds
+        TryResolveLong = False
+
+'------------------------------------------------------------------------------
+' RESOLVE SHAPE
+'------------------------------------------------------------------------------
+    'Reduce a single-cell Range or 1x1 wrapper to its scalar payload
+        If Not TryUnwrapScalar(ValueIn, ScalarValue) Then
+            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' PROPAGATE INCOMING ERRORS
+'------------------------------------------------------------------------------
+    'An incoming Excel error is the caller's answer, returned unchanged
+        If VarType(ScalarValue) = vbError Then
+            ErrOut = ScalarValue
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE VALUE
+'------------------------------------------------------------------------------
+    'Classify strictly: no truncation, no rounding, no Boolean coercion
+        If Not TryParseLongScalar(ScalarValue, Candidate, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Assign the output only once the value is fully validated
+        ParsedLong = Candidate
+
+    'Contract: TRUE only when ParsedLong was assigned
+        TryResolveLong = True
+
+End Function
+
+Private Function TryResolveBool( _
+    ByVal ControlIn As Variant, _
+    ByVal DefaultValue As Boolean, _
+    ByRef ParsedBool As Boolean, _
+    ByRef ErrOut As Variant) _
+    As Boolean
+'
+'==============================================================================
+'                                TryResolveBool
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Resolves one optional Boolean control, or assigns the worksheet error the
+'   contract requires.
+'
+' BEHAVIOR
+'   - An omitted argument selects the documented default. Omission is tested
+'     here rather than in KPR_Core_Parse because the missing marker cannot be
+'     relied on once the Variant has been passed on.
+'   - A blank cell arrives as Empty and selects the same default.
+'   - A control larger than 1x1 is CONTROL_NOT_SCALAR in the contract; this
+'     revision reports the shape rejection it inherits from TryUnwrapScalar,
+'     which yields the same #VALUE!. Issue #16 separates the two when arrays
+'     become traversable.
+'   - An incoming error in a control propagates verbatim as a call-level result.
+'
+' UPDATED
+'   2026-08-31
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim ScalarValue     As Variant          'Payload after shape unwrapping
+    Dim Candidate       As Boolean          'Parsed candidate
+    Dim Condition       As KPR_Condition    'Classified failure condition
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default return is failure unless every stage succeeds
+        TryResolveBool = False
+
+'------------------------------------------------------------------------------
+' RESOLVE OMISSION
+'------------------------------------------------------------------------------
+    'An omitted control selects the documented default without further checks
+        If IsMissing(ControlIn) Then
+            ParsedBool = DefaultValue
+            TryResolveBool = True
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE SHAPE
+'------------------------------------------------------------------------------
+    'A control must be scalar or a 1x1 wrapper; it never vectorizes
+        If Not TryUnwrapScalar(ControlIn, ScalarValue) Then
+            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' PROPAGATE INCOMING ERRORS
+'------------------------------------------------------------------------------
+    'An incoming Excel error is the caller's answer, returned unchanged
+        If VarType(ScalarValue) = vbError Then
+            ErrOut = ScalarValue
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE VALUE
+'------------------------------------------------------------------------------
+    'Accept a native Boolean only; Empty selects the documented default
+        If Not TryParseBoolControl(ScalarValue, DefaultValue, Candidate, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Assign the output only once the control is validated
+        ParsedBool = Candidate
+
+    'Contract: TRUE only when ParsedBool was assigned
+        TryResolveBool = True
 
 End Function

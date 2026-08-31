@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+from datetime import date, timedelta
 import shutil
 import subprocess
 import sys
@@ -59,6 +60,7 @@ REQUIRED_FILES = (
     "src/modules/KPR_Core_Err.bas",
     "src/modules/KPR_Core_Parse.bas",
     "src/modules/KPR_DATES_DAYS.bas",
+    "test/modules/KPR_REGRESSION_TESTS.bas",
     "tools/check_repo.py",
 )
 
@@ -86,6 +88,32 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     "kpr_dates_days": frozenset(
         {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_core_array"}
     ),
+    # The regression suites assert exact condition classification, so they call
+    # the parser and the error vocabulary directly. Everything else they exercise
+    # through the facade. They are deliberately not granted access to every core.
+    "kpr_regression_tests": frozenset(
+        {"kpr_core_err", "kpr_core_parse", "kpr_dates_days"}
+    ),
+}
+
+# Locale-sensitive conversions have no place in production parsing. IsNumeric is
+# on the list because it consults the host: under a locale that groups with ".",
+# it reads "31.12.2026" as a number. CDate is not listed: it is still used to
+# convert an already-validated numeric serial to a Date, which is deterministic.
+# What must never appear is a conversion that asks the host how to read text.
+VBA_FORBIDDEN_PARSE_CALLS = ("IsDate", "DateValue", "CVDate", "IsNumeric")
+
+# The supported window is owned by KPR_Core_Dates as Date constants. KPR_Core_Parse
+# may not depend on that module, so it restates the same bounds as serials and
+# years. These two representations are pinned against each other here.
+VBA_WINDOW_PINS = {
+    "kpr_core_dates": {"KPR_MIN_DATE": "1900-03-01", "KPR_MAX_DATE": "9999-12-31"},
+    "kpr_core_parse": {
+        "KPR_MIN_SERIAL": "1900-03-01",
+        "KPR_MAX_SERIAL": "9999-12-31",
+        "KPR_MIN_YEAR": "1900",
+        "KPR_MAX_YEAR": "9999",
+    },
 }
 
 # Public members each architecture component must keep declaring, keyed by
@@ -93,9 +121,11 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
 # callers that this gate cannot compile, so the internal surface is pinned by
 # name rather than left to Windows-only verification.
 VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
-    "kpr_core_err": frozenset({"ErrValue", "ErrNum", "ErrNA"}),
+    "kpr_core_err": frozenset({"ErrValue", "ErrNum", "ErrNA", "ErrForCondition"}),
     "kpr_core_array": frozenset({"Array_Rank", "TryUnwrapScalar"}),
-    "kpr_core_parse": frozenset({"TryParseDateScalar"}),
+    "kpr_core_parse": frozenset(
+        {"TryParseDateScalar", "TryParseLongScalar", "TryParseBoolControl"}
+    ),
     "kpr_core_dates": frozenset(
         {
             "KPR_MIN_DATE",
@@ -1265,17 +1295,28 @@ def check_vba_module_dependencies(repo: Repository) -> dict[str, object]:
     exported: dict[str, set[str]] = {}
     bodies: dict[str, tuple[str, str]] = {}
     member = re.compile(
-        r"^\s*Public\s+(?:Function|Sub|Const)\s+(\w+)", re.IGNORECASE
+        r"^\s*Public\s+(?:Function|Sub|Const|Enum)\s+(\w+)", re.IGNORECASE
     )
+    enum_member = re.compile(r"^\s*(KPR_[A-Z0-9_]+)\s*=\s*-?\d+\s*$")
     for path, text in _vba_sources(repo):
         stem = PurePosixPath(path).stem.casefold()
         if stem not in VBA_ALLOWED_DEPENDENCIES:
             continue
-        exported[stem] = {
-            match.group(1)
-            for line in text.splitlines()
-            if (match := member.match(line))
-        }
+        names: set[str] = set()
+        inside_enum = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if re.match(r"^Public\s+Enum\s+\w+", stripped, re.IGNORECASE):
+                inside_enum = True
+            elif re.match(r"^End\s+Enum\b", stripped, re.IGNORECASE):
+                inside_enum = False
+            elif inside_enum and (hit := enum_member.match(line)):
+                # Enum members are referenced by name across modules exactly as
+                # procedures are, so the matrix has to see them too.
+                names.add(hit.group(1))
+            if (match := member.match(line)) is not None:
+                names.add(match.group(1))
+        exported[stem] = names
         bodies[stem] = (path, _strip_vba_comments(text))
     for stem, (path, code) in sorted(bodies.items()):
         allowed = VBA_ALLOWED_DEPENDENCIES[stem]
@@ -1301,6 +1342,97 @@ def check_vba_module_dependencies(repo: Repository) -> dict[str, object]:
     )
 
 
+def check_vba_locale_parsing(repo: Repository) -> dict[str, object]:
+    """Production VBA must not ask the host how to read a date.
+
+    `IsDate`, `DateValue` and `CVDate` all consult the host locale, so a build
+    that passes in one region can fail in another. The contract admits exactly
+    one text form, parsed character by character.
+    """
+    failures: list[dict[str, object]] = []
+    checked = 0
+    for path, text in _vba_sources(repo):
+        if not path.startswith("src/"):
+            continue
+        checked += 1
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("'"):
+                continue
+            for name in VBA_FORBIDDEN_PARSE_CALLS:
+                if re.search(rf"\b{name}\s*\(", line):
+                    failures.append(
+                        finding(
+                            path,
+                            f"Locale-sensitive {name} is not permitted in production parsing.",
+                            number,
+                        )
+                    )
+    return rule_result(
+        "vba-locale-parsing",
+        "VBA locale-independent parsing",
+        failures,
+        f"None of the {checked} production VBA sources use a locale-sensitive date conversion",
+    )
+
+
+def check_vba_window_constants(repo: Repository) -> dict[str, object]:
+    """Pin the two representations of the supported window against each other.
+
+    `KPR_Core_Dates` declares the window as Date literals. `KPR_Core_Parse` may
+    not depend on that module, so it restates the same bounds as serials and
+    years. Without this rule the duplication could drift silently.
+    """
+    failures: list[dict[str, object]] = []
+    epoch = date(1899, 12, 30)  # Excel serial 0 in the 1900 date system
+    literal = re.compile(r"#(\d{1,2})/(\d{1,2})/(\d{4})#")
+    number = re.compile(r"=\s*(-?\d+)#?\s*(?:'|$)")
+    seen: dict[str, str] = {}
+    for path, text in _vba_sources(repo):
+        stem = PurePosixPath(path).stem.casefold()
+        pins = VBA_WINDOW_PINS.get(stem)
+        if pins is None:
+            continue
+        for line in text.splitlines():
+            for name, expected in pins.items():
+                if not re.search(rf"\bConst\s+{name}\b", line):
+                    continue
+                actual: str | None = None
+                if (hit := literal.search(line)) is not None:
+                    month, day, year = (int(part) for part in hit.groups())
+                    actual = date(year, month, day).isoformat()
+                elif (hit := number.search(line)) is not None:
+                    value = int(hit.group(1))
+                    actual = (
+                        str(value)
+                        if name.endswith("_YEAR")
+                        else (epoch + timedelta(days=value)).isoformat()
+                    )
+                if actual is None:
+                    failures.append(finding(path, f"Cannot read the value pinned to {name}."))
+                elif actual != expected:
+                    failures.append(
+                        finding(
+                            path,
+                            f"{name} resolves to {actual}, but the supported window pins it "
+                            f"to {expected}.",
+                        )
+                    )
+                else:
+                    seen[name] = actual
+    missing = sorted(
+        name for pins in VBA_WINDOW_PINS.values() for name in pins if name not in seen
+    )
+    failures.extend(
+        finding("src/modules", f"Window constant {name} is not declared.") for name in missing
+    )
+    return rule_result(
+        "vba-window-constants",
+        "VBA supported-window constants",
+        failures,
+        f"All {len(seen)} window constants agree across the modules that declare them",
+    )
+
+
 CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_required_files,
     check_stale_identity,
@@ -1317,6 +1449,8 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_vba_module_visibility,
     check_vba_public_surface,
     check_vba_module_dependencies,
+    check_vba_locale_parsing,
+    check_vba_window_constants,
     check_vba_required_members,
     check_vba_facade_return_type,
     check_vba_day_zero_idiom,
@@ -1458,6 +1592,13 @@ def _positive_fixture(root: Path) -> None:
                 "Public Const KPR_MIN_DATE As Date = #3/1/1900#\n"
                 "Public Const KPR_MAX_DATE As Date = #12/31/9999#\n"
             )
+        if internal.casefold() == "kpr_core_parse":
+            body += (
+                "Private Const KPR_MIN_SERIAL As Double = 61#\n"
+                "Private Const KPR_MAX_SERIAL As Double = 2958465#\n"
+                "Private Const KPR_MIN_YEAR As Long = 1900\n"
+                "Private Const KPR_MAX_YEAR As Long = 9999\n"
+            )
         for name in sorted(VBA_REQUIRED_MEMBERS[internal.casefold()]):
             if name.startswith("KPR_"):
                 continue
@@ -1468,6 +1609,11 @@ def _positive_fixture(root: Path) -> None:
             + body,
             newline="\r\n",
         )
+    write(
+        "test/modules/KPR_REGRESSION_TESTS.bas",
+        'Attribute VB_Name = "KPR_REGRESSION_TESTS"\nOption Explicit\n',
+        newline="\r\n",
+    )
     write(
         "src/modules/KPR_DATES_DAYS.bas",
         'Attribute VB_Name = "KPR_DATES_DAYS"\nOption Explicit\n'
@@ -1549,6 +1695,25 @@ def run_self_tests(root: Path) -> None:
             newline="\r\n",
         )
         _run_git(case, "add", "-f", str(duplicate.relative_to(case)))
+
+    def locale_parsing(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Parse.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function Probe(ByVal S As String) As Boolean\n"
+            + "    Probe = IsNumeric(S)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def drifted_window_constant(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Parse.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8").replace("= 61#", "= 60#", 1),
+            encoding="utf-8",
+            newline="\r\n",
+        )
 
     def missing_private_module(case: Path) -> None:
         core = case / "src/modules/KPR_Core_Parse.bas"
@@ -1642,6 +1807,8 @@ def run_self_tests(root: Path) -> None:
         ("missing Option Private Module", "vba-module-visibility", missing_private_module),
         ("public function outside facade", "vba-public-surface", public_function_outside_facade),
         ("forbidden module dependency", "vba-module-dependencies", forbidden_dependency),
+        ("locale-sensitive parsing", "vba-locale-parsing", locale_parsing),
+        ("drifted window constant", "vba-window-constants", drifted_window_constant),
         ("day-zero DateSerial idiom", "vba-day-zero-idiom", day_zero_idiom),
         ("narrow facade return type", "vba-facade-return-type", narrow_facade_return),
         ("missing required member", "vba-required-members", missing_required_member),

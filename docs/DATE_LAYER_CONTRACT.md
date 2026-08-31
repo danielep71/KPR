@@ -140,7 +140,17 @@ arguments, which reject fractions outright.
 
 ISO text is exactly ten characters. It accepts no alternate separator, omitted
 zero, localized digit, time suffix, leading/trailing whitespace, or DateSerial
-rollover. A syntactically exact ISO date outside the supported window returns
+rollover. Whitespace-padded and time-suffixed text are `DATE_TEXT_FORMAT`;
+`DATE_TEXT_LOCALE` is reserved for text shaped like a locale-formatted date.
+
+Component existence is decided before the window. Text whose year is inside
+1900 through 9999 but which names a date that does not exist is
+`DATE_TEXT_IMPOSSIBLE` and returns `#VALUE!`, even when the named date would
+also fall outside the window. `1900-02-29` is therefore `DATE_TEXT_IMPOSSIBLE`
+rather than `DATE_WINDOW`: it is the fictitious Excel leap day, and reporting it
+as merely out of range would understate the problem. A year outside that span is
+`DATE_WINDOW` without any component check, because a year below 1900 cannot be
+constructed safely. A syntactically exact ISO date outside the supported window returns
 `#NUM!` under `DATE_WINDOW`; an impossible component such as `2025-02-29`
 returns `#VALUE!` under `DATE_TEXT_IMPOSSIBLE`.
 
@@ -171,6 +181,11 @@ After parsing, function-specific domains apply:
   returns `#VALUE!`.
 - Date-shift integers may be negative, zero, or positive. A valid shift that
   cannot produce a supported result returns `#NUM!` under `RESULT_WINDOW`.
+
+Range precedes integrality when both apply. A numeric value outside the `Long`
+range returns `INTEGER_RANGE` and `#NUM!` even when it also has a fractional
+part. Only after the range test may integrality be checked and the conversion
+performed.
 
 ### 3.3 Optional-control matrix
 
@@ -356,6 +371,11 @@ Consequently:
 Where more than one value argument at the same output position contains an
 incoming error, the first error in signature order is propagated. Call-level
 failures necessarily take precedence because no element traversal occurs.
+
+After call-level guards pass, value arguments at each output position are
+evaluated in signature order. The first failing argument determines that
+element's result, whether the failure is an incoming native error or a
+library-classified parse, domain, or range failure.
 
 ## 6. Native-error taxonomy and provenance
 
