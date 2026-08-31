@@ -80,11 +80,10 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 ' DESIGN / INPUT NORMALIZATION
 '   - Every DateIn-style argument is a Variant funnelled through TryResolveDate,
 '     which composes the three boundaries in a fixed order:
-'         unwrap shape -> parse value -> apply the supported window
-'   - The window gate is applied exactly once on every accepted path, as in the
-'     baseline. What changed is ownership, not the invariant: the window is a
-'     calendar fact declared by KPR_Core_Dates, so KPR_Core_Parse does not need
-'     to depend on it.
+'         unwrap shape -> propagate incoming error -> strict parse/window gate
+'   - KPR_Core_Parse applies the window once after date-only normalization. Its
+'     serial/year constants are statically pinned to the Date constants owned by
+'     KPR_Core_Dates because the dependency matrix forbids a direct call.
 '   - The two weekday locators take a year and a month rather than a date, so
 '     they never reach TryResolveDate. They gate their own result against the
 '     window instead. Without that gate a year check alone is too coarse: the
@@ -96,9 +95,9 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   No public function returns a message string.
 '
 '       #VALUE!  the input cannot be interpreted
-'                (unparseable date, non-scalar input, out-of-window date,
-'                 malformed pillar, month outside 1..12, weekday outside 1..7,
-'                 occurrence outside 1..5, unexpected runtime error)
+'                (unparseable date, non-scalar input, malformed pillar, month
+'                 outside 1..12, weekday outside 1..7, occurrence outside 1..5,
+'                 unexpected runtime error)
 '
 '       #NUM!    the input is well formed but the answer does not exist or
 '                falls outside the supported date window
@@ -121,9 +120,8 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   Issue #12 removed the input-handling divergences. What remains is owned by
 '   the issues named against each line:
 '
-'     - Optional controls accept a native Boolean only, which is correct, but
-'       the full Variant control semantics including Opt_Rounding arrive with
-'       issues #13 and #14.
+'     - Existing Boolean controls implement their strict Variant semantics;
+'       Opt_Rounding and its token parser arrive with issue #14.
 '     - Duplicate pillar units accumulate rather than being rejected.    (#15)
 '     - Pillar rounding is NEAREST only; Opt_Rounding is absent.         (#14)
 '     - No host date-system detection exists, so a 1904 workbook is answered
@@ -146,7 +144,8 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '
 ' DEPENDENCIES / INTEGRATION
 '   - KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates, KPR_Core_Err
-'   - Private helper in this module: TryResolveDate
+'   - Private helpers in this module: TryResolveDate, TryResolveLong,
+'     TryResolveBool
 '   - No dependency on registration, UI, tests or demo code.
 '
 ' UPDATED
@@ -171,7 +170,7 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 
 Public Function KPR_Dates_DayOfWeek( _
     ByVal DateIn As Variant, _
-    Optional ByVal Opt_WeekBaseMonday As Variant) _
+    Optional ByVal Opt_WeekBaseMonday As Variant = True) _
     As Variant
 '
 '==============================================================================
@@ -204,11 +203,9 @@ Public Function KPR_Dates_DayOfWeek( _
 '     Long (1..7) on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
-'
-'   The week base cannot fail. Every value Excel can coerce into the Boolean
-'   selects one of the two bases, so there is no rejection path for it.
+'   #VALUE!  DateIn not parseable / not scalar, or Opt_WeekBaseMonday is not an
+'            omitted, Empty or native Boolean value
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -217,17 +214,10 @@ Public Function KPR_Dates_DayOfWeek( _
 ' NOTES
 '   - TRUE selects Monday-based numbering (ISO habit); FALSE selects
 '     Sunday-based numbering (US habit).
-'   - The Boolean declaration is NOT a strictness guarantee. Excel coerces 0, 1,
-'     "TRUE" and even a date into a Boolean before this function is entered, so
-'     an unintended value is accepted silently rather than rejected. The frozen
-'     contract makes optional controls Variant and rejects everything that is
-'     not a native Boolean; that change is owned by issues #13 and #16.
-'   - Omitting the argument is not the same as passing a reference to an empty
-'     cell. Omission applies the declared default of TRUE; an empty cell
-'     coerces to FALSE, so a control cell that has not been filled in yet
-'     silently selects Sunday-based numbering. Nothing distinguishes the two
-'     at the sheet, which is a further reason the Variant control in issue #13
-'     is not cosmetic.
+'   - The Variant declaration preserves the incoming runtime type. Numeric 0/1,
+'     Boolean-looking text, dates and objects are rejected rather than coerced.
+'   - Omission applies the declared default TRUE. Empty, including a reference
+'     to a blank cell, selects the same documented default in TryResolveBool.
 '   - Weekday is total for any Date once the base is one of the vbDayOfWeek
 '     constants, so the handler below covers only failures inside
 '     TryResolveDate.
@@ -325,8 +315,8 @@ Public Function KPR_Dates_DaysInMonth( _
 '     Long (28..31) on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -341,9 +331,8 @@ Public Function KPR_Dates_DaysInMonth( _
 '     information. No CLng is needed because the core member returns Long.
 '   - The month passed to the core function comes from a parsed Date, so it is
 '     always 1 to 12 and the invalid-month return of zero is unreachable here.
-'   - Window rejection and parse failure are not distinguished at the sheet.
-'     Both surface as #VALUE!. The contract classifies the former as
-'     DATE_WINDOW and requires #NUM!; issues #12 and #13 own that change.
+'   - Parse failures map to #VALUE! while DATE_WINDOW maps to #NUM!, preserving
+'     the contract's distinction at the worksheet boundary.
 '   - Fail and Err_Handler are kept separate so a contract-level rejection and
 '     an unexpected raise cannot be confused while reading the flow. The
 '     handler reasserts FailErr because a raise inside ErrValue itself would
@@ -429,8 +418,8 @@ Public Function KPR_Dates_DaysInYear( _
 '     Long (365 / 366) on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -449,9 +438,8 @@ Public Function KPR_Dates_DaysInYear( _
 '     dates before the 1582 Gregorian reform that the historical calendar does
 '     not. No such year is reachable here; the caveat belongs to the core
 '     predicate, not to this surface.
-'   - Window rejection and parse failure are not distinguished at the sheet.
-'     Both surface as #VALUE!. The contract classifies the former as
-'     DATE_WINDOW and requires #NUM!; issues #12 and #13 own that change.
+'   - Parse failures map to #VALUE! while DATE_WINDOW maps to #NUM!, preserving
+'     the contract's distinction at the worksheet boundary.
 '   - Fail and Err_Handler are kept separate so a contract-level rejection and
 '     an unexpected raise cannot be confused while reading the flow. The
 '     handler reasserts FailErr because a raise inside ErrValue itself would
@@ -543,8 +531,8 @@ Public Function KPR_Dates_BeginOfMonth( _
 '     Date on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -630,8 +618,8 @@ Public Function KPR_Dates_EndOfMonth( _
 '     Date on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -715,8 +703,8 @@ Public Function KPR_Dates_IsMonthEnd( _
 '     Boolean on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -804,8 +792,8 @@ Public Function KPR_Dates_IsQuarterEnd( _
 '     Boolean on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -910,8 +898,8 @@ Public Function KPR_Dates_IsYearEnd( _
 '     Boolean on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -995,8 +983,8 @@ Public Function KPR_Dates_IsLeapYear( _
 '     Boolean on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -1097,15 +1085,12 @@ Public Function KPR_Dates_AddWeeks( _
 '     Date on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '   #NUM!    result falls outside KPR_MIN_DATE .. KPR_MAX_DATE
 '
-'   The integer argument is declared As Long, so Excel coerces a fractional
-'   value before entry, using round-half-to-even. A fractional argument is
-'   therefore silently rounded rather than rejected. That is contract-invalid:
-'   INTEGER_FRACTION requires #VALUE!, and issue #12 replaces this with strict
-'   Variant parsing.
+'   nWeeks is a Variant parsed strictly before conversion. Fractions and
+'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -1186,7 +1171,7 @@ End Function
 Public Function KPR_Dates_AddMonths( _
     ByVal DateIn As Variant, _
     ByVal nMonths As Variant, _
-    Optional ByVal Opt_KeepEOM As Variant) _
+    Optional ByVal Opt_KeepEOM As Variant = False) _
     As Variant
 '
 '==============================================================================
@@ -1216,15 +1201,12 @@ Public Function KPR_Dates_AddMonths( _
 '     Date on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '   #NUM!    result falls outside KPR_MIN_DATE .. KPR_MAX_DATE
 '
-'   The integer argument is declared As Long, so Excel coerces a fractional
-'   value before entry, using round-half-to-even. A fractional argument is
-'   therefore silently rounded rather than rejected. That is contract-invalid:
-'   INTEGER_FRACTION requires #VALUE!, and issue #12 replaces this with strict
-'   Variant parsing.
+'   nMonths is a Variant parsed strictly before conversion. Fractions and
+'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -1241,10 +1223,8 @@ Public Function KPR_Dates_AddMonths( _
 '     The two modes differ only when the input is itself month-end.
 '   - This is the single month shifter in the module; AddYears and the pillar
 '     resolver both route through it.
-'   - Opt_KeepEOM carries the same blank-cell hazard as every optional Boolean
-'     here: omitting it applies the declared default, while a reference to an
-'     empty cell coerces to FALSE. For this function the two agree, because the
-'     default is already FALSE.
+'   - Omitting Opt_KeepEOM and referencing a blank control cell both select the
+'     declared False default. No Boolean coercion is performed.
 '
 ' UPDATED
 '   2026-08-31
@@ -1318,7 +1298,7 @@ End Function
 Public Function KPR_Dates_AddYears( _
     ByVal DateIn As Variant, _
     ByVal nYears As Variant, _
-    Optional ByVal Opt_KeepEOM As Variant) _
+    Optional ByVal Opt_KeepEOM As Variant = False) _
     As Variant
 '
 '==============================================================================
@@ -1347,15 +1327,12 @@ Public Function KPR_Dates_AddYears( _
 '     Date on success, else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar / outside the supported window /
-'            unexpected runtime error
+'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
+'   #NUM!    DateIn is outside the supported window
 '   #NUM!    month delta or result falls outside the supported range
 '
-'   Integer arguments are declared As Long, so Excel coerces a fractional value
-'   before entry, using round-half-to-even. A fractional argument is therefore
-'   silently rounded rather than rejected. That is contract-invalid:
-'   INTEGER_FRACTION requires #VALUE!, and issue #12 replaces this with strict
-'   Variant parsing.
+'   nYears is a Variant parsed strictly before conversion. Fractions and
+'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -1464,7 +1441,7 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
     ByVal MonthIn As Variant, _
     ByVal WdIndex As Variant, _
     ByVal N As Variant, _
-    Optional ByVal Opt_WeekBaseMonday As Variant) _
+    Optional ByVal Opt_WeekBaseMonday As Variant = True) _
     As Variant
 '
 '==============================================================================
@@ -1508,11 +1485,9 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 '            month (typically a requested 5th weekday), or the located date
 '            falls outside KPR_MIN_DATE .. KPR_MAX_DATE
 '
-'   Integer arguments are declared As Long, so Excel coerces a fractional value
-'   before entry, using round-half-to-even. A fractional argument is therefore
-'   silently rounded rather than rejected. That is contract-invalid:
-'   INTEGER_FRACTION requires #VALUE!, and issue #12 replaces this with strict
-'   Variant parsing.
+'   YearIn, MonthIn, WdIndex and N are Variants parsed strictly before their
+'   function-specific domain checks. Fractions and Boolean values return
+'   #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
 '   - KPR_Core_Dates.DaysInMonth
@@ -1674,7 +1649,7 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
     ByVal YearIn As Variant, _
     ByVal MonthIn As Variant, _
     ByVal WdIndex As Variant, _
-    Optional ByVal Opt_WeekBaseMonday As Variant) _
+    Optional ByVal Opt_WeekBaseMonday As Variant = True) _
     As Variant
 '
 '==============================================================================
@@ -1713,11 +1688,9 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 '            unexpected runtime error
 '   #NUM!    the located date falls outside KPR_MIN_DATE .. KPR_MAX_DATE
 '
-'   Integer arguments are declared As Long, so Excel coerces a fractional value
-'   before entry, using round-half-to-even. A fractional argument is therefore
-'   silently rounded rather than rejected. That is contract-invalid:
-'   INTEGER_FRACTION requires #VALUE!, and issue #12 replaces this with strict
-'   Variant parsing.
+'   YearIn, MonthIn and WdIndex are Variants parsed strictly before their
+'   function-specific domain checks. Fractions and Boolean values return
+'   #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
 '   - KPR_Core_Dates.DaysInMonth
@@ -2307,9 +2280,8 @@ Private Function TryResolveBool( _
 '   contract requires.
 '
 ' BEHAVIOR
-'   - An omitted argument selects the documented default. Omission is tested
-'     here rather than in KPR_Core_Parse because the missing marker cannot be
-'     relied on once the Variant has been passed on.
+'   - Each public Optional Variant declaration supplies its documented default,
+'     so an omitted argument reaches this helper as a native Boolean.
 '   - A blank cell arrives as Empty and selects the same default.
 '   - A control larger than 1x1 is CONTROL_NOT_SCALAR in the contract; this
 '     revision reports the shape rejection it inherits from TryUnwrapScalar,
@@ -2334,16 +2306,6 @@ Private Function TryResolveBool( _
 '------------------------------------------------------------------------------
     'Default return is failure unless every stage succeeds
         TryResolveBool = False
-
-'------------------------------------------------------------------------------
-' RESOLVE OMISSION
-'------------------------------------------------------------------------------
-    'An omitted control selects the documented default without further checks
-        If IsMissing(ControlIn) Then
-            ParsedBool = DefaultValue
-            TryResolveBool = True
-            Exit Function
-        End If
 
 '------------------------------------------------------------------------------
 ' RESOLVE SHAPE
