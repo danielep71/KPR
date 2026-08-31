@@ -429,6 +429,14 @@ Registry rules:
 | `HOST_DATE1904` | Identifiable worksheet caller in a 1904 workbook | `#N/A` | Call |
 | `HOST_UNRESOLVED` | Identifiable worksheet host whose date system cannot be resolved reliably | `#N/A` | Call |
 
+### 7.1 Unexpected internal failures
+
+The registry deliberately has no `INTERNAL_UNEXPECTED` condition identifier.
+Defensive catch-all handlers are containment only and must be unreachable in
+contract-conforming execution. Activating one is a defect against this
+contract and a regression/certification failure, never an expected fixture or
+evidence outcome. It must not be normalized into a passing `#VALUE!`, `#NUM!`,
+or `#N/A` case.
 
 ## 8. Function semantics
 

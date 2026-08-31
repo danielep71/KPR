@@ -128,7 +128,7 @@ src/modules/
   KPR_Core_Parse.bas
   KPR_Core_Dates.bas
   KPR_Core_Array.bas
-  KPR_Dates.bas
+  KPR_DATES_DAYS.bas
   KPR_Register.bas
   KPR_UI_Bars.bas
   KPR_UI_Ribbon.bas
@@ -142,12 +142,21 @@ src/ribbon/
 | `KPR_Core_Dates` | Pure Gregorian calculations and pillar core | None |
 | `KPR_Core_Parse` | Strict scalar parsing, integer/control parsing and caller-date-system classification | `KPR_Core_Err` |
 | `KPR_Core_Array` | Shape discovery, scalar expansion, exact-shape broadcasting and element traversal | `KPR_Core_Err` |
-| `KPR_Dates` | The only supported public date facade; scalar dispatch and array traversal over shared scalar cores | `KPR_Core_Err`, `KPR_Core_Parse`, `KPR_Core_Dates`, `KPR_Core_Array` |
+| `KPR_DATES_DAYS` | The worksheet-facing date facade; scalar dispatch and array traversal over shared scalar cores | `KPR_Core_Err`, `KPR_Core_Parse`, `KPR_Core_Dates`, `KPR_Core_Array` |
 | `KPR_Register` | MacroOptions manifest and repeatable registration | Supported API names only; no date algorithms |
 | `KPR_UI_Bars` | Temporary classic CommandBars build/teardown | Registration, demo and development test entry points |
 | `KPR_UI_Ribbon` | Ribbon callbacks and invalidation | Registration, demo and development test entry points |
 
 All `KPR_Core_*` modules use `Option Private Module`. Cross-module helpers may be technically `Public` only where VBA requires it; that does not make them supported API. Core modules never depend on the facade, registration, UI, tests or demo code. Tests and the demo consume the supported API rather than private helpers. No calendar or empty placeholder module is created.
+
+Worksheet-facing facade components use uppercase names (`KPR_DATES_DAYS` in
+v0.0.2; `KPR_DATES_CALENDARS` and `KPR_DATES_BUSINESSDAYS` when their
+milestones land), while internal core components retain mixed-case
+`KPR_Core_*` names. This is a documentation convention, not a generic checker
+casing rule. Static checks instead preserve case-sensitive file-stem/header
+matching for export fidelity, compare VBA component names case-insensitively
+for project-wide uniqueness, and enforce public-function ownership by module
+role case-insensitively.
 
 ## Registration and Excel UI
 
@@ -360,7 +369,7 @@ None.
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `blocked`, `code`, `P1`, `refactor`
+- Labels: `ci`, `code`, `P1`, `refactor`, `repository`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/11
 
@@ -368,42 +377,75 @@ None.
 
 ## Objective
 
-Replace the monolithic `KPR_Dates_Days.bas` baseline with explicit core, public facade, registration and UI boundaries without creating a duplicated array API.
+Replace the monolithic `KPR_Dates_Days.bas` baseline with a five-module calculation architecture while preserving the current sixteen-function implementation boundary. This issue is a structural migration; #12–#17 complete the v0.0.2 behaviour and public surface.
 
-## Target production inventory
+## Scope boundary
 
-- `KPR_Core_Err.bas` — native error construction, classification and propagation helpers.
-- `KPR_Core_Parse.bas` — strict date, integer and ISO parsing.
-- `KPR_Core_Dates.bas` — date arithmetic, boundary logic and pillar core.
-- `KPR_Core_Array.bas` — shape discovery, scalar expansion, broadcast resolution and allocation.
-- `KPR_Dates.bas` — the complete supported 22-name scalar/array-capable date API.
-- `KPR_Register.bas` — MacroOptions manifest and registration.
-- `KPR_UI_Bars.bas` — classic CommandBars lifecycle.
-- `KPR_UI_Ribbon.bas` — Ribbon callbacks only.
+This issue:
 
-Do not create `KPR_Dates_Spill.bas`, `KPR_Cal.bas` or `KPR_Core_Cal.bas`.
+- migrates the sixteen functions and supporting code that already exist;
+- creates the four internal core modules and the worksheet-facing `KPR_DATES_DAYS.bas` facade;
+- moves the review's approved comment-only corrections with the code they describe;
+- removes the monolithic baseline without leaving duplicate implementations; and
+- keeps the repository statically valid in one atomic source change.
 
-## Visibility and dependency rule
+It does not implement strict parsing or the final error policy (#12–#13), the completed pillar policy (#14), the six missing public functions or final signatures (#15), the array engine (#16), or the final scalar/array dispatch (#17). It must not add public placeholders for work owned by those issues. Registration and UI modules remain owned by #18, #24 and #25.
 
-Use `Option Private Module` for internal core modules. Cross-module procedures may be technically `Public` only where VBA requires it; all other helpers remain `Private`. Technical visibility never makes a member supported API.
+## Target production inventory for this issue
 
-`KPR_Dates` may call `KPR_Core_Parse`, `KPR_Core_Dates`, `KPR_Core_Array` and `KPR_Core_Err`. Core modules must not depend on the public facade, registration, UI, tests or demo code. Registration and UI modules contain no date algorithms.
+- `KPR_Core_Err.bas` — internal native-error construction, classification and propagation boundary.
+- `KPR_Core_Parse.bas` — internal parsing boundary populated only with parsing code migrated from the baseline.
+- `KPR_Core_Dates.bas` — internal Gregorian calculations and pillar code migrated from the baseline.
+- `KPR_Core_Array.bas` — internal shape boundary populated only with array code migrated from the baseline.
+- `KPR_DATES_DAYS.bas` — worksheet-facing facade containing the migrated sixteen-function surface; #15 and #17 later complete the 22-name scalar/array-capable API.
+
+Do not create `KPR_Dates_Spill.bas`, `KPR_Cal.bas`, `KPR_Core_Cal.bas`, registration/UI placeholders, test placeholders or demo placeholders.
+
+## Naming, visibility and dependency rules
+
+- The facade file and component are exactly `KPR_DATES_DAYS.bas` and `Attribute VB_Name = "KPR_DATES_DAYS"`.
+- The four `KPR_Core_*` modules retain mixed-case names and declare `Option Private Module`.
+- `KPR_DATES_DAYS` does not declare `Option Private Module`.
+- Uppercase facade names and mixed-case core names are a documented convention, not a general casing rule enforced by the checker.
+- Cross-module procedures may be technically `Public` only where VBA requires it; technical visibility never makes a member supported API.
+- `KPR_DATES_DAYS` may depend on the four core modules. Core modules must not depend on the facade, registration, UI, tests or demo code.
+- Registration and UI modules contain no date algorithms when their owning issues create them.
+
+## Case-only rename and VBE safety
+
+Because the old and new paths differ only by case, perform a forced or two-step Git rename and verify the index with `git ls-files`. The final index must contain `src/modules/KPR_DATES_DAYS.bas` and must not contain `src/modules/KPR_Dates_Days.bas`.
+
+VBA component identity is case-insensitive. The VBE import documentation remains load-bearing: remove an already-loaded `KPR_Dates_Days` component before importing `KPR_DATES_DAYS`, otherwise Excel can retain both and rename the import.
+
+## Static-check changes owned here
+
+- Preserve the case-sensitive file-stem/`Attribute VB_Name` match required for export fidelity.
+- Compare declared component names case-insensitively for project-wide uniqueness.
+- Add a negative fixture whose component names differ only by case.
+- Check worksheet-function ownership case-insensitively: a `Public Function KPR_Dates_*` declaration may appear only in a non-private module belonging to the `KPR_DATES_*` facade family.
+- Do not add a separate rule enforcing uppercase facades or mixed-case cores as a general naming convention.
+- Update required-file and positive-fixture inventories for the renamed facade.
 
 ## Acceptance criteria
 
-- [ ] Existing calculations are migrated without leaving duplicate implementations.
-- [ ] All 22 supported functions exist only in `KPR_Dates.bas`.
-- [ ] Scalar and array paths share one element implementation per function.
-- [ ] Internal modules use `Option Private Module` and the narrowest practical member visibility.
-- [ ] Registration, callbacks, tests and demo builders contain no date algorithms.
-- [ ] The old `KPR_Dates_Days.bas` file is removed after migration.
-- [ ] No spill or calendar placeholder module is created.
-- [ ] The module ownership and allowed-dependency matrix is documented.
+- [ ] The existing sixteen functions are migrated without duplicate implementations or unintended behavioural changes.
+- [ ] The five target calculation modules exist and no public placeholder is added for #12–#17 work.
+- [ ] Every migrated `KPR_Dates_*` public function exists only in `KPR_DATES_DAYS.bas`.
+- [ ] Internal modules use `Option Private Module`; the worksheet facade does not.
+- [ ] Module ownership and allowed dependencies match the documented matrix.
+- [ ] The old path is absent and `git ls-files` records exactly `src/modules/KPR_DATES_DAYS.bas`.
+- [ ] The facade export declares the exact matching component name `KPR_DATES_DAYS`.
+- [ ] Component-name uniqueness is case-insensitive, while file-stem matching remains case-sensitive.
+- [ ] Negative self-tests reject component names that differ only by case.
+- [ ] Public-surface checks enforce module role without adding a general casing-convention rule.
+- [ ] Approved comment corrections move with their owning code.
+- [ ] No spill, calendar, registration, UI, test or demo placeholder is created.
+- [ ] The complete static gate and focused degraded self-tests pass.
 
 ## Dependencies
 
-- [ ] #9
-- [ ] #10
+- [x] #9
+- [x] #10
 
 </details>
 
@@ -497,6 +539,10 @@ Only this diagnostic is deliberately volatile; the date calculations remain non-
 
 A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` are intentionally identical Excel error values. Their provenance cannot be inferred from the returned value alone. For an identifiable worksheet caller, evaluate volatile `KPR_Dates_HostDateSystem()`: `1904` identifies host refusal, while `1900` leaves an incoming `#N/A` or another documented input path as the source.
 
+## Unexpected internal failures
+
+The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition identifier. Defensive catch-all handlers are containment only and must be unreachable in contract-conforming execution. A catch-all activation is a defect against the contract and a regression/certification failure; it is never an expected fixture outcome and must not be normalized into a passing `#VALUE!`, `#NUM!` or `#N/A` case.
+
 ## Acceptance criteria
 
 - [ ] Every public worksheet call performs the date-system guard once, not once per array element.
@@ -507,6 +553,7 @@ A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` ar
 - [ ] `HostDateSystem` calls `Application.Volatile True` and refreshes on ordinary recalculation between 1900 and 1904 worksheet cases without requiring a full calculation rebuild.
 - [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and certified direct-VBA callers.
 - [ ] The documented conditions produce the three library error categories in both scalar and array cases.
+- [ ] No `INTERNAL_UNEXPECTED` condition is exposed; every defensive catch-all remains unreachable in conforming tests, and any activation fails regression and certification.
 - [ ] Tests explicitly prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available.
 - [ ] No active-workbook fallback exists.
 - [ ] Windows certification exercises 1900 and 1904 worksheet callers, certified direct-VBA callers and the unsupported-context probes.
@@ -573,7 +620,7 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 
 ## Objective
 
-Deliver the complete element-correct 22-name public date surface in `KPR_Dates.bas`, ready for the array loop added by #17.
+Deliver the complete element-correct 22-name public date surface in `KPR_DATES_DAYS.bas`, ready for the array loop added by #17.
 
 ## Supported surface
 
@@ -584,6 +631,7 @@ New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfY
 ## Acceptance criteria
 
 - [ ] All 22 functions use the exact signatures in #9 and return `Variant` where native errors are possible.
+- [ ] All 22 supported functions are implemented only in `KPR_DATES_DAYS.bas`; core modules contain no supported public facade function.
 - [ ] Month, quarter and year boundaries are correct across leap years and year transitions.
 - [ ] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
 - [ ] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
@@ -1128,9 +1176,10 @@ Extend the existing static gate using only the checked-out tree and frozen test 
 
 - Required production, test, fixture, RibbonX, demo and contract files exist.
 - Add `docs/IMPLEMENTATION_PLAN.md` to `REQUIRED_FILES`.
-- The production inventory contains the eight approved modules and no `KPR_Dates_Spill.bas` or calendar placeholder.
-- Every VBA export has a matching unique `Attribute VB_Name` and `Option Explicit`; internal core modules also declare `Option Private Module`.
-- Module inventory and public/core/UI/test naming boundaries match the approved architecture.
+- The production inventory contains the eight approved modules, including the `KPR_DATES_DAYS.bas` worksheet facade, and no `KPR_Dates_Spill.bas` or calendar placeholder.
+- Every VBA export has an `Attribute VB_Name` that matches its file stem case-sensitively and is unique project-wide under VBA's case-insensitive component-name semantics; every export has `Option Explicit`, and internal core modules also declare `Option Private Module`.
+- Retain #11's case-insensitive worksheet-function ownership check: `Public Function KPR_Dates_*` declarations occur only in non-private modules belonging to the `KPR_DATES_*` facade family.
+- Module inventory and public/core/UI/test naming boundaries match the approved architecture. Uppercase facade names and mixed-case core names remain a documented convention rather than a separate checker-enforced casing rule.
 - The public-API manifest, MacroOptions manifest and source declarations contain the same 22 supported names/signatures.
 - Every RibbonX callback resolves to a classified callback procedure.
 - RibbonX and evidence schemas parse successfully.
@@ -1188,6 +1237,7 @@ Add a separately named milestone-register workflow; do not place the live fetch 
 - [ ] Static checks and drift monitoring do not claim that VBA imports, compiles or executes in Excel.
 - [ ] The deterministic JSON artifact and Actions summary report all new tree-rule results.
 - [ ] Required-file policy does not require future `KPR_Cal*` modules.
+- [ ] Final tree checks preserve case-sensitive export fidelity, case-insensitive component uniqueness and facade-role ownership without enforcing the facade/core casing convention as a separate rule.
 
 ## Dependencies
 

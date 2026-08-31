@@ -40,6 +40,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   its documented default.
 - Made the plan and the date-layer contract cite each other with an explicit
   authority split, and required the contract in the static file inventory.
+- Clarified that defensive internal catch-alls are unreachable containment,
+  not a supported error condition; any activation is a contract defect and a
+  regression/certification failure.
+- Reconciled the v0.0.2 architecture plan with the `KPR_DATES_DAYS` facade,
+  case-insensitive VBA component identity, and #11's structural-only migration
+  boundary while retaining facade/core casing as a documentation convention.
 
 ## [0.0.1] - 2026-08-29
 
