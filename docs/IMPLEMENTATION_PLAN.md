@@ -46,7 +46,8 @@ The `KPR_Cal_*` namespace is reserved now. v0.0.2 creates no calendar placeholde
 | Optional arguments | All required value arguments first. Every `Opt_` argument is last and must be omitted, scalar or `1×1`; a larger optional argument is call-level `#VALUE!`. |
 | Size guard | Maximum 100,000 output elements per call. A larger target shape returns call-level `#NUM!`. A supplied Range is never shortened through `UsedRange`. |
 | Excel versions | Scalar calls are supported on the Excel versions actually certified for scalar use. Multi-cell calls are supported and claimed only on dynamic-array Excel. No CSE claim is made. |
-| Pillar rounding | Case-insensitive `NEAREST` (default), `FLOOR` and `CEILING`. |
+| Pillar rounding | Case-insensitive `NEAREST` (default), `FLOOR` and `CEILING`. Week anchors are candidates only up to `3W`, under every mode. |
+| Pillar grammar | A unit appears at most once per token; a whole-token alias never carries a sign. |
 | Namespace | `KPR_Cal_*` is reserved for calendars. No calendar options are appended to pure date functions. |
 
 ## Supported API target
@@ -115,10 +116,13 @@ The one public surface does not make scalar support depend on spill support. Sca
 
 - Absolute intervals shorter than seven days remain exact day pillars.
 - Whole-week and calendar-month anchors are computed from the start date.
+- A week anchor is a candidate only for whole-week counts of 1, 2 and 3. The cap restricts the candidate set rather than the selection rule, so it applies under all three rounding modes. `4W` and longer week tokens are unreachable and the `3W`/`1M` boundary falls at 25 days.
+- An anchor outside the supported window is not a candidate.
 - `FLOOR` chooses the latest non-overshooting anchor; `CEILING` chooses the earliest non-undershooting anchor.
 - `NEAREST` chooses the closest anchor, with month representation preferred for equivalent anchors.
 - Negative intervals round their absolute magnitude and then restore the sign.
 - Rounded pillar conversion is deliberately not a general round-trip invariant.
+- Accepted-grammar rules are part of the pillar policy: a unit appears at most once per token, and a whole-token alias never carries a sign.
 
 ## Production architecture
 
@@ -565,7 +569,7 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 </details>
 
 <details>
-<summary><strong>#14 — Define and implement the three pillar-rounding modes</strong></summary>
+<summary><strong>#14 — Define and implement the pillar rounding modes and token grammar</strong></summary>
 
 - State: `open`
 - Assignee: @danielep71
@@ -577,7 +581,7 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 
 ## Objective
 
-Replace the unresolved nearest-versus-floor behavior with one explicit pillar conversion policy shared by scalar and array calls through the single public surface.
+Replace the unresolved nearest-versus-floor behavior with one explicit pillar conversion policy shared by scalar and array calls through the single public surface, and own the accepted-token grammar that policy parses.
 
 ## Contract
 
@@ -585,10 +589,18 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 - Accept `NEAREST` (default), `FLOOR` and `CEILING`, case-insensitively; reject every other value.
 - Preserve exact day pillars for absolute intervals shorter than seven days.
 - Compare valid whole-week and calendar-month anchors from the start date.
+- Treat a week anchor as a candidate only for whole-week counts of 1, 2 and 3. The cap restricts the candidate set, not the selection rule, so it applies identically under all three modes.
+- Treat an anchor that falls outside the supported window as not a candidate.
 - `FLOOR` selects the latest non-overshooting anchor; `CEILING` selects the earliest non-undershooting anchor; `NEAREST` selects the closest anchor.
 - Prefer the month representation when week and month candidates land on the same date.
 - For negative intervals, round the absolute magnitude and then restore the sign.
 - Document that `DateFromPillar(PillarFromDates(...))` is not a general invariant after rounding.
+
+## Accepted-token grammar
+
+- Reject a token in which any unit appears more than once, under `PILLAR_DUPLICATE_UNIT`.
+- Reject a whole-token alias carrying a leading sign, under `PILLAR_ALIAS_SIGNED`.
+- The optional sign applies only to the numeric-component branch of the grammar.
 
 ## Acceptance criteria
 
@@ -598,6 +610,9 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 - [ ] Invalid modes return the contract's native error.
 - [ ] Formatting and parsing are mutually consistent for every supported pillar token.
 - [ ] Regression fixtures explicitly demonstrate non-invariant rounded round trips.
+- [ ] No emitted token names a week count above `3W`, and the `3W`/`1M` boundary is fixture-pinned at 25 days.
+- [ ] The week cap is exercised under `FLOOR` and `CEILING`, not only `NEAREST`.
+- [ ] A duplicate unit and a signed alias each return `#VALUE!` under their own condition identifier.
 - [ ] No duplicate pillar UDF or `_Spill` twin is created.
 
 ## Dependencies
@@ -628,6 +643,12 @@ Existing/re-signatured members: `DayOfWeek`, `DaysInMonth`, `DaysInYear`, `Begin
 
 New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfYear`, and `HostDateSystem`.
 
+## Internal calendar helper
+
+`KPR_Core_Dates.DaysInMonth(YearIn, MonthIn)` is added here as the single source of month length. `EndOfMonth` is rebuilt on it and the month-length reads in `TryAddMonths` and the facade route through it.
+
+The helper exists so that no member derives month length from `DateSerial(y, m + 1, 0)`. That idiom is not total over the supported window: it raises for month 13 of year 9999 and for month 1 of the floor year, and behind a defensive handler the raise reaches the sheet as an ordinary error value indistinguishable from a genuine rejection.
+
 ## Acceptance criteria
 
 - [ ] All 22 functions use the exact signatures in #9 and return `Variant` where native errors are possible.
@@ -635,6 +656,9 @@ New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfY
 - [ ] Month, quarter and year boundaries are correct across leap years and year transitions.
 - [ ] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
 - [ ] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
+- [ ] Both weekday locators gate their own result against the supported window and return `#NUM!` under `RESULT_WINDOW`. A year-granularity domain check is not sufficient, because the window floor is 1900-03-01 and January and February 1900 satisfy it.
+- [ ] `DaysInMonth` exists in `KPR_Core_Dates`, is the only member consulting the leap rule, and is pinned by the static gate.
+- [ ] No production member builds a date with a `DateSerial` day argument of zero, and the static gate rejects one.
 - [ ] Pillar functions use the policy from #14 and expose only the singular `DateFromPillar` name.
 - [ ] Every value-taking function has one element implementation usable by scalar and array calls.
 - [ ] `HostDateSystem` implements the caller policy from #13 and remains scalar.
