@@ -464,7 +464,7 @@ VBA component identity is case-insensitive. The VBE import documentation remains
 <details>
 <summary><strong>#12 — Implement strict scalar date and integer parsing with error propagation</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
@@ -495,14 +495,14 @@ Implement the scalar input contract from #9 once in `KPR_Core_Parse` so scalar c
 
 ## Acceptance criteria
 
-- [ ] No production path relies on locale-sensitive `CDate`, `IsDate` or equivalent permissive parsing.
-- [ ] ISO leap-day and component validation is exact.
-- [ ] The minimum and maximum supported dates are accepted and adjacent out-of-window values return `#NUM!`.
-- [ ] Native `Date` and numeric serial inputs normalize an allowed time fraction to the same date-only result.
-- [ ] Integer-required arguments reject fractions and Boolean values with `#VALUE!`; out-of-Long values return `#NUM!`.
-- [ ] Incoming native Excel errors propagate verbatim at the public/element boundary.
-- [ ] Invalid input never yields a plausible date, a message string, a `MsgBox` or an unhandled VBA error.
-- [ ] Focused deterministic tests enumerate every accepted and rejected scalar input class; #19 later owns independently generated milestone fixtures.
+- [x] No production path relies on locale-sensitive `CDate`, `IsDate` or equivalent permissive parsing.
+- [x] ISO leap-day and component validation is exact.
+- [x] The minimum and maximum supported dates are accepted and adjacent out-of-window values return `#NUM!`.
+- [x] Native `Date` and numeric serial inputs normalize an allowed time fraction to the same date-only result.
+- [x] Integer-required arguments reject fractions and Boolean values with `#VALUE!`; out-of-Long values return `#NUM!`.
+- [x] Incoming native Excel errors propagate verbatim at the public/element boundary.
+- [x] Invalid input never yields a plausible date, a message string, a `MsgBox` or an unhandled VBA error.
+- [x] Focused deterministic tests enumerate every accepted and rejected scalar input class; #19 later owns independently generated milestone fixtures.
 
 ## Dependencies
 
@@ -515,7 +515,7 @@ Implement the scalar input contract from #9 once in `KPR_Core_Parse` so scalar c
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `documentation`, `behavior-change`, `blocked`, `code`, `P1`, `tests`
+- Labels: `documentation`, `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/13
 
@@ -581,7 +581,7 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 
 ## Dependencies
 
-- [ ] #12
+- [x] #12
 
 </details>
 
@@ -590,7 +590,7 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `behavior-change`, `blocked`, `code`, `P2`, `tests`
+- Labels: `behavior-change`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/14
 
@@ -643,7 +643,7 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 ## Dependencies
 
 - [x] #11
-- [ ] #12
+- [x] #12
 
 </details>
 
@@ -689,7 +689,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 
 ## Dependencies
 
-- [ ] #12
+- [x] #12
 - [ ] #13
 - [ ] #14
 
@@ -700,7 +700,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `blocked`, `code`, `P1`, `tests`
+- Labels: `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/16
 
@@ -745,7 +745,7 @@ Commit `2b6464c` made the current scalar boundary inspect object/array type befo
 ## Dependencies
 
 - [x] #11
-- [ ] #12
+- [x] #12
 
 </details>
 
@@ -890,7 +890,7 @@ Native-error cases record both the expected Excel error code and why that error 
 
 ## Dependencies
 
-- [ ] #12
+- [x] #12
 - [ ] #14
 - [ ] #15
 
