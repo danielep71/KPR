@@ -371,7 +371,7 @@ None.
 <details>
 <summary><strong>#11 — Split `KPR_Dates_Days` into the layered architecture</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `ci`, `code`, `P1`, `refactor`, `repository`
 - Milestone: `v0.0.2`
@@ -392,6 +392,12 @@ This issue:
 - moves the review's approved comment-only corrections with the code they describe;
 - removes the monolithic baseline without leaving duplicate implementations; and
 - keeps the repository statically valid in one atomic source change.
+
+## Historical execution note
+
+The completed tree meets every acceptance criterion below, but the case-only path transition was not delivered in one atomic commit. Commit `40f174945b04da3b86317160bb383ff27ac28293` deleted the old module first and, when checked in isolation, fails the required-file rule because no production module remains. Commit `16ad2c6a9faaf3db87e02aa3310db1220372c22e` supplies the complete five-module architecture and passes the full 15-rule gate and all 15 degraded scenarios.
+
+This is a recorded process deviation, not successful evidence for the atomic-transition instruction. It cannot be repaired without rewriting `main`, leaves no defect in the completed or current tree, and does not justify reopening a structurally complete issue.
 
 It does not implement strict parsing or the final error policy (#12–#13), the completed pillar policy (#14), the six missing public functions or final signatures (#15), the array engine (#16), or the final scalar/array dispatch (#17). It must not add public placeholders for work owned by those issues. Registration and UI modules remain owned by #18, #24 and #25.
 
@@ -432,19 +438,19 @@ VBA component identity is case-insensitive. The VBE import documentation remains
 
 ## Acceptance criteria
 
-- [ ] The existing sixteen functions are migrated without duplicate implementations or unintended behavioural changes.
-- [ ] The five target calculation modules exist and no public placeholder is added for #12–#17 work.
-- [ ] Every migrated `KPR_Dates_*` public function exists only in `KPR_DATES_DAYS.bas`.
-- [ ] Internal modules use `Option Private Module`; the worksheet facade does not.
-- [ ] Module ownership and allowed dependencies match the documented matrix.
-- [ ] The old path is absent and `git ls-files` records exactly `src/modules/KPR_DATES_DAYS.bas`.
-- [ ] The facade export declares the exact matching component name `KPR_DATES_DAYS`.
-- [ ] Component-name uniqueness is case-insensitive, while file-stem matching remains case-sensitive.
-- [ ] Negative self-tests reject component names that differ only by case.
-- [ ] Public-surface checks enforce module role without adding a general casing-convention rule.
-- [ ] Approved comment corrections move with their owning code.
-- [ ] No spill, calendar, registration, UI, test or demo placeholder is created.
-- [ ] The complete static gate and focused degraded self-tests pass.
+- [x] The existing sixteen functions are migrated without duplicate implementations or unintended behavioural changes.
+- [x] The five target calculation modules exist and no public placeholder is added for #12–#17 work.
+- [x] Every migrated `KPR_Dates_*` public function exists only in `KPR_DATES_DAYS.bas`.
+- [x] Internal modules use `Option Private Module`; the worksheet facade does not.
+- [x] Module ownership and allowed dependencies match the documented matrix.
+- [x] The old path is absent and `git ls-files` records exactly `src/modules/KPR_DATES_DAYS.bas`.
+- [x] The facade export declares the exact matching component name `KPR_DATES_DAYS`.
+- [x] Component-name uniqueness is case-insensitive, while file-stem matching remains case-sensitive.
+- [x] Negative self-tests reject component names that differ only by case.
+- [x] Public-surface checks enforce module role without adding a general casing-convention rule.
+- [x] Approved comment corrections move with their owning code.
+- [x] No spill, calendar, registration, UI, test or demo placeholder is created.
+- [x] The complete static gate and focused degraded self-tests pass.
 
 ## Dependencies
 
