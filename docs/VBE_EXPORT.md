@@ -1,9 +1,10 @@
 # VBE export format
 
-Every tracked VBA file in this repository is a Visual Basic Editor export, not a
-hand-written approximation of one. This page is the procedure contributors must
-follow so that exported source, the repository static gate and a future Windows
-import agree with each other.
+Every tracked VBA file in this repository must conform to the repository's
+Visual Basic Editor export format rather than being a hand-written
+approximation of one. This page is the procedure contributors must follow so
+that exported source, the repository static gate and a future Windows import
+agree with each other.
 
 This page describes a text format and a manual procedure. It makes no claim that
 any tracked source imports, compiles or runs in Excel. That claim belongs to the
@@ -15,7 +16,7 @@ exact-source Windows certification recorded in issue
 A VBE export of a standard module begins with its component name:
 
 ```text
-Attribute VB_Name = "KPR_Dates_Days"
+Attribute VB_Name = "KPR_DATES_DAYS"
 ```
 
 The rules the static gate enforces:
@@ -27,7 +28,7 @@ The rules the static gate enforces:
 | Position | Line 1 for a `.bas` module. A `.cls` or `.frm` export opens with its own `VERSION`/`BEGIN` header block, so the declaration is accepted anywhere in the leading header region for those file types. |
 | Identity | The declared name matches the file name exactly, including case. |
 | Legality | The name is a legal VBA identifier of at most 31 characters. |
-| Uniqueness | No two tracked VBA files declare the same name. VBA components share one flat project namespace across `src/`, `test/` and `demo/`. |
+| Uniqueness | No two tracked VBA files declare names that are equal under VBA's case-insensitive component-name semantics. VBA components share one flat project namespace across `src/`, `test/` and `demo/`. |
 | Declarations | `Option Explicit` is present, as it already was before this format was adopted. |
 
 Procedure-level attributes such as `Attribute VB_Description` and
@@ -65,8 +66,8 @@ stops round-tripping cleanly.
 2. Choose **File > Import File** and select the exported file.
 
 Importing a module while a component of the same name is already present does
-not replace it. Excel keeps both and renames the newcomer, so `KPR_Dates_Days`
-silently becomes `KPR_Dates_Days1` and the project then holds two copies of the
+not replace it. Excel keeps both and renames the newcomer, so `KPR_DATES_DAYS`
+silently becomes `KPR_DATES_DAYS1` and the project then holds two copies of the
 same procedures. Always remove before importing.
 
 ## Round trip

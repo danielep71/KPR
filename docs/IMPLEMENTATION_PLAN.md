@@ -336,7 +336,7 @@ None. This issue is the normative dependency for all behavior-changing implement
 
 - State: `closed`
 - Assignee: @danielep71
-- Labels: `ci`, `P2`, `repository`
+- Labels: `documentation`, `ci`, `P2`, `repository`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/10
 
@@ -344,23 +344,25 @@ None. This issue is the normative dependency for all behavior-changing implement
 
 ## Objective
 
-Make every tracked VBA module a deterministic, importable VBE export rather than a hand-written approximation of one.
+Make every tracked VBA module conform to a deterministic VBE-export source format rather than a hand-written approximation of one. This is a source-format contract; actual Windows VBE import and normalized round-trip validation remain release evidence owned by #29.
 
 ## Scope
 
 - Add the exported `Attribute VB_Name = "…"` header to every tracked `.bas` module.
-- Require the attribute value to match the filename and intended VBA component name exactly.
+- Require the attribute value to match the filename and intended VBA component name exactly, including case.
+- Require component names to be unique project-wide under VBA's case-insensitive component namespace.
 - Preserve `Option Explicit`, CRLF working-tree exports and the repository's existing source-first encoding policy.
-- Extend the static checker with positive and negative fixtures for missing, mismatched and duplicate module names.
-- Document the export/import procedure contributors must follow.
+- Extend the static checker with positive and negative fixtures for missing headers, mismatched names, exact duplicates and duplicates that differ only by case.
+- Document the export/import procedure contributors must follow without claiming that static text checks prove Windows importability.
 
 ## Acceptance criteria
 
-- [x] Every production, test and demo `.bas` file is a valid VBE-style export with a unique matching `Attribute VB_Name`.
-- [x] Static checks reject a missing header, a mismatched filename/module name and duplicate module names.
+- [x] Every production, test and demo `.bas` file conforms to the repository's VBE-export source format with an exact filename-matching `Attribute VB_Name`.
+- [x] Static checks reject a missing header, a mismatched filename/module name, an exact duplicate module name and a case-only duplicate module name.
+- [x] Component-name uniqueness is evaluated case-insensitively while file-stem/header matching remains case-sensitive.
 - [x] The checker continues to require `Option Explicit`.
 - [x] A documented Windows VBE export/import round trip is reserved for final certification.
-- [x] This issue makes no Excel compilation or execution claim.
+- [x] This issue makes no Excel import, compilation or execution claim.
 
 ## Dependencies
 
@@ -499,7 +501,7 @@ The worksheet/VBA caller distinction and 1904 host refusal are owned by #13, out
 
 ## Dependencies
 
-- [ ] #11
+- [x] #11
 
 </details>
 
@@ -649,12 +651,6 @@ Existing/re-signatured members: `DayOfWeek`, `DaysInMonth`, `DaysInYear`, `Begin
 
 New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfYear`, and `HostDateSystem`.
 
-## Internal calendar helper
-
-`KPR_Core_Dates.DaysInMonth(YearIn, MonthIn)` is added here as the single source of month length. `EndOfMonth` is rebuilt on it and the month-length reads in `TryAddMonths` and the facade route through it.
-
-The helper exists so that no member derives month length from `DateSerial(y, m + 1, 0)`. That idiom is not total over the supported window: it raises for month 13 of year 9999 and for month 1 of the floor year, and behind a defensive handler the raise reaches the sheet as an ordinary error value indistinguishable from a genuine rejection.
-
 ## Acceptance criteria
 
 - [ ] All 22 functions use the exact signatures in #9 and return `Variant` where native errors are possible.
@@ -662,9 +658,6 @@ The helper exists so that no member derives month length from `DateSerial(y, m +
 - [ ] Month, quarter and year boundaries are correct across leap years and year transitions.
 - [ ] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
 - [ ] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
-- [ ] Both weekday locators gate their own result against the supported window and return `#NUM!` under `RESULT_WINDOW`. A year-granularity domain check is not sufficient, because the window floor is 1900-03-01 and January and February 1900 satisfy it.
-- [ ] `DaysInMonth` exists in `KPR_Core_Dates`, is the only member consulting the leap rule, and is pinned by the static gate.
-- [ ] No production member builds a date with a `DateSerial` day argument of zero, and the static gate rejects one.
 - [ ] Pillar functions use the policy from #14 and expose only the singular `DateFromPillar` name.
 - [ ] Every value-taking function has one element implementation usable by scalar and array calls.
 - [ ] `HostDateSystem` implements the caller policy from #13 and remains scalar.
@@ -722,7 +715,7 @@ Create one internal array engine with deterministic orientation, broadcasting, o
 
 ## Dependencies
 
-- [ ] #11
+- [x] #11
 - [ ] #12
 
 </details>

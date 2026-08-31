@@ -27,6 +27,9 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 - Component-name uniqueness is now compared case-insensitively, matching VBA's
   case-insensitive component namespace. File-stem matching stays case-sensitive
   for export fidelity.
+- Aligned the VBE source-format documentation with the current
+  `KPR_DATES_DAYS` facade and clarified that static conformance does not prove a
+  Windows import or normalized round trip.
 
 - Refined the KPR social preview by removing the maintainer footer and adding
   clearer financial-market imagery and pricing formulas.
