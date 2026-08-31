@@ -36,12 +36,21 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   - Integer and optional-control parsing are owned by issue #12 and are
 '     deliberately absent rather than stubbed.
 '
+' TYPE HANDOFF
+'   A single-cell Range arrives from KPR_Core_Array read through Value2, so a
+'   date-formatted cell presents as vbDouble rather than vbDate. Both types
+'   resolve through the same arithmetic path below and produce the same
+'   date-only result, so the surface does not depend on which one arrives.
+'
 ' VISIBILITY
-'   Option Private Module. Members are Public only because VBA requires it for
-'   cross-module calls inside the project. Nothing here is supported API.
+'   Option Private Module. Members are declared Public so other modules in the
+'   project can call them; the module-level Private setting is what keeps them
+'   out of the Excel function list and off the project's external surface.
+'   Nothing here is supported API.
 '
 ' ALLOWED DEPENDENCIES
-'   KPR_Core_Err.
+'   KPR_Core_Err. Not referenced in this revision; every failure is reported
+'   through the Boolean return rather than as a worksheet error value.
 '
 ' UPDATED
 '   2026-08-31
@@ -87,8 +96,8 @@ Public Function TryParseDateScalar( _
 '       - date-like strings (host locale rules)      [contract-invalid, #12]
 '       - numeric-looking strings treated as serials [contract-invalid, #12]
 '
-'     Rejected: Excel error values, Empty, Null, Boolean, and any scalar that
-'     is neither a Date, a number, nor an acceptable string.
+'     Rejected: Excel error values, Empty, Null, Boolean, objects, and any
+'     scalar that is neither a Date, a number, nor an acceptable string.
 '
 ' OUTPUTS
 '   ParsedDate (ByRef)
@@ -107,17 +116,39 @@ Public Function TryParseDateScalar( _
 ' ERROR POLICY
 '   - Does not propagate VBA runtime errors to callers.
 '   - Signals failure only through the Boolean return.
+'   - Clears Err before returning FALSE, so no stale error state survives.
 '
 ' NOTES
 '   - Boolean is rejected deliberately: TRUE coerces to serial -1 in VBA, which
 '     is neither a date the user meant nor a value inside the supported range.
+'   - An object is rejected explicitly rather than left to fall through. Any
+'     numeric test applied to an object reference invokes its default member,
+'     which silently converts a wrapper into a value. Shape has already been
+'     resolved upstream, so an object arriving here is a caller defect.
 '   - Rejecting an incoming Excel error is baseline behaviour, not contract
 '     behaviour. The contract requires verbatim propagation; issue #12 moves
 '     that decision to the caller, where an error value can be returned rather
 '     than converted into a parse failure.
-'   - Fix() truncates toward zero rather than flooring. Within the supported
-'     window every serial is positive, so the two agree; negative serials fail
-'     the caller's window gate regardless.
+'   - Fix is the correct operator for removing a time component, not merely
+'     an equivalent one. VBA encodes a date serial as sign and magnitude: the
+'     fraction is always time regardless of the sign of the whole part. Fix
+'     truncates toward zero and so keeps the day; Int floors and would move a
+'     negative serial back one day. Replacing Fix with Int is a defect even
+'     though the two agree everywhere inside the supported window.
+'   - The vbDate branch converts arithmetically rather than through DateValue.
+'     DateValue takes a date expression that VBA coerces to String, so passing
+'     an already-typed Date round-trips it through the host locale format for
+'     no benefit. Working on the serial keeps the branch locale-independent
+'     and identical to the numeric branch.
+'   - IsNumeric is materially wider than "numeric-looking". It accepts hex
+'     literals such as &HFF, exponent forms such as 1e5 and 1d5, currency
+'     symbols and parenthesised negatives, so tokens no user would consider a
+'     date currently parse as serials. This is migrated baseline behaviour and
+'     is removed by the ISO-8601 policy in issue #12.
+'   - Excel serials below 61 do not correspond to VBA serials, because the
+'     Excel 1900 system counts a fictitious 29-Feb-1900. Nothing is done about
+'     that here; every such value fails the caller's window gate, whose lower
+'     bound is exactly serial 61.
 '
 ' UPDATED
 '   2026-08-31
@@ -149,13 +180,13 @@ Public Function TryParseDateScalar( _
 
     Select Case VT
 
-        Case vbError, vbEmpty, vbNull, vbBoolean
-            'Excel errors, blanks and Boolean are never dates
+        Case vbError, vbEmpty, vbNull, vbBoolean, vbObject
+            'Excel errors, blanks, Boolean and object references are never dates
                 GoTo Fail
 
         Case vbDate
-            'Native Date => strip any time component
-                Candidate = DateValue(CDate(ScalarIn))
+            'Native Date => strip the time component on the serial
+                Candidate = CDate(Fix(CDbl(ScalarIn)))
 
         Case vbString
             'Trim once for deterministic checks
@@ -201,5 +232,8 @@ Public Function TryParseDateScalar( _
 Fail:
     'Return FALSE per contract, leaving ParsedDate untouched
         TryParseDateScalar = False
+
+    'Do not leave stale error state for the caller to observe
+        Err.Clear
 
 End Function
