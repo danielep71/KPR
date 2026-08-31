@@ -88,6 +88,42 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     ),
 }
 
+# Public members each architecture component must keep declaring, keyed by
+# component name folded to lower case. A rename or a deletion here breaks
+# callers that this gate cannot compile, so the internal surface is pinned by
+# name rather than left to Windows-only verification.
+VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
+    "kpr_core_err": frozenset({"ErrValue", "ErrNum", "ErrNA"}),
+    "kpr_core_array": frozenset({"Array_Rank", "TryUnwrapScalar"}),
+    "kpr_core_parse": frozenset({"TryParseDateScalar"}),
+    "kpr_core_dates": frozenset(
+        {
+            "KPR_MIN_DATE",
+            "KPR_MAX_DATE",
+            "IsDateInWindow",
+            "IsLeapYear",
+            "DaysInMonth",
+            "EndOfMonth",
+            "TryAddMonths",
+            "TryPillar_Parse",
+            "Pillar_Format_Nearest",
+        }
+    ),
+}
+
+# DateSerial with a day argument of zero names the day before the first of the
+# given month. The idiom is compact but not total: it raises error 5 whenever
+# the implied date leaves the VBA Date range, which is the case for month 13 of
+# year 9999 and for month 1 of the floor year. Behind a defensive handler that
+# surfaces as a worksheet error indistinguishable from a genuine rejection, so
+# month length is read from KPR_Core_Dates.DaysInMonth instead.
+VBA_DAY_ZERO_FUNCTION = "DateSerial"
+VBA_DAY_ZERO_ARGUMENTS = 3
+
+# Every supported worksheet function returns Variant, because a native Excel
+# error value cannot be carried by any narrower return type.
+VBA_FACADE_RETURN_TYPE = "variant"
+
 TEXT_SUFFIXES = {
     ".bas",
     ".bat",
@@ -960,6 +996,185 @@ def _strip_vba_comments(text: str) -> str:
     )
 
 
+def _join_vba_continuations(text: str) -> list[tuple[int, str]]:
+    """Return (first line number, logical line) for each continued VBA statement.
+
+    A declaration split across physical lines with a trailing underscore is one
+    statement, so a rule that reads a signature has to see it whole.
+    """
+    logical: list[tuple[int, str]] = []
+    buffer = ""
+    start = 0
+    for number, line in enumerate(text.splitlines(), start=1):
+        if not buffer:
+            start = number
+        stripped = line.rstrip()
+        if stripped.endswith(" _"):
+            buffer += stripped[:-1]
+            continue
+        logical.append((start, buffer + stripped))
+        buffer = ""
+    if buffer:
+        logical.append((start, buffer))
+    return logical
+
+
+def _vba_call_arguments(code: str, name: str) -> Iterable[tuple[int, list[str]]]:
+    """Yield (offset, arguments) for each call to `name` in already-stripped code.
+
+    Arguments are split on commas at depth one, so a nested call such as
+    Month(DateIn) stays inside the argument that contains it.
+    """
+    opening = re.compile(rf"\b{re.escape(name)}\s*\(", re.IGNORECASE)
+    for match in opening.finditer(code):
+        index = match.end()
+        depth = 1
+        argument = ""
+        arguments: list[str] = []
+        while index < len(code):
+            char = code[index]
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            if depth == 1 and char == ",":
+                arguments.append(argument.strip())
+                argument = ""
+            else:
+                argument += char
+            index += 1
+        if depth == 0:
+            arguments.append(argument.strip())
+            yield match.start(), arguments
+
+
+def check_vba_day_zero_idiom(repo: Repository) -> dict[str, object]:
+    """No live code builds a date with a DateSerial day argument of zero.
+
+    The idiom returns the last day of the preceding month, which is why it is
+    tempting for month-end work, but it is not total over the supported window:
+    it raises for month 13 of year 9999 and for month 1 of the floor year. The
+    failure is invisible from a worksheet because a defensive handler turns it
+    into an ordinary error value. Whole-line comments are stripped first, so the
+    idiom may still be named in a module header that explains why it is absent.
+    """
+    failures: list[dict[str, object]] = []
+    scanned = 0
+    for path, text in _vba_sources(repo):
+        code = _strip_vba_comments(text)
+        scanned += 1
+        for offset, arguments in _vba_call_arguments(code, VBA_DAY_ZERO_FUNCTION):
+            if len(arguments) != VBA_DAY_ZERO_ARGUMENTS:
+                continue
+            if arguments[-1] != "0":
+                continue
+            failures.append(
+                finding(
+                    path,
+                    "DateSerial with a day argument of zero is not total over the "
+                    "supported window; read month length from "
+                    "KPR_Core_Dates.DaysInMonth instead.",
+                    line_number(code, offset),
+                )
+            )
+    return rule_result(
+        "vba-day-zero-idiom",
+        "VBA day-zero DateSerial idiom",
+        failures,
+        f"None of the {scanned} VBA sources build a date with a zero day argument",
+    )
+
+
+def check_vba_facade_return_type(repo: Repository) -> dict[str, object]:
+    """Every supported worksheet function is declared As Variant.
+
+    A worksheet-facing function reports failure with a native Excel error value,
+    and only Variant can carry one. A narrower return type compiles and then
+    raises at run time on the first rejected input, which the caller sees as a
+    generic failure rather than the documented error.
+    """
+    failures: list[dict[str, object]] = []
+    declaration = re.compile(
+        r"^\s*Public\s+Function\s+(KPR_Dates_\w+)\s*\(.*\)\s*As\s+(\w+)\s*$",
+        re.IGNORECASE,
+    )
+    checked = 0
+    for path, text in _vba_sources(repo):
+        for number, statement in _join_vba_continuations(text):
+            match = declaration.match(statement)
+            if match is None:
+                continue
+            checked += 1
+            if match.group(2).casefold() != VBA_FACADE_RETURN_TYPE:
+                failures.append(
+                    finding(
+                        path,
+                        f"Worksheet function {match.group(1)} is declared As "
+                        f"{match.group(2)}; a native Excel error value needs Variant.",
+                        number,
+                    )
+                )
+    return rule_result(
+        "vba-facade-return-type",
+        "VBA facade return type",
+        failures,
+        f"All {checked} public worksheet functions are declared As Variant",
+    )
+
+
+def check_vba_required_members(repo: Repository) -> dict[str, object]:
+    """Each architecture component still declares the members its callers use.
+
+    VBA resolves these at compile time on Windows, which this gate cannot run.
+    Pinning the names here means a rename or a deletion fails on the runner
+    rather than at the first attempt to open the workbook.
+    """
+    failures: list[dict[str, object]] = []
+    member = re.compile(r"^\s*Public\s+(?:Function|Sub|Const)\s+(\w+)", re.IGNORECASE)
+    declared: dict[str, tuple[str, set[str]]] = {}
+    for path, text in _vba_sources(repo):
+        stem = PurePosixPath(path).stem.casefold()
+        if stem not in VBA_REQUIRED_MEMBERS:
+            continue
+        names = set()
+        for _, statement in _join_vba_continuations(text):
+            match = member.match(statement)
+            if match is not None:
+                names.add(match.group(1).casefold())
+        declared[stem] = (path, names)
+    for stem, required in sorted(VBA_REQUIRED_MEMBERS.items()):
+        if stem not in declared:
+            failures.append(
+                finding(
+                    f"src/modules/{stem}.bas",
+                    "Architecture component is absent; its required public members "
+                    "cannot be verified.",
+                )
+            )
+            continue
+        path, names = declared[stem]
+        missing = sorted(
+            name for name in required if name.casefold() not in names
+        )
+        if missing:
+            failures.append(
+                finding(
+                    path,
+                    f"Component no longer declares required public member(s): "
+                    f"{', '.join(missing)}.",
+                )
+            )
+    total = sum(len(names) for names in VBA_REQUIRED_MEMBERS.values())
+    return rule_result(
+        "vba-required-members",
+        "VBA required public members",
+        failures,
+        f"All {total} pinned public members are still declared",
+    )
+
+
 def check_vba_module_visibility(repo: Repository) -> dict[str, object]:
     """Internal core modules are project-private; the worksheet facade is not.
 
@@ -1102,6 +1317,9 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_vba_module_visibility,
     check_vba_public_surface,
     check_vba_module_dependencies,
+    check_vba_required_members,
+    check_vba_facade_return_type,
+    check_vba_day_zero_idiom,
 )
 
 
@@ -1234,9 +1452,20 @@ def _positive_fixture(root: Path) -> None:
     write("docs/DATE_LAYER_CONTRACT.md", "# Contract\n")
     write("docs/VBE_EXPORT.md", "# Export\n")
     for internal in ("KPR_Core_Err", "KPR_Core_Parse", "KPR_Core_Dates", "KPR_Core_Array"):
+        body = ""
+        if internal.casefold() == "kpr_core_dates":
+            body += (
+                "Public Const KPR_MIN_DATE As Date = #3/1/1900#\n"
+                "Public Const KPR_MAX_DATE As Date = #12/31/9999#\n"
+            )
+        for name in sorted(VBA_REQUIRED_MEMBERS[internal.casefold()]):
+            if name.startswith("KPR_"):
+                continue
+            body += f"Public Function {name}() As Variant\nEnd Function\n"
         write(
             f"src/modules/{internal}.bas",
-            f'Attribute VB_Name = "{internal}"\nOption Explicit\nOption Private Module\n',
+            f'Attribute VB_Name = "{internal}"\nOption Explicit\nOption Private Module\n'
+            + body,
             newline="\r\n",
         )
     write(
@@ -1366,6 +1595,37 @@ def run_self_tests(root: Path) -> None:
             ),
         )
 
+    def day_zero_idiom(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Dates.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function MonthEndProbe(ByVal Y As Long, ByVal M As Long) As Date\n"
+            + "    MonthEndProbe = DateSerial(Y, M + 1, 0)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def narrow_facade_return(case: Path) -> None:
+        rewrite_module(
+            case,
+            lambda text: text.replace(
+                "Public Function KPR_Dates_DayOfWeek() As Variant",
+                "Public Function KPR_Dates_DayOfWeek() As Long",
+                1,
+            ),
+        )
+
+    def missing_required_member(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Dates.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8").replace(
+                "Public Function DaysInMonth() As Variant\nEnd Function\n", "", 1
+            ),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
     scenarios: tuple[tuple[str, str, Callable[[Path], None]], ...] = (
         ("stale identity", "stale-identity", stale_identity),
         ("missing required dependency", "required-files", missing_required_dependency),
@@ -1382,6 +1642,9 @@ def run_self_tests(root: Path) -> None:
         ("missing Option Private Module", "vba-module-visibility", missing_private_module),
         ("public function outside facade", "vba-public-surface", public_function_outside_facade),
         ("forbidden module dependency", "vba-module-dependencies", forbidden_dependency),
+        ("day-zero DateSerial idiom", "vba-day-zero-idiom", day_zero_idiom),
+        ("narrow facade return type", "vba-facade-return-type", narrow_facade_return),
+        ("missing required member", "vba-required-members", missing_required_member),
     )
 
     with tempfile.TemporaryDirectory(prefix="kpr-static-self-test-") as temporary:
