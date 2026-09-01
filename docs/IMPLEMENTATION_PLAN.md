@@ -138,6 +138,8 @@ src/modules/
   KPR_UI_Ribbon.bas
 src/ribbon/
   customUI14.xml
+tools/
+  inject_ribbon.py
 ```
 
 | Module | Responsibility | Allowed production dependencies |
@@ -1271,7 +1273,7 @@ At the audited pre-#15 baseline `a18929e`, the deterministic gate already has 23
 
 Extend the existing static gate using only the checked-out tree and frozen test fixtures:
 
-- Required production, test, fixture, RibbonX, demo and contract files exist.
+- Required production, test, fixture, RibbonX, demo, contract and supporting tooling files exist, including `tools/inject_ribbon.py`.
 - Add `docs/IMPLEMENTATION_PLAN.md` to `REQUIRED_FILES`.
 - The production inventory contains the eight approved modules, including the `KPR_DATES_DAYS.bas` worksheet facade, and no `KPR_Dates_Spill.bas` or calendar placeholder.
 - Every VBA export has an `Attribute VB_Name` that matches its file stem case-sensitively and is unique project-wide under VBA's case-insensitive component-name semantics; every export has `Option Explicit`, and internal core modules also declare `Option Private Module`.
