@@ -116,7 +116,7 @@ The one public surface does not make scalar support depend on spill support. Sca
 
 - Absolute intervals shorter than seven days remain exact day pillars.
 - Whole-week and calendar-month anchors are computed from the start date.
-- A week anchor is a candidate only for whole-week counts of 1, 2 and 3. The cap restricts the candidate set rather than the selection rule, so it applies under all three rounding modes. `4W` and longer week tokens are unreachable and the `3W`/`1M` boundary falls at 25 days.
+- Every rounding mode uses the same candidate set: the in-window `1W`, `2W` and `3W` anchors plus the in-window floor and ceiling calendar-month anchors. The cap restricts the candidate set rather than the selection rule, so `4W` and longer week tokens are unreachable under every mode. Under `NEAREST`, the short-end `3W`/`1M` transition is calendar-dependent rather than pinned to a fixed day count: when the `1M` anchor is in the supported window, 24 days emits `3W`, 27 days emits `1M`, and 25 or 26 days is decided by calendar-day distance to that anchor, with an equal distance choosing the month.
 - An anchor outside the supported window is not a candidate.
 - `FLOOR` chooses the latest non-overshooting anchor; `CEILING` chooses the earliest non-undershooting anchor.
 - `NEAREST` chooses the closest anchor, with month representation preferred for equivalent anchors.
@@ -628,7 +628,7 @@ Replace the unresolved nearest-versus-floor behavior with one explicit pillar co
 - Accept `NEAREST` (default), `FLOOR` and `CEILING`, case-insensitively; reject every other value.
 - Preserve exact day pillars for absolute intervals shorter than seven days.
 - Compare valid whole-week and calendar-month anchors from the start date.
-- Treat a week anchor as a candidate only for whole-week counts of 1, 2 and 3. The cap restricts the candidate set, not the selection rule, so it applies identically under all three modes.
+- Under every mode, use the same candidate set: the in-window `1W`, `2W` and `3W` anchors plus the in-window floor and ceiling calendar-month anchors. The cap restricts the candidate set, not the selection rule, so it applies identically under all three modes.
 - Treat an anchor that falls outside the supported window as not a candidate.
 - `FLOOR` selects the latest non-overshooting anchor; `CEILING` selects the earliest non-undershooting anchor; `NEAREST` selects the closest anchor.
 - Prefer the month representation when week and month candidates land on the same date.
@@ -657,7 +657,7 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 - [ ] Invalid modes return the contract's native error.
 - [ ] Formatting and parsing are mutually consistent for every supported pillar token.
 - [ ] The focused case matrix demonstrates non-invariant rounded round trips for handoff to #19 and #21.
-- [ ] No emitted token names a week count above `3W`, and the `3W`/`1M` boundary is pinned at 25 days.
+- [ ] No emitted token names a week count above `3W`. Under `NEAREST`, when the `1M` anchor is inside the supported window, 24 days emits `3W` and 27 days emits `1M`; 25 and 26 days resolve by calendar-day distance to that anchor, with an equal distance choosing the month. If the `1M` anchor is outside the supported window it is not a candidate and the remaining in-window anchors decide. The boundary is derived from the uniform candidate-set and equidistance rules, not pinned to a fixed day count.
 - [ ] The week cap is exercised under `FLOOR` and `CEILING`, not only `NEAREST`.
 - [ ] A duplicate unit and a signed alias each return `#VALUE!` under their own condition identifier.
 - [ ] No duplicate pillar UDF or `_Spill` twin is created.
