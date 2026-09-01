@@ -513,7 +513,7 @@ Implement the scalar input contract from #9 once in `KPR_Core_Parse` so scalar c
 <details>
 <summary><strong>#13 — Enforce the worksheet/VBA date-system policy and add HostDateSystem</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `documentation`, `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
@@ -589,15 +589,15 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 ## Acceptance criteria
 
 - [x] Every worksheet-facing public entry point present when #13 lands performs the date-system guard once; #17 preserves that once-per-call placement across array traversal.
-- [ ] A 1904 worksheet `Range` scalar call cannot return a plausible shifted result; #21 and #29 own the complete array proof.
-- [ ] Focused direct-VBA, Immediate-window and `Application.Run` probes execute under the documented 1900 contract; the later `KPR_Test_RunAll` path is owned by #20 and #29.
+- [x] A 1904 worksheet `Range` scalar call cannot return a plausible shifted result; #21 and #29 own the complete array proof.
+- [x] Focused direct-VBA, Immediate-window and `Application.Run` probes execute under the documented 1900 contract; the later `KPR_Test_RunAll` path is owned by #20 and #29.
 - [x] The implementation and documentation say “no worksheet host could be identified”; they do not treat every non-`Range` caller as proven direct VBA.
 - [x] Unsupported non-`Range` Excel host contexts are named and delegated to #29's probe/not-covered evidence.
-- [ ] `HostDateSystem` calls `Application.Volatile True` and refreshes on ordinary recalculation between 1900 and 1904 worksheet cases without requiring a full calculation rebuild.
-- [ ] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and focused direct-VBA callers.
-- [ ] The documented library-produced error categories and incoming-error propagation are covered for scalar calls; #21 owns the complete scalar/array matrix.
-- [ ] No `INTERNAL_UNEXPECTED` condition is exposed; every defensive catch-all remains unreachable in conforming tests, and any activation fails regression and certification.
-- [ ] Focused tests prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available; #21 owns the generated regression cases.
+- [x] `HostDateSystem` calls `Application.Volatile True` and refreshes on ordinary recalculation between 1900 and 1904 worksheet cases without requiring a full calculation rebuild.
+- [x] `HostDateSystem` returns the documented result for 1900 worksheet, 1904 worksheet and focused direct-VBA callers.
+- [x] The documented library-produced error categories and incoming-error propagation are covered for scalar calls; #21 owns the complete scalar/array matrix.
+- [x] No `INTERNAL_UNEXPECTED` condition is exposed; every defensive catch-all remains unreachable in conforming tests, and any activation fails regression and certification.
+- [x] Focused tests prove that host-generated and propagated `#N/A` are value-identical and use `HostDateSystem()` as the caller-context discriminator where available; #21 owns the generated regression cases.
 - [x] No active-workbook fallback exists.
 - [x] #29's certification scope explicitly includes 1900 and 1904 worksheet callers, certified direct-VBA callers and unsupported-context probes.
 
@@ -712,7 +712,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 ## Dependencies
 
 - [x] #12
-- [ ] #13
+- [x] #13
 - [ ] #14
 
 </details>
