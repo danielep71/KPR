@@ -9,6 +9,18 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- `Opt_Rounding` on `KPR_Dates_PillarFromDates`, accepting `NEAREST`,
+  `FLOOR` and `CEILING` over one uniform candidate set. The `3W`/`1M`
+  boundary under `NEAREST` is now derived from calendar-day distance rather
+  than pinned at 25 days, and an anchor outside the supported window is
+  excluded rather than approximated. `CEILING` returns `#NUM!` when no
+  in-window anchor reaches the end date.
+- Condition identifiers for every pillar grammar rejection, so a duplicate
+  unit, a signed alias, a malformed token and a non-text payload are
+  distinguishable to a caller.
+- `KPR_Core_Dates` may now depend on `KPR_Core_Err` for the condition
+  vocabulary; it still never constructs a worksheet error value.
+
 - The worksheet/VBA date-system policy: every value-taking function inspects
   its caller once before touching any argument, refuses an identified 1904
   worksheet host with one call-level `#N/A`, and proceeds under the documented
@@ -47,6 +59,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   Excel error value cannot express.
 
 ### Changed
+
+- An incoming Excel error at the `Pillar` argument of `DatesFromPillar` now
+  propagates verbatim instead of being rejected as a non-text payload.
+- Pillar text and rounding tokens are normalized by ASCII-only case folding
+  and trimming rather than `UCase$`/`Trim$`, so the result is identical under
+  every locale, including Turkish casing.
 
 - Restored the declared defaults on the existing optional Boolean controls,
   avoiding any reliance on forwarding VBA's missing-argument marker through a

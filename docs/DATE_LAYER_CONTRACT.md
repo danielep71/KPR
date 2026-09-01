@@ -566,20 +566,42 @@ interval of ten years and two weeks would emit `524W`, which is arithmetically
 correct and useless as a curve bucket. Market convention runs weeks only at the
 short end.
 
+The candidate set is the same under every mode: the `1W`, `2W` and `3W`
+anchors, the floor month anchor (the largest positive month count whose anchor
+does not pass `EndDate` in the interval direction) and the ceiling month anchor
+(the floor count plus one). Anchors are generated from the original `StartDate`
+in the direction of `EndDate` using signed month counts, so an emitted negative
+token re-parses with the same clipping `DateFromPillar` applies. Only positive
+month counts are admitted.
+
 Two consequences are deliberate and must not be treated as defects:
 
 - `4W` and every longer week token are unreachable.
-- The `3W` to `1M` boundary falls at 25 days: 24 days emits `3W` and 25 days
-  emits `1M`. Convention would more often call 25 to 27 days `3W` or `4W`, so
-  labels in that band sit one pillar long. The boundary is left where the
-  rounding rule puts it rather than special-cased, because a boundary that
-  cannot be derived from the rule is the kind that drifts.
+- Under `NEAREST` the `3W` to `1M` boundary is derived from distance, not
+  pinned to a day count. With an in-window `1M` anchor, 24 days always emits
+  `3W` and 27 days always emits `1M`; 25 and 26 days resolve by calendar-day
+  distance to the `1M` anchor, with an equal distance choosing the month. From
+  a start date whose `1M` anchor is 31 days out, 25 days is `3W` and 26 is
+  `1M`; from 31 January, whose `1M` anchor clips to 28 February, 25 days is
+  already `1M`. The boundary is left where the distance rule puts it rather
+  than special-cased, because a boundary that cannot be derived from the rule
+  is the kind that drifts.
 
-An anchor that would fall outside the supported window is not a candidate. The
-restriction is positional, so a label can depend on where in the calendar the
-interval sits: an eleven-day interval emits `2W` everywhere except the final
-fortnight of year 9999, where the `2W` anchor leaves the window and the month
-family takes it as `1M`.
+An anchor that would fall outside the supported window is not a candidate. It
+is excluded, never approximated: there is no nominal distance for an anchor
+that cannot be constructed. The restriction is positional, so a label can
+depend on where in the calendar the interval sits. An eleven-day interval emits
+`2W` under `NEAREST` everywhere except the final fortnight of year 9999, where
+the `2W` and `1M` anchors both leave the window and `1W` is the only remaining
+candidate: `NEAREST` and `FLOOR` emit `1W`, and `CEILING` has no candidate that
+reaches `EndDate`.
+
+`FLOOR` and `NEAREST` always have a candidate: for any interval of seven days
+or more, the `1W` anchor lies between the two in-window dates. `CEILING` may
+find every in-window candidate short of `EndDate`, as in the example above. It
+then returns `#NUM!` under `RESULT_WINDOW`, because the anchor the mode
+requires would leave the supported window. It does not fall back to the
+largest available anchor, which would silently be `FLOOR`.
 
 #### Rounding modes
 
@@ -593,11 +615,12 @@ sign for a negative interval:
 - `NEAREST` chooses the anchor with the smallest absolute calendar-day distance
   from `EndDate`.
 
-Tie-breaking is deterministic. Equivalent week and month anchors use the month
-representation. For `NEAREST`, an equal-distance month candidate is preferred
-to a week candidate; equal-distance adjacent month candidates choose the
-ceiling month anchor. A mathematically possible remaining same-family tie also
-chooses the ceiling anchor. Exact anchors remain exact under every mode.
+Tie-breaking is deterministic and identical under every mode. Equivalent week
+and month anchors use the month representation. An equal outcome between a week
+candidate and a month candidate takes the month; an equal outcome between two
+month candidates takes the larger count, which is the ceiling month anchor.
+Exact anchors remain exact under every mode, because an exact anchor wins each
+mode's selection outright.
 
 `DateFromPillar` applies the accepted grammar and month-then-day order in
 section 3.4, and `PillarFromDates` emits only the narrower canonical grammar

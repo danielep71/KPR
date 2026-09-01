@@ -82,7 +82,9 @@ VBA_PUBLIC_FUNCTION_PREFIX = "kpr_dates_"
 # the public members of the components listed for it.
 VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     "kpr_core_err": frozenset(),
-    "kpr_core_dates": frozenset(),
+    # The calendar core reports classified conditions and needs the vocabulary;
+    # it still never constructs a worksheet error value.
+    "kpr_core_dates": frozenset({"kpr_core_err"}),
     "kpr_core_parse": frozenset({"kpr_core_err"}),
     "kpr_core_array": frozenset({"kpr_core_err"}),
     "kpr_dates_days": frozenset(
@@ -92,7 +94,7 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     # the parser and the error vocabulary directly. Everything else they exercise
     # through the facade. They are deliberately not granted access to every core.
     "kpr_regression_tests": frozenset(
-        {"kpr_core_err", "kpr_core_parse", "kpr_dates_days"}
+        {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_dates_days"}
     ),
 }
 
@@ -124,7 +126,12 @@ VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
     "kpr_core_err": frozenset({"ErrValue", "ErrNum", "ErrNA", "ErrForCondition"}),
     "kpr_core_array": frozenset({"Array_Rank", "TryUnwrapScalar"}),
     "kpr_core_parse": frozenset(
-        {"TryParseDateScalar", "TryParseLongScalar", "TryParseBoolControl"}
+        {
+            "TryParseDateScalar",
+            "TryParseLongScalar",
+            "TryParseBoolControl",
+            "TryParseRoundingControl",
+        }
     ),
     "kpr_core_dates": frozenset(
         {
@@ -136,7 +143,7 @@ VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
             "EndOfMonth",
             "TryAddMonths",
             "TryPillar_Parse",
-            "Pillar_Format_Nearest",
+            "TryPillar_Format",
         }
     ),
     "kpr_dates_days": frozenset({"KPR_Dates_HostDateSystem"}),
@@ -149,7 +156,13 @@ VBA_HOST_GUARD = "PassHostGuard"
 VBA_HOST_CLASSIFIER = "TryResolveHostDateSystem"
 VBA_HOST_DIAGNOSTIC = "KPR_Dates_HostDateSystem"
 VBA_VOLATILE_CALL = "Application.Volatile True"
-VBA_ARGUMENT_RESOLVERS = ("TryResolveDate", "TryResolveLong", "TryResolveBool")
+VBA_ARGUMENT_RESOLVERS = (
+    "TryResolveDate",
+    "TryResolveLong",
+    "TryResolveBool",
+    "TryResolveRounding",
+    "TryResolvePillar",
+)
 
 # Date-system authority belongs to the caller's own workbook and nothing else.
 # The prohibition is scoped to the facade's host-resolution path rather than
@@ -1915,6 +1928,25 @@ def run_self_tests(root: Path) -> None:
             newline="\r\n",
         )
 
+    def reverse_dates_dependency(case: Path) -> None:
+        # Core_Dates -> Core_Err is now allowed; the reverse must still fail.
+        core = case / "src/modules/KPR_Core_Err.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function Probe() As Boolean\n"
+            + "    Probe = IsDateInWindow(0)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+        dates = case / "src/modules/KPR_Core_Dates.bas"
+        dates.write_text(
+            dates.read_text(encoding="utf-8")
+            + "Public Function IsDateInWindow(ByVal D As Date) As Boolean\nEnd Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
     def missing_host_guard(case: Path) -> None:
         facade = case / "src/modules/KPR_DATES_DAYS.bas"
         facade.write_text(
@@ -2050,6 +2082,7 @@ def run_self_tests(root: Path) -> None:
         ("missing Option Private Module", "vba-module-visibility", missing_private_module),
         ("public function outside facade", "vba-public-surface", public_function_outside_facade),
         ("forbidden module dependency", "vba-module-dependencies", forbidden_dependency),
+        ("reverse calendar dependency", "vba-module-dependencies", reverse_dates_dependency),
         ("locale-sensitive parsing", "vba-locale-parsing", locale_parsing),
         ("drifted window constant", "vba-window-constants", drifted_window_constant),
         ("missing host guard", "vba-host-guard", missing_host_guard),

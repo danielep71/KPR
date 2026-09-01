@@ -156,17 +156,9 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   and month-end from KPR_Core_Dates.EndOfMonth, both of which are total.
 '
 ' KNOWN DIVERGENCES FROM THE FROZEN CONTRACT
-'   Issue #12 removed the input-handling divergences. What remains is owned by
-'   the issues named against each line:
+'   Issues #12, #13 and #14 removed the input, host and pillar divergences.
+'   What remains is owned by the issues named against each line:
 '
-'     - Existing Boolean controls implement their strict Variant semantics;
-'       Opt_Rounding, its token parser and the CONTROL_TOKEN_UNKNOWN condition
-'       arrive with issue #14.
-'     - Pillar rounding is NEAREST only; Opt_Rounding is absent.         (#14)
-'     - The pillar parser already rejects duplicate units and signed aliases,
-'       but signals a bare failure. The PILLAR_* condition identifiers the
-'       contract registers for those rejections do not yet exist, so the two
-'       cases are indistinguishable to a caller.                         (#14)
 '     - The date-system guard runs once per scalar call. #17 must preserve
 '       that once-per-call placement when array traversal is introduced. (#17)
 '     - Multi-cell inputs are rejected rather than traversed, and a control
@@ -1928,7 +1920,8 @@ End Function
 
 Public Function KPR_Dates_PillarFromDates( _
     ByVal StartDate As Variant, _
-    ByVal EndDate As Variant) _
+    ByVal EndDate As Variant, _
+    Optional ByVal Opt_Rounding As Variant = "NEAREST") _
     As Variant
 '
 '==============================================================================
@@ -1959,7 +1952,9 @@ Public Function KPR_Dates_PillarFromDates( _
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.Pillar_Format_Nearest
+'   - TryResolveRounding (KPR_Core_Array, KPR_Core_Parse)
+'   - KPR_Core_Dates.TryPillar_Format
+'   - KPR_Core_Err.ErrForCondition
 '   - KPR_Core_Err.ErrValue
 '
 ' NOTES
@@ -1981,6 +1976,9 @@ Public Function KPR_Dates_PillarFromDates( _
 '------------------------------------------------------------------------------
     Dim ParsedStart     As Date      'Parsed start date (per TryResolveDate policy)
     Dim ParsedEnd       As Date      'Parsed end date   (per TryResolveDate policy)
+    Dim Mode            As KPR_PillarRounding 'Resolved rounding mode
+    Dim Token           As String    'Formatted pillar token
+    Dim Condition       As KPR_Condition 'Formatter failure condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -2004,11 +2002,18 @@ Public Function KPR_Dates_PillarFromDates( _
     'Parse the end date under module policy
         If Not TryResolveDate(EndDate, ParsedEnd, FailErr) Then GoTo Fail
 
+    'Accept only an omitted, blank or recognized rounding token (call-level)
+        If Not TryResolveRounding(Opt_Rounding, Mode, FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
 '------------------------------------------------------------------------------
     'Format the nearest-rounded pillar token
-        KPR_Dates_PillarFromDates = Pillar_Format_Nearest(ParsedStart, ParsedEnd)
+        If Not TryPillar_Format(ParsedStart, ParsedEnd, Mode, Token, Condition) Then
+            FailErr = ErrForCondition(Condition)
+            GoTo Fail
+        End If
+        KPR_Dates_PillarFromDates = Token
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -2071,9 +2076,9 @@ Public Function KPR_Dates_DatesFromPillar( _
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
 '   - KPR_Core_Array.TryUnwrapScalar
-'   - KPR_Core_Dates.TryPillar_Parse
+'   - TryResolvePillar (KPR_Core_Array, KPR_Core_Dates)
 '   - KPR_Core_Dates.TryAddMonths
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
+'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Y and M components are aggregated into one calendar-month shift, applied
@@ -2099,7 +2104,6 @@ Public Function KPR_Dates_DatesFromPillar( _
 ' DECLARE
 '------------------------------------------------------------------------------
     Dim ParsedStart     As Date      'Parsed StartDate (per TryResolveDate policy)
-    Dim PillarScalar    As Variant   'Pillar payload after shape unwrapping
     Dim WorkDate        As Date      'Intermediate date after the month shift
     Dim ResultD         As Double    'Final serial after the day shift, before range gating
 
@@ -2127,10 +2131,9 @@ Public Function KPR_Dates_DatesFromPillar( _
         If Not TryResolveDate(StartDate, ParsedStart, FailErr) Then GoTo Fail
 
     'Reduce the pillar argument under the same shape policy as StartDate
-        If Not TryUnwrapScalar(Pillar, PillarScalar) Then GoTo Fail
 
     'Parse the pillar token into signed month / day deltas
-        If Not TryPillar_Parse(PillarScalar, TotalMonths, TotalDays) Then GoTo Fail
+        If Not TryResolvePillar(Pillar, TotalMonths, TotalDays, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' APPLY MONTH SHIFT
@@ -2143,13 +2146,13 @@ Public Function KPR_Dates_DatesFromPillar( _
 
             'Gate the month delta to Long range before coercion
                 If (TotalMonths < -2147483648#) Or (TotalMonths > 2147483647#) Then
-                    FailErr = ErrNum()
+                    FailErr = ErrForCondition(KPR_COND_PILLAR_AGGREGATE_RANGE)
                     GoTo Fail
                 End If
 
             'Delegate to the single month shifter (never preserve-EOM here)
                 If Not TryAddMonths(WorkDate, CLng(TotalMonths), False, WorkDate) Then
-                    FailErr = ErrNum()
+                    FailErr = ErrForCondition(KPR_COND_RESULT_WINDOW)
                     GoTo Fail
                 End If
 
@@ -2163,7 +2166,7 @@ Public Function KPR_Dates_DatesFromPillar( _
 
     'Gate the result to the supported date window
         If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
-            FailErr = ErrNum()
+            FailErr = ErrForCondition(KPR_COND_RESULT_WINDOW)
             GoTo Fail
         End If
 
@@ -2548,6 +2551,174 @@ Private Function TryResolveBool( _
 
     'Contract: TRUE only when ParsedBool was assigned
         TryResolveBool = True
+
+End Function
+
+Private Function TryResolveRounding( _
+    ByVal ControlIn As Variant, _
+    ByRef Mode As KPR_PillarRounding, _
+    ByRef ErrOut As Variant) _
+    As Boolean
+'
+'==============================================================================
+'                              TryResolveRounding
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Resolves Opt_Rounding to a KPR_PillarRounding mode, or assigns the
+'   call-level error the contract requires.
+'
+' BEHAVIOR
+'   - Omitted selects NEAREST here; Empty selects it in the parser.
+'   - Shape, propagation and parsing follow the same four stages as the other
+'     resolvers. The parser returns normalized text because it may not depend
+'     on KPR_Core_Dates; the mapping to the enum happens here, where both
+'     modules are reachable.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim ScalarValue     As Variant          'Payload after shape unwrapping
+    Dim Token           As String           'Normalized token from the parser
+    Dim Condition       As KPR_Condition    'Classified failure condition
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default return is failure unless every stage succeeds
+        TryResolveRounding = False
+
+'------------------------------------------------------------------------------
+' RESOLVE OMISSION
+'------------------------------------------------------------------------------
+    'An omitted control selects the documented default
+        If IsMissing(ControlIn) Then
+            Mode = KPR_ROUND_NEAREST
+            TryResolveRounding = True
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE SHAPE
+'------------------------------------------------------------------------------
+    'A control must be scalar or a 1x1 wrapper; it never vectorizes
+        If Not TryUnwrapScalar(ControlIn, ScalarValue) Then
+            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' PROPAGATE INCOMING ERRORS
+'------------------------------------------------------------------------------
+    'An incoming Excel error is the caller's answer, returned unchanged
+        If VarType(ScalarValue) = vbError Then
+            ErrOut = ScalarValue
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE VALUE
+'------------------------------------------------------------------------------
+    'Locale-independent normalization and matching in the parser
+        If Not TryParseRoundingControl(ScalarValue, Token, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' MAP TO MODE
+'------------------------------------------------------------------------------
+    'The parser guarantees one of exactly three tokens
+        Select Case Token
+            Case "FLOOR":   Mode = KPR_ROUND_FLOOR
+            Case "CEILING": Mode = KPR_ROUND_CEILING
+            Case Else:      Mode = KPR_ROUND_NEAREST
+        End Select
+
+    'Contract: TRUE only when Mode was assigned
+        TryResolveRounding = True
+
+End Function
+
+Private Function TryResolvePillar( _
+    ByVal PillarIn As Variant, _
+    ByRef TotalMonths As Double, _
+    ByRef TotalDays As Double, _
+    ByRef ErrOut As Variant) _
+    As Boolean
+'
+'==============================================================================
+'                               TryResolvePillar
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Resolves one worksheet pillar argument into signed month and day deltas,
+'   or assigns the worksheet error the contract requires.
+'
+' BEHAVIOR
+'   Same four stages as TryResolveDate. Before this resolver existed, an
+'   incoming Excel error at the Pillar position reached the parser and was
+'   rejected as a non-text payload; the contract requires it to propagate
+'   verbatim, and now it does.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim ScalarValue     As Variant          'Payload after shape unwrapping
+    Dim Months          As Double           'Parsed month delta
+    Dim Days            As Double           'Parsed day delta
+    Dim Condition       As KPR_Condition    'Classified failure condition
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default return is failure unless every stage succeeds
+        TryResolvePillar = False
+
+'------------------------------------------------------------------------------
+' RESOLVE SHAPE
+'------------------------------------------------------------------------------
+    'Reduce a single-cell Range or 1x1 wrapper to its scalar payload
+        If Not TryUnwrapScalar(PillarIn, ScalarValue) Then
+            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' PROPAGATE INCOMING ERRORS
+'------------------------------------------------------------------------------
+    'An incoming Excel error is the caller's answer, returned unchanged
+        If VarType(ScalarValue) = vbError Then
+            ErrOut = ScalarValue
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' RESOLVE VALUE
+'------------------------------------------------------------------------------
+    'The grammar and its classified rejections live in the calendar core
+        If Not TryPillar_Parse(ScalarValue, Months, Days, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Assign the outputs only once the token is fully validated
+        TotalMonths = Months
+        TotalDays = Days
+
+    'Contract: TRUE only when the outputs were assigned
+        TryResolvePillar = True
 
 End Function
 

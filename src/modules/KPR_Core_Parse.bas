@@ -16,6 +16,7 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   - TryParseDateScalar   scalar -> normalized, in-window VBA Date
 '   - TryParseLongScalar   scalar -> exact VBA Long
 '   - TryParseBoolControl  scalar optional control -> Boolean/default
+'   - TryParseRoundingControl  Opt_Rounding text -> normalized token
 '
 ' SCOPE BOUNDARY
 '   - Shape is NOT handled here. Callers pass a scalar already unwrapped by
@@ -656,6 +657,179 @@ Public Function TryParseBoolControl( _
     'Contract: TRUE only when ParsedBool was assigned
         Condition = KPR_COND_NONE
         TryParseBoolControl = True
+
+End Function
+
+Public Function TryParseRoundingControl( _
+    ByVal ControlIn As Variant, _
+    ByRef TokenOut As String, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                           TryParseRoundingControl
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Resolves a present Opt_Rounding control to one of the three normalized
+'   tokens NEAREST, FLOOR or CEILING, under contract section 3.3.
+'
+' INPUTS
+'   ControlIn
+'     Accepted: Empty, meaning the documented default NEAREST, or text whose
+'     outer whitespace trims and whose ASCII-folded form is one of the three
+'     tokens.
+'
+'     Rejected:
+'       - any non-text, non-Empty type      CONTROL_TYPE_REJECTED
+'       - text that is not one of the three CONTROL_TOKEN_UNKNOWN
+'
+' OUTPUTS
+'   TokenOut  (ByRef)   assigned ONLY on success, always upper-case ASCII
+'   Condition (ByRef)   always assigned
+'
+' RETURNS
+'   Boolean
+'     TRUE  => TokenOut assigned and Condition is KPR_COND_NONE
+'     FALSE => TokenOut untouched and Condition names the failure
+'
+' BEHAVIOR
+'   - Case folding is ASCII-only: a-z map to A-Z and nothing else changes.
+'     UCase$ is deliberately not used, because it consults the host locale and
+'     under Turkish casing the dotless i in CEILING would not fold to I.
+'   - Trimming removes leading and trailing ASCII spaces and tabs only.
+'   - An incoming Excel error is NOT classified here; the boundary propagates
+'     it before this routine is called.
+'   - The result is text rather than an enum because this module may not
+'     depend on KPR_Core_Dates, which owns the rounding vocabulary. The facade
+'     performs the final mapping.
+'
+' ERROR POLICY
+'   - Does not raise. Every failure path returns FALSE with a condition.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Folded          As String   'Trimmed, ASCII-folded candidate token
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default outcome is failure with an explicit condition
+        TryParseRoundingControl = False
+        Condition = KPR_COND_CONTROL_TYPE_REJECTED
+
+'------------------------------------------------------------------------------
+' CLASSIFY CONTROL
+'------------------------------------------------------------------------------
+    Select Case VarType(ControlIn)
+
+        Case vbEmpty
+            'A blank control selects the documented default
+                Folded = "NEAREST"
+
+        Case vbString
+            'Normalize without consulting the locale
+                Folded = AsciiUpper(AsciiTrim(CStr(ControlIn)))
+
+        Case Else
+            'Numbers, Booleans, dates, Null and objects are not tokens
+                Condition = KPR_COND_CONTROL_TYPE_REJECTED
+                Exit Function
+
+    End Select
+
+'------------------------------------------------------------------------------
+' MATCH TOKEN
+'------------------------------------------------------------------------------
+    'Exactly three tokens are recognized
+        Select Case Folded
+            Case "NEAREST", "FLOOR", "CEILING"
+                TokenOut = Folded
+            Case Else
+                Condition = KPR_COND_CONTROL_TOKEN_UNKNOWN
+                Exit Function
+        End Select
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Contract: TRUE only when TokenOut was assigned
+        Condition = KPR_COND_NONE
+        TryParseRoundingControl = True
+
+End Function
+
+Private Function AsciiTrim( _
+    ByVal TextIn As String) _
+    As String
+'
+' Removes leading and trailing ASCII spaces and tabs. Nothing else counts as
+' whitespace here, so the result is identical in every locale.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim First       As Long     'First kept position
+    Dim Last        As Long     'Last kept position
+    Dim Ch          As String   'Character under test
+
+'------------------------------------------------------------------------------
+' SCAN
+'------------------------------------------------------------------------------
+    First = 1
+    Last = Len(TextIn)
+    Do While First <= Last
+        Ch = Mid$(TextIn, First, 1)
+        If (Ch <> " ") And (Ch <> vbTab) Then Exit Do
+        First = First + 1
+    Loop
+    Do While Last >= First
+        Ch = Mid$(TextIn, Last, 1)
+        If (Ch <> " ") And (Ch <> vbTab) Then Exit Do
+        Last = Last - 1
+    Loop
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    If Last < First Then AsciiTrim = vbNullString Else AsciiTrim = Mid$(TextIn, First, Last - First + 1)
+
+End Function
+
+Private Function AsciiUpper( _
+    ByVal TextIn As String) _
+    As String
+'
+' Folds a-z to A-Z by code point and leaves every other character untouched.
+' Locale-independent by construction; see TryParseRoundingControl.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim I           As Long     'Character cursor
+    Dim Code        As Long     'Code point under test
+    Dim Result      As String   'Accumulated output
+
+'------------------------------------------------------------------------------
+' FOLD
+'------------------------------------------------------------------------------
+    Result = TextIn
+    For I = 1 To Len(Result)
+        Code = AscW(Mid$(Result, I, 1))
+        If (Code >= 97) And (Code <= 122) Then Mid$(Result, I, 1) = ChrW$(Code - 32)
+    Next I
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    AsciiUpper = Result
 
 End Function
 

@@ -16,7 +16,7 @@ Attribute VB_Name = "KPR_Core_Dates"
 '   - EndOfMonth
 '   - TryAddMonths
 '   - TryPillar_Parse
-'   - Pillar_Format_Nearest
+'   - TryPillar_Format
 '
 ' VISIBILITY
 '   Option Private Module. Members are declared Public so other modules in the
@@ -25,9 +25,10 @@ Attribute VB_Name = "KPR_Core_Dates"
 '   Nothing here is supported API.
 '
 ' ALLOWED DEPENDENCIES
-'   None. This module computes on already-validated inputs and never parses,
-'   never inspects shape, and never constructs a worksheet error. VBA date
-'   intrinsics are used directly.
+'   KPR_Core_Err, for the condition vocabulary only. This module never
+'   constructs a worksheet error value: it reports a classified condition and
+'   the facade maps it. It never parses text other than pillar tokens and
+'   never inspects shape. VBA date intrinsics are used directly.
 '
 ' SUPPORTED WINDOW
 '       KPR_MIN_DATE = 1900-03-01
@@ -57,19 +58,11 @@ Attribute VB_Name = "KPR_Core_Dates"
 '   isolation on the host. Deriving month length arithmetically removes the
 '   boundary crossing rather than guarding it.
 '
-' SCOPE BOUNDARY (THIS REVISION)
-'   Pillar rounding is NEAREST only, as migrated. FLOOR and CEILING arrive with
-'   Opt_Rounding in issue #14, which owns the rounding modes and the accepted
-'   token grammar together.
-'
-'   Duplicate pillar units and signed aliases are already rejected here, matching
-'   the contract grammar. Both rejections signal a bare parse failure: the
-'   PILLAR_DUPLICATE_UNIT and PILLAR_ALIAS_SIGNED identifiers the contract
-'   registers for them do not exist in KPR_Condition yet, so a caller cannot
-'   tell the two apart or distinguish either from a malformed token. Issue #14
-'   closes that gap when it takes ownership of the grammar; this module cannot
-'   do it alone, because the dependency matrix does not let it reach the
-'   condition vocabulary in KPR_Core_Err.
+' PILLAR POLICY (THIS REVISION)
+'   TryPillar_Format implements the three rounding modes over one uniform
+'   candidate set, and TryPillar_Parse reports every grammar rejection under
+'   its own condition identifier. Both are specified in contract section 8.4
+'   and 3.4; the module header does not restate the rules.
 '
 ' NOTES
 '   - Date math follows Excel / VBA DateSerial, DateAdd, DateDiff and Weekday
@@ -82,7 +75,7 @@ Attribute VB_Name = "KPR_Core_Dates"
 '     (29-Feb, short months, EOM) cannot drift between the two surfaces.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '
 ' AUTHOR
 '   Daniele Penza
@@ -93,6 +86,18 @@ Attribute VB_Name = "KPR_Core_Dates"
 '------------------------------------------------------------------------------
     Option Explicit         'Force explicit variable declarations
     Option Private Module   'Internal module: invisible outside this VBA project
+
+'------------------------------------------------------------------------------
+' ROUNDING VOCABULARY
+'------------------------------------------------------------------------------
+    'Pillar rounding modes. A calendar concept, so it lives with the calendar
+    'core. The facade maps the normalized Opt_Rounding token onto these; the
+    'parser cannot, because KPR_Core_Parse may not depend on this module.
+        Public Enum KPR_PillarRounding
+            KPR_ROUND_NEAREST = 0
+            KPR_ROUND_FLOOR = 1
+            KPR_ROUND_CEILING = 2
+        End Enum
 
 '------------------------------------------------------------------------------
 ' MODULE CONSTANTS
@@ -531,7 +536,8 @@ End Function
 Public Function TryPillar_Parse( _
     ByVal PillarIn As Variant, _
     ByRef TotalMonths As Double, _
-    ByRef TotalDays As Double) _
+    ByRef TotalDays As Double, _
+    ByRef Condition As KPR_Condition) _
     As Boolean
 '
 '==============================================================================
@@ -550,6 +556,13 @@ Public Function TryPillar_Parse( _
 ' OUTPUTS
 '   TotalMonths (ByRef)
 '     Signed aggregate of the Y and M components: sign * (12Y + M).
+'
+'   Condition (ByRef)
+'     Always assigned. KPR_COND_NONE on success; otherwise one of
+'       PILLAR_TYPE_REJECTED     non-text payload
+'       PILLAR_ALIAS_SIGNED      whole-token alias carrying a leading sign
+'       PILLAR_DUPLICATE_UNIT    a unit appearing more than once
+'       PILLAR_TOKEN_MALFORMED   every other grammar violation
 '
 '   TotalDays (ByRef)
 '     Signed aggregate of the W and D components: sign * (7W + D).
@@ -638,6 +651,9 @@ Public Function TryPillar_Parse( _
 '------------------------------------------------------------------------------
     'Trap runtime errors and convert them to a FALSE return
         On Error GoTo Fail
+
+    'Default classification for any structural rejection below
+        Condition = KPR_COND_PILLAR_TOKEN_MALFORMED
     'Default return is failure unless we explicitly succeed
         TryPillar_Parse = False
     'Default sign is positive
@@ -647,9 +663,12 @@ Public Function TryPillar_Parse( _
 ' NORMALIZE PILLAR TEXT
 '------------------------------------------------------------------------------
     'Require a text payload
-        If VarType(PillarIn) <> vbString Then GoTo Fail
+        If VarType(PillarIn) <> vbString Then
+            Condition = KPR_COND_PILLAR_TYPE_REJECTED
+            GoTo Fail
+        End If
     'Trim and upper-case once
-        S = UCase$(Trim$(CStr(PillarIn)))
+        S = Pillar_AsciiUpper(Pillar_AsciiTrim(CStr(PillarIn)))
     'Reject a blank token
         If Len(S) = 0 Then GoTo Fail
 
@@ -680,7 +699,10 @@ Public Function TryPillar_Parse( _
         Select Case SBody
             Case "ON", "O/N", "TN", "T/N"
                 'An alias names a fixed point and cannot carry a sign
-                    If HasSign Then GoTo Fail
+                    If HasSign Then
+                        Condition = KPR_COND_PILLAR_ALIAS_SIGNED
+                        GoTo Fail
+                    End If
                 'Resolve the alias to its day count
                     If (SBody = "ON") Or (SBody = "O/N") Then
                         DaysD = 1#
@@ -717,19 +739,19 @@ Public Function TryPillar_Parse( _
                     'Record the component by unit, rejecting any repeat
                         Select Case Mid$(SBody, ScanPos, 1)
                             Case "Y"
-                                If SeenY Then GoTo Fail
+                                If SeenY Then Condition = KPR_COND_PILLAR_DUPLICATE_UNIT: GoTo Fail
                                 SeenY = True
                                 YearsD = QtyD
                             Case "M"
-                                If SeenM Then GoTo Fail
+                                If SeenM Then Condition = KPR_COND_PILLAR_DUPLICATE_UNIT: GoTo Fail
                                 SeenM = True
                                 MonthsD = QtyD
                             Case "W"
-                                If SeenW Then GoTo Fail
+                                If SeenW Then Condition = KPR_COND_PILLAR_DUPLICATE_UNIT: GoTo Fail
                                 SeenW = True
                                 WeeksD = QtyD
                             Case "D"
-                                If SeenD Then GoTo Fail
+                                If SeenD Then Condition = KPR_COND_PILLAR_DUPLICATE_UNIT: GoTo Fail
                                 SeenD = True
                                 DaysD = QtyD
                             Case Else
@@ -755,6 +777,7 @@ Public Function TryPillar_Parse( _
     'Aggregate W / D into a signed day delta
         TotalDays = SignMul * ((7# * WeeksD) + DaysD)
     'Contract: TRUE only when both outputs were assigned
+        Condition = KPR_COND_NONE
         TryPillar_Parse = True
         Exit Function
 
@@ -770,251 +793,443 @@ Fail:
 End Function
 
 
-Public Function Pillar_Format_Nearest( _
+Public Function TryPillar_Format( _
     ByVal DtStart As Date, _
-    ByVal DtEnd As Date) _
-    As String
+    ByVal DtEnd As Date, _
+    ByVal Mode As KPR_PillarRounding, _
+    ByRef TokenOut As String, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
 '
 '==============================================================================
-'                            Pillar_Format_Nearest
+'                                TryPillar_Format
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Formats the interval between two dates as a market-style tenor label using
-'   TRUE NEAREST rounding with calendar-true month handling.
+'   Formats the interval from DtStart to DtEnd as one canonical pillar token
+'   under the requested rounding mode, or reports why no token exists.
 '
 ' SIGNATURE
-'   Pillar_Format_Nearest(DtStart, DtEnd) -> String
+'   TryPillar_Format(DtStart, DtEnd, Mode, TokenOut, Condition) -> Boolean
 '
 ' INPUTS
-'   DtStart
-'     Already-parsed start date. A time component is tolerated and discarded.
+'   DtStart, DtEnd
+'     Date-only values inside the supported window. Order is free; a negative
+'     interval yields a "-" prefix.
+'   Mode
+'     KPR_ROUND_NEAREST, KPR_ROUND_FLOOR or KPR_ROUND_CEILING.
 '
-'   DtEnd
-'     Already-parsed end date. A time component is tolerated and discarded.
+' OUTPUTS
+'   TokenOut  (ByRef)   assigned ONLY on success
+'   Condition (ByRef)   always assigned; KPR_COND_NONE on success
 '
 ' RETURNS
-'   String
-'     Labels such as "0D", "6D", "3W", "5M", "2Y4M", prefixed with "-" when
-'     DtEnd precedes DtStart.
+'   Boolean
+'     TRUE  => TokenOut assigned
+'     FALSE => Condition is RESULT_WINDOW: the anchor the mode requires would
+'              leave the supported window, so no candidate satisfies it
 '
-' BEHAVIOR
-'   - Zero days           => "0D"
-'   - Fewer than 7 days   => exact "nD"
-'   - Otherwise:
-'       * build the nearest whole-week anchor, eligible only up to 3W
-'       * build the nearest calendar-month anchor from the start date
-'       * measure both against the actual end date and emit the closer one
-'       * ties resolve to the month-style label
+' CANDIDATE SET (contract section 8.4)
+'   One set under every mode. Anchors are generated from the ORIGINAL DtStart
+'   in the direction of DtEnd, using signed counts, so that an emitted negative
+'   token re-parses with the same clipping DateFromPillar applies.
 '
-' ROUNDING POLICY
-'   - Weeks: nearest whole week on calendar days, half up, capped at 3W.
-'   - Months: compare the floor and ceiling month anchors, take the closer,
-'     ties round up. Anchors are built with DateAdd so month lengths are real.
-'   - Family choice: whichever eligible anchor sits closer to the true end
-'     date.
+'       weeks    1W, 2W, 3W          (never 4W or beyond)
+'       months   floor month  = largest positive count whose anchor does not
+'                               pass DtEnd in the interval direction
+'                ceiling month = floor + 1
+'
+'   An anchor outside the supported window is excluded, never approximated:
+'   there is no nominal distance for an anchor that cannot be constructed.
+'   Month anchors come from TryAddMonths so their clipping cannot diverge from
+'   the parser.
+'
+' SELECTION
+'   Exact day pillars: an absolute interval shorter than seven days returns
+'   the exact "nD" token under every mode; rounding is not involved.
+'
+'       FLOOR    the candidate that does not pass DtEnd and lies farthest from
+'                DtStart in the interval direction
+'       CEILING  the candidate that reaches or passes DtEnd and lies closest
+'                to DtEnd; none => RESULT_WINDOW
+'       NEAREST  the candidate with the smallest calendar-day distance to DtEnd
+'
+'   Tie rules, identical under every mode: an equal outcome between a week
+'   anchor and a month anchor takes the month; an equal outcome between two
+'   month anchors takes the larger count. An exact anchor is exact under every
+'   mode, because it wins each selection outright.
+'
+'   Under NEAREST the 3W / 1M boundary is therefore derived, not pinned: 24
+'   days is always 3W and 27 days is always 1M whenever the 1M anchor is in
+'   the window; 25 and 26 resolve by distance to that anchor, ties to the
+'   month.
+'
+' WHY FLOOR AND NEAREST ALWAYS SUCCEED
+'   For any interval of seven days or more, the 1W anchor lies strictly
+'   between the two dates, both of which are in the window, so at least one
+'   candidate exists and it does not pass DtEnd. Only CEILING can find every
+'   in-window candidate short of DtEnd.
 '
 ' ERROR POLICY
-'   None. The caller owns parsing and worksheet messaging.
+'   - Does not raise. The single failure path returns FALSE with a condition.
 '
 ' DEPENDENCIES
-'   None.
+'   - TryAddMonths, KPR_MIN_DATE, KPR_MAX_DATE
+'   - KPR_Core_Err condition vocabulary
 '
 ' NOTES
-'   - Deliberately coarse: no mixed tokens like "1M2W". A pillar is a curve
-'     bucket label, not a precise interval.
-'   - Day tokens are reserved for intervals under a week so longer intervals
-'     never collapse into raw day counts.
-'   - The week family is capped at 3W for the same reason. A week anchor
-'     always lands within 3 days of any target while a month anchor can sit
-'     up to about 15 days away, so on pure distance the week family would win
-'     almost every long interval: ten years and two weeks formatted as "524W"
-'     before the cap. Market convention runs weeks only at the short end.
-'   - The cap makes 4W and longer week labels unreachable. The 3W to 1M
-'     boundary falls at 25 days, measured on the host: 24 days emits "3W" and
-'     25 days emits "1M". Convention would more often call 25 to 27 days 3W
-'     or 4W, so labels in that band sit one pillar long. The boundary is left
-'     where the rounding rule puts it rather than special-cased, because a
-'     boundary that cannot be derived from the rule is the kind that drifts.
-'   - This produces a nearest tenor LABEL, not the nearest quoted pillar. Any
-'     integer month can be emitted, including 7M and other months that are not
-'     normally quoted, and no ceiling is applied to the year family. Snapping
-'     to a pillar set is a different guarantee and belongs elsewhere.
-'   - Anchors that would leave the supported window are treated as ineligible
-'     rather than trapped. DateAdd raises error 5 there, and this routine
-'     states that it does not raise; eligibility keeps that true without an
-'     error handler reinterpreting a raise as a tenor.
-'   - Eligibility is positional, so a label can depend on where in the
-'     calendar the interval sits. An 11-day interval emits "2W" anywhere in
-'     the range except the final fortnight of year 9999, where the 2W anchor
-'     falls outside the window and the month family takes it as "1M".
-'   - Both inputs are floored to midnight before comparison. Without that,
-'     a later clock time on the same calendar day sets the sign prefix while
-'     the day count reports zero, emitting "-0D".
-'   - Day distances are taken by serial subtraction. Every operand is an
-'     integral date, so the result matches DateDiff exactly at lower cost.
+'   - Month counts of 12 or more format as years plus residual months.
+'   - The old half-up "nearest week then cap" mechanism is gone. It made the
+'     week family mean different things under different modes and produced a
+'     3W / 1M boundary that was an artifact of integer division rather than
+'     of distance.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim SignPrefix      As String   '"-" when DtEnd precedes DtStart
-    Dim D0              As Date     'Normalized earlier date, date-only
-    Dim D1              As Date     'Normalized later date, date-only
-    Dim Serial0         As Double   'Serial of D0, reused by every distance
-    Dim Serial1         As Double   'Serial of D1, reused by every distance
+    Dim Dir             As Long     '+1 when DtEnd follows DtStart, else -1
+    Dim SerialStart     As Double   'Serial of DtStart
+    Dim SerialEnd       As Double   'Serial of DtEnd
+    Dim TotalDays       As Long     'Absolute calendar days between the dates
 
-    Dim TotalDays       As Long     'Calendar days between D0 and D1
+    Dim CandSerial(1 To 5) As Double    'Anchor serials, in candidate order
+    Dim CandIsMonth(1 To 5) As Boolean  'TRUE for a month anchor
+    Dim CandCount(1 To 5) As Long       'Week or month count (unsigned)
+    Dim CandN           As Long         'Number of admitted candidates
 
-    Dim nWeeks          As Long     'Nearest whole week count (half up), capped
-    Dim WeekSerial      As Double   'Serial of the week anchor
-    Dim DistWeek        As Long     'Day distance from D1 to the week anchor
-    Dim WeekOK          As Boolean  'TRUE when the week anchor is a candidate
+    Dim K               As Long     'Loop and count cursor
+    Dim WeekSerial      As Double   'Candidate week anchor, tested before any Date conversion
+    Dim FloorMonths     As Long     'Largest positive month count not passing DtEnd
+    Dim Anchor          As Date     'Working anchor from TryAddMonths
+    Dim Probe           As Long     'Working month count while locating the floor
 
-    Dim MonthIndex0     As Long     'Absolute 0-based month index of D0
+    Dim Best            As Long     'Index of the selected candidate, 0 = none
+    Dim Reach           As Double   'Signed progress of a candidate from DtStart
+    Dim BestReach       As Double   'Progress of the current best
+    Dim Dist            As Long     'Absolute day distance of a candidate to DtEnd
+    Dim BestDist        As Long     'Distance of the current best
+    Dim Passes          As Boolean  'TRUE when a candidate reaches or passes DtEnd
+    Dim Better          As Boolean  'TRUE when candidate K displaces Best
 
-    Dim FloorMonths     As Long     'Largest month count not overshooting D1
-    Dim CeilMonths      As Long     'Next month count after FloorMonths
-    Dim NearestMonths   As Long     'Chosen month count
-    Dim DistMonth       As Long     'Day distance from D1 to the chosen month anchor
-    Dim DistFloor       As Long     'Day distance to the floor month anchor
-    Dim DistCeil        As Long     'Day distance to the ceiling month anchor
-    Dim CeilOK          As Boolean  'TRUE when the ceiling anchor stays in range
-
-    Dim nYears          As Long     'Year component of NearestMonths
-    Dim nMonths         As Long     'Residual month component of NearestMonths
-    Dim OutTok          As String   'Unsigned output token
+    Dim nYears          As Long     'Year component of a month count
+    Dim nMonths         As Long     'Residual month component
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Floor both inputs so the sign and the day count agree
-        If Int(CDbl(DtEnd)) >= Int(CDbl(DtStart)) Then
-            SignPrefix = vbNullString
-            D0 = Int(CDbl(DtStart))
-            D1 = Int(CDbl(DtEnd))
-        Else
-            SignPrefix = "-"
-            D0 = Int(CDbl(DtEnd))
-            D1 = Int(CDbl(DtStart))
-        End If
+    'Default outcome is failure with an explicit condition
+        TryPillar_Format = False
+        Condition = KPR_COND_RESULT_WINDOW
 
-    'Cache both serials; every distance below is a subtraction on these
-        Serial0 = CDbl(D0)
-        Serial1 = CDbl(D1)
-    'Measure the interval once
-        TotalDays = CLng(Serial1 - Serial0)
+    'Direction and magnitude from the ORIGINAL start date
+        SerialStart = Int(CDbl(DtStart))
+        SerialEnd = Int(CDbl(DtEnd))
+        If SerialEnd >= SerialStart Then Dir = 1 Else Dir = -1
+        TotalDays = CLng(Abs(SerialEnd - SerialStart))
 
 '------------------------------------------------------------------------------
-' SHORT INTERVALS
+' EXACT DAY PILLARS
 '------------------------------------------------------------------------------
-    'Same date is explicit rather than empty
+    'Equal dates and short intervals are exact under every mode
         If TotalDays = 0 Then
-            Pillar_Format_Nearest = SignPrefix & "0D"
+            TokenOut = "0D"
+            Condition = KPR_COND_NONE
+            TryPillar_Format = True
             Exit Function
         End If
-    'Sub-week intervals stay exact in days
         If TotalDays < 7 Then
-            Pillar_Format_Nearest = SignPrefix & CStr(TotalDays) & "D"
+            TokenOut = SignPrefix(Dir) & CStr(TotalDays) & "D"
+            Condition = KPR_COND_NONE
+            TryPillar_Format = True
             Exit Function
         End If
 
 '------------------------------------------------------------------------------
-' NEAREST WEEK ANCHOR
+' WEEK CANDIDATES
 '------------------------------------------------------------------------------
-    'Nearest whole week, half up
-        nWeeks = (TotalDays + 3) \ 7
-
-    'The week family runs only to 3W; beyond that months own the label
-        If nWeeks >= 1 And nWeeks <= 3 Then
-            'The anchor may round past D1 and out of the supported window
-                WeekSerial = Serial0 + 7# * CDbl(nWeeks)
-                If WeekSerial <= CDbl(KPR_MAX_DATE) Then
-                    DistWeek = Abs(CLng(WeekSerial - Serial1))
-                    WeekOK = True
-                End If
-        End If
-
-'------------------------------------------------------------------------------
-' NEAREST MONTH ANCHOR
-'------------------------------------------------------------------------------
-    'Month index of the start date, needed only past the short-interval exits
-        MonthIndex0 = Year(D0) * 12& + Month(D0) - 1&
-
-    'Crossed month boundaries, then step back if adding them overshoots
-        FloorMonths = DateDiff("m", D0, D1)
-        If FloorMonths > 0 Then
-            If DateAdd("m", FloorMonths, D0) > D1 Then FloorMonths = FloorMonths - 1
-        End If
-
-    'Defensive clamp
-        If FloorMonths < 0 Then FloorMonths = 0
-
-    'Below one month the only meaningful month tenor is 1M
-        If FloorMonths = 0 Then
-            'The tenor is 1M whether or not its anchor can be constructed
-                NearestMonths = 1
-            'The 1M anchor may step past the end of the supported window
-                If (MonthIndex0 + 1&) <= KPR_MAX_MONTHIDX Then
-                    DistMonth = Abs(CLng(CDbl(DateAdd("m", 1, D0)) - Serial1))
-                Else
-                    'No anchor exists to measure; approximate on a nominal month
-                        DistMonth = Abs(TotalDays - 30&)
-                End If
-        Else
-            'The ceiling anchor may step past the end of the supported window
-                CeilMonths = FloorMonths + 1
-                CeilOK = ((MonthIndex0 + CeilMonths) <= KPR_MAX_MONTHIDX)
-            'Measure the floor anchor, which is always in range
-                DistFloor = Abs(CLng(CDbl(DateAdd("m", FloorMonths, D0)) - Serial1))
-            'Take the closer anchor; ties round up
-                If CeilOK Then
-                    DistCeil = Abs(CLng(CDbl(DateAdd("m", CeilMonths, D0)) - Serial1))
-                    If DistCeil <= DistFloor Then
-                        NearestMonths = CeilMonths
-                        DistMonth = DistCeil
-                    Else
-                        NearestMonths = FloorMonths
-                        DistMonth = DistFloor
-                    End If
-                Else
-                    NearestMonths = FloorMonths
-                    DistMonth = DistFloor
-                End If
-        End If
+    'Admit 1W, 2W and 3W when their anchors stay inside the window. The test
+    'is on the serial as a Double: converting an out-of-range serial to a Date
+    'raises, and an anchor that cannot be constructed must be excluded, not
+    'allowed to abort the call.
+        CandN = 0
+        For K = 1 To 3
+            WeekSerial = SerialStart + CDbl(Dir) * 7# * CDbl(K)
+            If (WeekSerial >= CDbl(KPR_MIN_DATE)) And (WeekSerial <= CDbl(KPR_MAX_DATE)) Then
+                CandN = CandN + 1
+                CandSerial(CandN) = WeekSerial
+                CandIsMonth(CandN) = False
+                CandCount(CandN) = K
+            End If
+        Next K
 
 '------------------------------------------------------------------------------
-' CHOOSE TENOR FAMILY
+' MONTH CANDIDATES
 '------------------------------------------------------------------------------
-    'A strictly closer week anchor wins outright, when it is a candidate
-        If WeekOK Then
-            If DistWeek < DistMonth Then
-                Pillar_Format_Nearest = SignPrefix & CStr(nWeeks) & "W"
-                Exit Function
+    'Locate the largest positive count whose anchor does not pass DtEnd,
+    'starting from the calendar-month difference and correcting for clipping
+        FloorMonths = Abs(DateDiff("m", DtStart, DtEnd))
+        If FloorMonths < 1 Then FloorMonths = 1
+
+    'Step down while the anchor passes DtEnd or cannot be constructed
+        Do While FloorMonths >= 1
+            If TryAddMonths(DtStart, Dir * FloorMonths, False, Anchor) Then
+                If Not AnchorPasses(CDbl(Anchor), SerialEnd, Dir) Then Exit Do
+            End If
+            FloorMonths = FloorMonths - 1
+        Loop
+
+    'Step up while the next anchor still does not pass DtEnd
+        Do
+            Probe = FloorMonths + 1
+            If Not TryAddMonths(DtStart, Dir * Probe, False, Anchor) Then Exit Do
+            If AnchorPasses(CDbl(Anchor), SerialEnd, Dir) Then Exit Do
+            FloorMonths = Probe
+        Loop
+
+    'Admit the floor month anchor, if any
+        If FloorMonths >= 1 Then
+            If TryAddMonths(DtStart, Dir * FloorMonths, False, Anchor) Then
+                CandN = CandN + 1
+                CandSerial(CandN) = CDbl(Anchor)
+                CandIsMonth(CandN) = True
+                CandCount(CandN) = FloorMonths
             End If
         End If
 
-    'Otherwise fall through to month-style output; ties prefer months
-        nYears = NearestMonths \ 12
-        nMonths = NearestMonths Mod 12
+    'Admit the ceiling month anchor only if it can be constructed in-window
+        If TryAddMonths(DtStart, Dir * (FloorMonths + 1), False, Anchor) Then
+            CandN = CandN + 1
+            CandSerial(CandN) = CDbl(Anchor)
+            CandIsMonth(CandN) = True
+            CandCount(CandN) = FloorMonths + 1
+        End If
 
 '------------------------------------------------------------------------------
-' BUILD MONTH-STYLE TOKEN
+' SELECT
 '------------------------------------------------------------------------------
-    'Emit years when present
-        If nYears > 0 Then OutTok = OutTok & CStr(nYears) & "Y"
-    'Emit residual months when present
-        If nMonths > 0 Then OutTok = OutTok & CStr(nMonths) & "M"
-    'Defensive fallback; unreachable because NearestMonths is always >= 1
-        If Len(OutTok) = 0 Then OutTok = "0D"
+    'One pass; the mode decides the ordering and the tie rules are shared
+        Best = 0
+        For K = 1 To CandN
+
+            'Signed progress from DtStart and absolute distance to DtEnd
+                Reach = CDbl(Dir) * (CandSerial(K) - SerialStart)
+                Dist = CLng(Abs(CandSerial(K) - SerialEnd))
+                Passes = AnchorPasses(CandSerial(K), SerialEnd, Dir) Or (Dist = 0)
+
+            'Eligibility and ordering by mode
+                Better = False
+                Select Case Mode
+
+                    Case KPR_ROUND_FLOOR
+                        'Must not pass; prefer the farthest reach
+                            If Not AnchorPasses(CandSerial(K), SerialEnd, Dir) Then
+                                If Best = 0 Then
+                                    Better = True
+                                ElseIf Reach > BestReach Then
+                                    Better = True
+                                ElseIf Reach = BestReach Then
+                                    Better = TieToMonth(K, Best, CandIsMonth, CandCount)
+                                End If
+                            End If
+
+                    Case KPR_ROUND_CEILING
+                        'Must reach or pass; prefer the smallest reach
+                            If Passes Then
+                                If Best = 0 Then
+                                    Better = True
+                                ElseIf Reach < BestReach Then
+                                    Better = True
+                                ElseIf Reach = BestReach Then
+                                    Better = TieToMonth(K, Best, CandIsMonth, CandCount)
+                                End If
+                            End If
+
+                    Case Else
+                        'NEAREST: smallest distance, ties by the shared rule
+                            If Best = 0 Then
+                                Better = True
+                            ElseIf Dist < BestDist Then
+                                Better = True
+                            ElseIf Dist = BestDist Then
+                                Better = TieToMonth(K, Best, CandIsMonth, CandCount)
+                            End If
+
+                End Select
+
+            'Record the new best
+                If Better Then
+                    Best = K
+                    BestReach = Reach
+                    BestDist = Dist
+                End If
+
+        Next K
+
+    'No candidate satisfied the mode: only CEILING can arrive here
+        If Best = 0 Then Exit Function
+
+'------------------------------------------------------------------------------
+' FORMAT
+'------------------------------------------------------------------------------
+    'Weeks are a single token; months split into years and residual months
+        If Not CandIsMonth(Best) Then
+            TokenOut = SignPrefix(Dir) & CStr(CandCount(Best)) & "W"
+        Else
+            nYears = CandCount(Best) \ 12
+            nMonths = CandCount(Best) Mod 12
+            If nYears = 0 Then
+                TokenOut = SignPrefix(Dir) & CStr(nMonths) & "M"
+            ElseIf nMonths = 0 Then
+                TokenOut = SignPrefix(Dir) & CStr(nYears) & "Y"
+            Else
+                TokenOut = SignPrefix(Dir) & CStr(nYears) & "Y" & CStr(nMonths) & "M"
+            End If
+        End If
 
 '------------------------------------------------------------------------------
 ' ASSIGN RESULT
 '------------------------------------------------------------------------------
-    'Apply the direction prefix and return
-        Pillar_Format_Nearest = SignPrefix & OutTok
+    'Contract: TRUE only when TokenOut was assigned
+        Condition = KPR_COND_NONE
+        TryPillar_Format = True
+
+End Function
+
+Private Function AnchorPasses( _
+    ByVal AnchorSerial As Double, _
+    ByVal SerialEnd As Double, _
+    ByVal Dir As Long) _
+    As Boolean
+'
+' TRUE when the anchor lies strictly beyond DtEnd in the interval direction.
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Strictly beyond, in the signed direction
+        AnchorPasses = (CDbl(Dir) * (AnchorSerial - SerialEnd) > 0#)
+
+End Function
+
+Private Function TieToMonth( _
+    ByVal Candidate As Long, _
+    ByVal Best As Long, _
+    ByRef IsMonth() As Boolean, _
+    ByRef Count() As Long) _
+    As Boolean
+'
+' The shared tie rule: month beats week; between months, the larger count.
+' Returns TRUE when Candidate should displace Best.
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Month over week
+        If IsMonth(Candidate) And Not IsMonth(Best) Then
+            TieToMonth = True
+
+    'Between months, the larger count (the ceiling anchor)
+        ElseIf IsMonth(Candidate) And IsMonth(Best) Then
+            TieToMonth = (Count(Candidate) > Count(Best))
+
+    'Otherwise keep the current best
+        Else
+            TieToMonth = False
+        End If
+
+End Function
+
+Private Function SignPrefix( _
+    ByVal Dir As Long) _
+    As String
+'
+' "-" for a negative interval, empty otherwise.
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Only a negative interval carries a prefix; "+" is never emitted
+        If Dir < 0 Then SignPrefix = "-" Else SignPrefix = vbNullString
+
+End Function
+
+Private Function Pillar_AsciiTrim( _
+    ByVal TextIn As String) _
+    As String
+'
+' Removes leading and trailing ASCII spaces and tabs only, so pillar text is
+' trimmed identically in every locale.
+'
+' A private twin of the helper in KPR_Core_Parse: the dependency matrix does
+' not let this module call that one, and a ten-line helper is cheaper than a
+' shared utility module. Keep the two in step.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim First       As Long     'First kept position
+    Dim Last        As Long     'Last kept position
+    Dim Ch          As String   'Character under test
+
+'------------------------------------------------------------------------------
+' SCAN
+'------------------------------------------------------------------------------
+    First = 1
+    Last = Len(TextIn)
+    Do While First <= Last
+        Ch = Mid$(TextIn, First, 1)
+        If (Ch <> " ") And (Ch <> vbTab) Then Exit Do
+        First = First + 1
+    Loop
+    Do While Last >= First
+        Ch = Mid$(TextIn, Last, 1)
+        If (Ch <> " ") And (Ch <> vbTab) Then Exit Do
+        Last = Last - 1
+    Loop
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    If Last < First Then Pillar_AsciiTrim = vbNullString Else Pillar_AsciiTrim = Mid$(TextIn, First, Last - First + 1)
+
+End Function
+
+Private Function Pillar_AsciiUpper( _
+    ByVal TextIn As String) _
+    As String
+'
+' Folds a-z to A-Z by code point. UCase$ consults the host locale and is not
+' used anywhere in pillar parsing. Private twin of the KPR_Core_Parse helper;
+' keep the two in step.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim I           As Long     'Character cursor
+    Dim Code        As Long     'Code point under test
+    Dim Result      As String   'Accumulated output
+
+'------------------------------------------------------------------------------
+' FOLD
+'------------------------------------------------------------------------------
+    Result = TextIn
+    For I = 1 To Len(Result)
+        Code = AscW(Mid$(Result, I, 1))
+        If (Code >= 97) And (Code <= 122) Then Mid$(Result, I, 1) = ChrW$(Code - 32)
+    Next I
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    Pillar_AsciiUpper = Result
 
 End Function

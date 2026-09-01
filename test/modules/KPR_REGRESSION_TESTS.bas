@@ -23,6 +23,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '       mapper        ErrForCondition mappings and its refusals
 '       host          the date-system guard and diagnostic from direct VBA,
 '                     and #N/A provenance
+'       pillar        rounding modes, the derived 3W / 1M boundary, the week
+'                     cap, grammar conditions and format/parse consistency
 '
 '   Later issues add suites by writing one Private Sub and one Case line. The
 '   dispatcher is deliberately the only shared machinery.
@@ -70,8 +72,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '   detail and must not reach fixtures or evidence.
 '
 ' ALLOWED DEPENDENCIES
-'   KPR_Core_Parse and KPR_Core_Err, called directly to assert exact condition
-'   classification, and KPR_DATES_DAYS for boundary behaviour. No other core is
+'   KPR_Core_Parse, KPR_Core_Dates and KPR_Core_Err, called directly to assert
+'   exact condition classification, and KPR_DATES_DAYS for boundary behaviour. No other core is
 '   reachable from here. The stateful host runner additionally uses
 '   Excel.Workbooks.Add and the scratch workbook it creates, always through the
 '   exact object reference and never through ActiveWorkbook.
@@ -386,6 +388,7 @@ Private Function RunSuite( _
                 Run_BoundaryCases
                 Run_MapperCases
                 Run_HostCases
+                Run_PillarCases
 
         Case "date-type":       Run_DateTypeCases
         Case "date-text":       Run_DateTextCases
@@ -395,6 +398,7 @@ Private Function RunSuite( _
         Case "boundary":        Run_BoundaryCases
         Case "mapper":          Run_MapperCases
         Case "host":            Run_HostCases
+        Case "pillar":          Run_PillarCases
 
         Case Else
             'Not in the registry
@@ -474,6 +478,284 @@ Private Sub Run_HostCases()
 
 End Sub
 
+
+'
+'------------------------------------------------------------------------------
+'
+'                       SUITE - PILLAR ROUNDING AND GRAMMAR
+'
+'------------------------------------------------------------------------------
+'
+
+Private Sub Run_PillarCases()
+'
+' The three rounding modes over one uniform candidate set, the derived
+' 3W / 1M boundary, the week cap under every mode, the CEILING gap, grammar
+' conditions by identifier, and format/parse consistency.
+'
+' Expected tokens were derived from the contract's rule independently of the
+' VBA implementation, so a passing case checks the implementation against the
+' rule rather than against itself.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const ERR_VALUE As Long = 2015      'Excel #VALUE! error number
+    Const ERR_NUM   As Long = 2036      'Excel #NUM! error number
+    Const ERR_NA    As Long = 2042      'Excel #N/A error number
+    Dim S           As Date             'Reference start date
+    Dim D           As Long             'Interval cursor for the consistency loop
+    Dim Token       As Variant          'Emitted token
+    Dim Back        As Variant          'Re-parsed anchor
+    Dim Again       As Variant          'Token re-emitted from the anchor
+    Dim ModeName    As Variant          'Mode cursor
+    Dim TokenOut    As String           'Core formatter output
+    Dim Cond        As KPR_Condition    'Core condition
+
+'------------------------------------------------------------------------------
+' EXACT DAY PILLARS UNDER EVERY MODE
+'------------------------------------------------------------------------------
+    S = DateSerial(2026, 3, 15)
+        AssertPillar "pillar/0D", S, S, "NEAREST", "0D"
+        AssertPillar "pillar/5D nearest", S, S + 5, "NEAREST", "5D"
+        AssertPillar "pillar/5D floor", S, S + 5, "FLOOR", "5D"
+        AssertPillar "pillar/5D ceiling", S, S + 5, "CEILING", "5D"
+        AssertPillar "pillar/-5D", S, S - 5, "NEAREST", "-5D"
+
+'------------------------------------------------------------------------------
+' DERIVED 3W / 1M BOUNDARY UNDER NEAREST
+'------------------------------------------------------------------------------
+    'From Mar 15 the 1M anchor is Apr 15, 31 days out: 25 stays 3W, 26 is 1M
+        AssertPillar "boundary/24d Mar15", S, S + 24, "NEAREST", "3W"
+        AssertPillar "boundary/25d Mar15", S, S + 25, "NEAREST", "3W"
+        AssertPillar "boundary/26d Mar15", S, S + 26, "NEAREST", "1M"
+        AssertPillar "boundary/27d Mar15", S, S + 27, "NEAREST", "1M"
+
+    'From Jan 31 the 1M anchor clips to Feb 28, 28 days out: 25 is already 1M
+        AssertPillar "boundary/24d Jan31", DateSerial(2026, 1, 31), DateSerial(2026, 2, 24), "NEAREST", "3W"
+        AssertPillar "boundary/25d Jan31", DateSerial(2026, 1, 31), DateSerial(2026, 2, 25), "NEAREST", "1M"
+
+'------------------------------------------------------------------------------
+' THE THREE MODES ON ONE INTERVAL
+'------------------------------------------------------------------------------
+    'Twenty-five days: floor keeps the last week, ceiling reaches for the month
+        AssertPillar "modes/25d floor", S, S + 25, "FLOOR", "3W"
+        AssertPillar "modes/25d nearest", S, S + 25, "NEAREST", "3W"
+        AssertPillar "modes/25d ceiling", S, S + 25, "CEILING", "1M"
+
+    'Thirty days in a 31-day month: the week cap keeps FLOOR at 3W
+        AssertPillar "modes/30d floor", S, S + 30, "FLOOR", "3W"
+        AssertPillar "modes/30d nearest", S, S + 30, "NEAREST", "1M"
+        AssertPillar "modes/30d ceiling", S, S + 30, "CEILING", "1M"
+
+    'One hundred days: 3M is 92, 4M is 122
+        AssertPillar "modes/100d floor", S, S + 100, "FLOOR", "3M"
+        AssertPillar "modes/100d nearest", S, S + 100, "NEAREST", "3M"
+        AssertPillar "modes/100d ceiling", S, S + 100, "CEILING", "4M"
+
+'------------------------------------------------------------------------------
+' EXACT ANCHORS ARE EXACT UNDER EVERY MODE
+'------------------------------------------------------------------------------
+        AssertPillar "exact/2W floor", S, S + 14, "FLOOR", "2W"
+        AssertPillar "exact/2W nearest", S, S + 14, "NEAREST", "2W"
+        AssertPillar "exact/2W ceiling", S, S + 14, "CEILING", "2W"
+        AssertPillar "exact/1M floor", S, DateSerial(2026, 4, 15), "FLOOR", "1M"
+        AssertPillar "exact/1M ceiling", S, DateSerial(2026, 4, 15), "CEILING", "1M"
+
+'------------------------------------------------------------------------------
+' NEGATIVE INTERVALS: ANCHORS FROM THE ORIGINAL START, SIGNED COUNTS
+'------------------------------------------------------------------------------
+    'Backwards from Mar 15 the 1M anchor is Feb 15, 28 days: nearest at 25 is 1M
+        AssertPillar "negative/25d floor", S, S - 25, "FLOOR", "-3W"
+        AssertPillar "negative/25d nearest", S, S - 25, "NEAREST", "-1M"
+        AssertPillar "negative/25d ceiling", S, S - 25, "CEILING", "-1M"
+
+'------------------------------------------------------------------------------
+' TIE RULES
+'------------------------------------------------------------------------------
+    'Forty-six days: 1M (31) and 2M (61) are both 15 away; the larger count wins
+        AssertPillar "tie/month-month nearest", S, S + 46, "NEAREST", "2M"
+        AssertPillar "tie/month-month floor", S, S + 46, "FLOOR", "1M"
+        AssertPillar "tie/month-month ceiling", S, S + 46, "CEILING", "2M"
+
+'------------------------------------------------------------------------------
+' WEEK CAP UNDER FLOOR AND CEILING
+'------------------------------------------------------------------------------
+        AssertPillar "cap/20d floor", S, S + 20, "FLOOR", "2W"
+        AssertPillar "cap/20d ceiling", S, S + 20, "CEILING", "3W"
+        AssertPillar "cap/28d floor", S, S + 28, "FLOOR", "3W"
+        AssertPillar "cap/28d ceiling", S, S + 28, "CEILING", "1M"
+
+'------------------------------------------------------------------------------
+' MONTH-END AND LEAP-DAY ANCHORS
+'------------------------------------------------------------------------------
+        AssertPillar "leap/Jan31 to Feb29 floor", DateSerial(2024, 1, 31), DateSerial(2024, 2, 29), "FLOOR", "1M"
+        AssertPillar "leap/Jan31 to Feb29 ceiling", DateSerial(2024, 1, 31), DateSerial(2024, 2, 29), "CEILING", "1M"
+        AssertPillar "eom/Jan31 to Mar31 nearest", DateSerial(2026, 1, 31), DateSerial(2026, 3, 31), "NEAREST", "2M"
+        AssertPillar "eom/Jan31 to Mar31 floor", DateSerial(2026, 1, 31), DateSerial(2026, 3, 31), "FLOOR", "2M"
+
+'------------------------------------------------------------------------------
+' YEARS
+'------------------------------------------------------------------------------
+        AssertPillar "years/12M", S, DateSerial(2027, 3, 15), "NEAREST", "1Y"
+        AssertPillar "years/13M", S, DateSerial(2027, 4, 15), "NEAREST", "1Y1M"
+
+'------------------------------------------------------------------------------
+' OUT-OF-WINDOW ANCHORS ARE EXCLUDED, NEVER APPROXIMATED
+'------------------------------------------------------------------------------
+    'Final fortnight of 9999: 2W and 1M leave the window; 1W is the only anchor
+        AssertPillar "window/final fortnight nearest", DateSerial(9999, 12, 20), DateSerial(9999, 12, 31), "NEAREST", "1W"
+        AssertPillar "window/final fortnight floor", DateSerial(9999, 12, 20), DateSerial(9999, 12, 31), "FLOOR", "1W"
+
+    'CEILING with no in-window candidate that reaches the end is #NUM!
+        AssertErrorValue "window/ceiling gap facade", _
+                         KPR_Dates_PillarFromDates(DateSerial(9999, 12, 15), DateSerial(9999, 12, 31), "CEILING"), ERR_NUM
+        mChecks = mChecks + 1
+        If TryPillar_Format(DateSerial(9999, 12, 15), DateSerial(9999, 12, 31), KPR_ROUND_CEILING, TokenOut, Cond) Then
+            Record "window/ceiling gap core", "expected failure, got " & TokenOut
+        ElseIf ConditionName(Cond) <> "RESULT_WINDOW" Then
+            Record "window/ceiling gap core", "expected RESULT_WINDOW got " & ConditionName(Cond)
+        End If
+
+'------------------------------------------------------------------------------
+' OPT_ROUNDING CONTROL
+'------------------------------------------------------------------------------
+    'Omitted, Empty, padded and mixed-case forms all resolve
+        mChecks = mChecks + 1
+        If KPR_Dates_PillarFromDates(S, S + 25) <> KPR_Dates_PillarFromDates(S, S + 25, "NEAREST") Then
+            Record "control/omitted equals NEAREST", "omitted and explicit disagree"
+        End If
+        AssertPillar "control/empty", S, S + 25, Empty, "3W"
+        AssertPillar "control/padded floor", S, S + 25, "  floor" & vbTab, "3W"
+        AssertPillar "control/mixed case ceiling", S, S + 25, "Ceiling", "1M"
+
+    'Rejections
+        AssertErrorValue "control/unknown token", KPR_Dates_PillarFromDates(S, S + 25, "ROUND"), ERR_VALUE
+        AssertErrorValue "control/numeric", KPR_Dates_PillarFromDates(S, S + 25, 1), ERR_VALUE
+        AssertErrorValue "control/boolean", KPR_Dates_PillarFromDates(S, S + 25, True), ERR_VALUE
+        AssertErrorValue "control/propagates", KPR_Dates_PillarFromDates(S, S + 25, CVErr(xlErrNA)), ERR_NA
+
+'------------------------------------------------------------------------------
+' GRAMMAR CONDITIONS BY IDENTIFIER
+'------------------------------------------------------------------------------
+        AssertPillarParse "grammar/duplicate unit", "1M2M", "PILLAR_DUPLICATE_UNIT"
+        AssertPillarParse "grammar/duplicate day", "3D4D", "PILLAR_DUPLICATE_UNIT"
+        AssertPillarParse "grammar/signed alias", "-ON", "PILLAR_ALIAS_SIGNED"
+        AssertPillarParse "grammar/plus alias", "+T/N", "PILLAR_ALIAS_SIGNED"
+        AssertPillarParse "grammar/unknown unit", "1X", "PILLAR_TOKEN_MALFORMED"
+        AssertPillarParse "grammar/internal space", "1 M", "PILLAR_TOKEN_MALFORMED"
+        AssertPillarParse "grammar/empty", "", "PILLAR_TOKEN_MALFORMED"
+        AssertPillarParse "grammar/numeric payload", 12, "PILLAR_TYPE_REJECTED"
+        AssertPillarParse "grammar/any order", "3d2w", "NONE"
+        AssertPillarParse "grammar/alias", "on", "NONE"
+
+    'The facade maps them, and an incoming error at the Pillar slot propagates
+        AssertErrorValue "grammar/facade duplicate", KPR_Dates_DatesFromPillar(S, "1M2M"), ERR_VALUE
+        AssertErrorValue "grammar/facade signed alias", KPR_Dates_DatesFromPillar(S, "-ON"), ERR_VALUE
+        AssertErrorValue "grammar/facade propagates", KPR_Dates_DatesFromPillar(S, CVErr(xlErrNA)), ERR_NA
+
+'------------------------------------------------------------------------------
+' NON-INVARIANT ROUND TRIPS, STATED
+'------------------------------------------------------------------------------
+    'A rounded token re-parses to its anchor, not to the original end date
+        AssertDateResult "roundtrip/25d nearest lands on anchor", _
+                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 25)), S + 21
+        AssertDateResult "roundtrip/26d nearest lands on anchor", _
+                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 26)), DateSerial(2026, 4, 15)
+        AssertDateResult "roundtrip/exact 2W lands on end", _
+                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 14)), S + 14
+
+'------------------------------------------------------------------------------
+' FORMAT / PARSE MUTUAL CONSISTENCY
+'------------------------------------------------------------------------------
+    'For every interval and mode, the emitted token re-parses to an anchor
+    'that re-emits the same token. Idempotence is the precise statement of
+    '"mutually consistent for every supported token".
+        For Each ModeName In Array("NEAREST", "FLOOR", "CEILING")
+            For D = 7 To 60
+                mChecks = mChecks + 1
+                Token = KPR_Dates_PillarFromDates(S, S + D, ModeName)
+                If VarType(Token) = vbError Then
+                    Record "consistency/" & ModeName & " " & CStr(D) & "d", "emit failed"
+                Else
+                    Back = KPR_Dates_DatesFromPillar(S, Token)
+                    If VarType(Back) = vbError Then
+                        Record "consistency/" & ModeName & " " & CStr(D) & "d", "token " & Token & " does not parse"
+                    Else
+                        Again = KPR_Dates_PillarFromDates(S, Back, ModeName)
+                        If CStr(Again) <> CStr(Token) Then
+                            Record "consistency/" & ModeName & " " & CStr(D) & "d", _
+                                   "token " & Token & " re-emits as " & CStr(Again)
+                        End If
+                    End If
+                End If
+            Next D
+        Next ModeName
+
+End Sub
+
+Private Sub AssertPillar( _
+    ByVal Label As String, _
+    ByVal StartDate As Date, _
+    ByVal EndDate As Date, _
+    ByVal Mode As Variant, _
+    ByVal ExpectToken As String)
+'
+' Asserts the exact token the facade emits under a mode.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Actual      As Variant      'Facade result
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    'Count every assertion
+        mChecks = mChecks + 1
+
+    'Emit under the requested mode
+        Actual = KPR_Dates_PillarFromDates(StartDate, EndDate, Mode)
+
+    'Compare as text
+        If VarType(Actual) = vbError Then
+            Record Label, "expected " & ExpectToken & ", got Excel error " & CStr(CLng(Actual))
+        ElseIf CStr(Actual) <> ExpectToken Then
+            Record Label, "expected " & ExpectToken & " got " & CStr(Actual)
+        End If
+
+End Sub
+
+Private Sub AssertPillarParse( _
+    ByVal Label As String, _
+    ByVal PillarIn As Variant, _
+    ByVal ExpectCondition As String)
+'
+' Asserts the exact condition identifier from the calendar core's parser.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Months      As Double           'Parsed month delta
+    Dim Days        As Double           'Parsed day delta
+    Dim Cond        As KPR_Condition    'Reported condition
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    'Count every assertion
+        mChecks = mChecks + 1
+
+    'Parse and compare the identifier, whatever the Boolean says
+        TryPillar_Parse PillarIn, Months, Days, Cond
+        If ConditionName(Cond) <> ExpectCondition Then
+            Record Label, "expected " & ExpectCondition & " got " & ConditionName(Cond)
+        End If
+
+End Sub
 
 '
 '------------------------------------------------------------------------------
@@ -891,6 +1173,14 @@ Private Function ConditionName( _
         Case KPR_COND_CONTROL_TYPE_REJECTED:    ConditionName = "CONTROL_TYPE_REJECTED"
         Case KPR_COND_CONTROL_ERROR_PROPAGATED: ConditionName = "CONTROL_ERROR_PROPAGATED"
         Case KPR_COND_SHAPE_UNSUPPORTED:        ConditionName = "SHAPE_UNSUPPORTED"
+        Case KPR_COND_HOST_DATE1904:            ConditionName = "HOST_DATE1904"
+        Case KPR_COND_HOST_UNRESOLVED:          ConditionName = "HOST_UNRESOLVED"
+        Case KPR_COND_CONTROL_TOKEN_UNKNOWN:    ConditionName = "CONTROL_TOKEN_UNKNOWN"
+        Case KPR_COND_PILLAR_TYPE_REJECTED:     ConditionName = "PILLAR_TYPE_REJECTED"
+        Case KPR_COND_PILLAR_TOKEN_MALFORMED:   ConditionName = "PILLAR_TOKEN_MALFORMED"
+        Case KPR_COND_PILLAR_DUPLICATE_UNIT:    ConditionName = "PILLAR_DUPLICATE_UNIT"
+        Case KPR_COND_PILLAR_ALIAS_SIGNED:      ConditionName = "PILLAR_ALIAS_SIGNED"
+        Case KPR_COND_PILLAR_AGGREGATE_RANGE:   ConditionName = "PILLAR_AGGREGATE_RANGE"
         Case Else:                              ConditionName = "UNKNOWN"
     End Select
 

@@ -143,7 +143,7 @@ src/ribbon/
 | Module | Responsibility | Allowed production dependencies |
 | --- | --- | --- |
 | `KPR_Core_Err` | Native error construction, classification and propagation | None |
-| `KPR_Core_Dates` | Pure Gregorian calculations and pillar core | None |
+| `KPR_Core_Dates` | Pure Gregorian calculations and pillar core | `KPR_Core_Err` (condition vocabulary only; never constructs a worksheet error) |
 | `KPR_Core_Parse` | Strict scalar parsing, integer/control parsing and caller-date-system classification | `KPR_Core_Err` |
 | `KPR_Core_Array` | Shape discovery, scalar expansion, exact-shape broadcasting and element traversal | `KPR_Core_Err` |
 | `KPR_DATES_DAYS` | The worksheet-facing date facade; scalar dispatch and array traversal over shared scalar cores | `KPR_Core_Err`, `KPR_Core_Parse`, `KPR_Core_Dates`, `KPR_Core_Array` |

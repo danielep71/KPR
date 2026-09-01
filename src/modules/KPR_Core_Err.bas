@@ -106,6 +106,7 @@ Attribute VB_Name = "KPR_Core_Err"
             'Optional control conditions
             KPR_COND_CONTROL_TYPE_REJECTED = 40
             KPR_COND_CONTROL_ERROR_PROPAGATED = 41
+            KPR_COND_CONTROL_TOKEN_UNKNOWN = 42
 
             'Shape conditions
             KPR_COND_SHAPE_UNSUPPORTED = 50
@@ -113,6 +114,13 @@ Attribute VB_Name = "KPR_Core_Err"
             'Host date-system conditions
             KPR_COND_HOST_DATE1904 = 60
             KPR_COND_HOST_UNRESOLVED = 61
+
+            'Pillar token conditions
+            KPR_COND_PILLAR_TYPE_REJECTED = 70
+            KPR_COND_PILLAR_TOKEN_MALFORMED = 71
+            KPR_COND_PILLAR_DUPLICATE_UNIT = 72
+            KPR_COND_PILLAR_ALIAS_SIGNED = 73
+            KPR_COND_PILLAR_AGGREGATE_RANGE = 74
         End Enum
 
 '------------------------------------------------------------------------------
@@ -301,7 +309,12 @@ Public Function ErrForCondition( _
                  KPR_COND_DOMAIN_WEEKDAY, _
                  KPR_COND_DOMAIN_OCCURRENCE, _
                  KPR_COND_CONTROL_TYPE_REJECTED, _
-                 KPR_COND_SHAPE_UNSUPPORTED
+                 KPR_COND_CONTROL_TOKEN_UNKNOWN, _
+                 KPR_COND_SHAPE_UNSUPPORTED, _
+                 KPR_COND_PILLAR_TYPE_REJECTED, _
+                 KPR_COND_PILLAR_TOKEN_MALFORMED, _
+                 KPR_COND_PILLAR_DUPLICATE_UNIT, _
+                 KPR_COND_PILLAR_ALIAS_SIGNED
 
                 ErrForCondition = ErrValue()
 
@@ -309,7 +322,8 @@ Public Function ErrForCondition( _
             Case KPR_COND_DATE_WINDOW, _
                  KPR_COND_INTEGER_RANGE, _
                  KPR_COND_OCCURRENCE_ABSENT, _
-                 KPR_COND_RESULT_WINDOW
+                 KPR_COND_RESULT_WINDOW, _
+                 KPR_COND_PILLAR_AGGREGATE_RANGE
 
                 ErrForCondition = ErrNum()
 
