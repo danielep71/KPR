@@ -166,7 +166,7 @@ role case-insensitively.
 
 - `Application.MacroOptions` uses one category only: `KPR Dates`.
 - One manifest covers exactly the 22 supported names, function descriptions and argument descriptions.
-- Argument-description arrays are one-based, have exactly the signature's argument count, contain no blank entries and satisfy Excel's length constraints.
+- For each function with arguments, the argument-description array is one-based, has exactly the signature's argument count, contains no blank entry and satisfies Excel's length constraints. `HostDateSystem` has no arguments, so its `ArgumentDescriptions` argument is omitted.
 - Registration is safe to repeat and callable manually, during add-in startup and from both UI surfaces.
 - RibbonX uses `customUI14.xml`, stable KPR IDs, exact callbacks and idempotent package injection into untracked Office artifacts.
 - CommandBars use stable KPR ownership tags, remove stale KPR controls before rebuilding, and tolerate repeated teardown.
@@ -176,12 +176,8 @@ role case-insensitively.
 
 ```text
 test/modules/
-  KPR_Test_Runner.bas
-  KPR_Test_Assert.bas
+  KPR_REGRESSION_TESTS.bas
   KPR_Test_Fixtures_Generated.bas
-  KPR_Test_Dates.bas
-  KPR_Test_Shape.bas
-  KPR_Test_State.bas
   KPR_Test_Oracle.bas
 test/fixtures/
   date-fixtures.tsv
@@ -194,7 +190,7 @@ tools/
   sync_milestone_register.py
 ```
 
-`date-fixtures.tsv` is the canonical generated fixture artifact. `KPR_Test_Fixtures_Generated.bas` is generated test source, not hand-maintained production code. The independent deterministic generator has a drift-check mode and records enough source metadata for reproducibility. Native-error fixtures record both the expected Excel error code and the originating condition, so host-generated and propagated `#N/A` have separate stable case provenance despite having the same expected value.
+`KPR_REGRESSION_TESTS.bas` remains the single hand-maintained runner, assertion and named-suite module. `date-fixtures.tsv` is the canonical generated fixture artifact. `KPR_Test_Fixtures_Generated.bas` is generated test source, not hand-maintained production code, and `KPR_Test_Oracle.bas` remains separate so its native-Excel comparisons are explicit. The independent deterministic generator has a drift-check mode and records enough source metadata for reproducibility. Native-error fixtures record both the expected Excel error code and the originating condition, so host-generated and propagated `#N/A` have separate stable case provenance despite having the same expected value.
 
 The runner interface is:
 
@@ -202,9 +198,14 @@ The runner interface is:
 Public Function KPR_Test_RunAll( _
     ByVal SourceSha As String, _
     ByVal OutputFolder As String) As Boolean
+
+Public Function KPR_Test_RunSuite( _
+    ByVal SuiteName As String, _
+    ByVal SourceSha As String, _
+    ByVal OutputFolder As String) As Boolean
 ```
 
-The runner is callable directly and through `Application.Run`, preserves caller state, returns Boolean success, and writes a structured summary, case-level TSV and environment record for the supplied exact source SHA. Direct VBA calls exercise the documented 1900 caller contract; worksheet-host tests separately exercise 1900 and 1904 behavior.
+The runner is callable directly and through `Application.Run`, preserves caller state, returns Boolean success, and writes a structured summary, case-level TSV and environment record for the supplied exact source SHA. The temporary focused `KPR_Tests_Run` entry point is retired or made private when this interface lands; the macro-only `KPR_Tests_RunHost` remains classified test infrastructure for the scratch-workbook host suite. Direct VBA calls exercise the documented 1900 caller contract; worksheet-host tests separately exercise 1900 and 1904 behavior.
 
 Coverage includes accepted and rejected inputs, serial limits and serial 60, leap years, month/quarter/year boundaries, `AddDays`/`AddWeeks`/`AddMonths`/`AddYears`, pillar grammar and all rounding modes, both weekday bases, scalar/array parity, row/column/rectangular and one-dimensional shapes, mismatches, optional-argument rejection, blanks, mixed validity, native errors and their provenance, the 100,000-element boundary, overflow, repeatability, caller-state restoration, volatile `HostDateSystem()` recalculation and date-system behavior.
 
@@ -214,7 +215,7 @@ Schemas and templates are tracked under `test/evidence/`. Actual runs are writte
 
 ## Demo strategy
 
-`demo/modules/KPR_Demo_Dates.bas` deterministically builds the demonstration workbook from a clean Excel instance and an explicit output path. The builder is authoritative source. Generated `.xlsx`, `.xlsm`, `.xlam` and other Office binaries are never committed; a certified demo or add-in may be attached later as a release asset.
+`demo/modules/KPR_Demo_Dates.bas` deterministically builds a new demonstration workbook in the current controlled Excel application and saves only to an explicit output path. The builder is authoritative source. Generated `.xlsx`, `.xlsm`, `.xlam` and other Office binaries are never committed; a certified demo or add-in may be attached later as a release asset.
 
 The demo uses the single public function surface for both scalar and array examples. It shows supported behavior, native errors and array shapes without claiming calendar support, business-day support, production readiness, legacy CSE use or any untested Excel version.
 
@@ -674,7 +675,7 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `enhancement`, `behavior-change`, `blocked`, `code`, `P2`, `tests`
+- Labels: `enhancement`, `behavior-change`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/15
 
@@ -684,18 +685,28 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 
 Deliver the complete element-correct 22-name public date surface in `KPR_DATES_DAYS.bas`, ready for the array loop added by #17.
 
-## Supported surface
+## Current starting point and remaining surface work
 
-Existing/re-signatured members: `DayOfWeek`, `DaysInMonth`, `DaysInYear`, `BeginOfMonth`, `EndOfMonth`, `IsMonthEnd`, `IsQuarterEnd`, `IsYearEnd`, `IsLeapYear`, `AddWeeks`, `AddMonths`, `AddYears`, `NthWeekdayOfMonth`, `LastWeekdayOfMonth`, `PillarFromDates`, and singular `DateFromPillar`.
+The facade currently contains 17 public names. `HostDateSystem` already landed under #13 and remains scalar. #15 must:
 
-New members: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear`, `EndOfYear`, and `HostDateSystem`.
+- add the five missing functions: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear` and `EndOfYear`;
+- change `DaysInYear` and `IsLeapYear` to their exact strict `YearIn` signatures and semantics;
+- rename plural `DatesFromPillar` to singular `DateFromPillar` without retaining an alias; and
+- reconcile every facade declaration and comment with the completed #12–#14 parsing, host and pillar policies.
+
+#15 completes scalar/element behavior only. It does not implement #16's shape engine or #17's public array traversal.
 
 ## Already-landed baseline hardening
 
 - Commit `92a9f7e` made `KPR_Core_Dates.DaysInMonth` the single month-length source and removed live `DateSerial(..., 0)` month-end construction.
 - Commit `cd9f609` added static checks for required core members, `Variant` facade return types and the day-zero ban.
+- #12–#14 have since delivered strict scalar parsing, the date-system guard, `HostDateSystem`, pillar grammar and all three rounding modes.
 
-These commits reduce boundary risk but do not complete this issue: the facade still has only the migrated sixteen names and retains pre-contract signatures/behavior until #12–#14 and this issue land.
+These landed changes reduce #15's remaining work but do not complete the final 22-name surface.
+
+## Static transition control
+
+Until #26 replaces the hard-coded inventory with the public-API manifest, the static gate must require the exact 22-name facade set and reject the legacy plural pillar name, any additional `KPR_Dates_*` worksheet function and every `_Spill` twin. This is a temporary source-declaration assertion, not early implementation of #26's classification manifest.
 
 ## Acceptance criteria
 
@@ -708,6 +719,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 - [ ] Every value-taking function has one element implementation usable by scalar and array calls.
 - [ ] `HostDateSystem` implements the caller policy from #13 and remains scalar.
 - [ ] No `_Spill` name, calendar, holiday, weekend-mask, business-day or roll-convention function is introduced.
+- [ ] Static checks require exactly the 22 contract names and reject plural `DatesFromPillar`, any extra `KPR_Dates_*` member and every `_Spill` twin; focused negative self-tests exercise those failures.
 
 ## Dependencies
 
@@ -812,6 +824,7 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 - [ ] The 100,000-element cap and optional-argument rule apply uniformly.
 - [ ] No duplicate public calculation function or spill module exists.
 - [ ] Documentation distinguishes broad scalar support from dynamic-array-only multi-cell support.
+- [ ] The #13 date-system guard runs exactly once per public call before shape resolution and traversal; no per-element implementation touches `Application.Caller`.
 
 ## Dependencies
 
@@ -825,7 +838,7 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `documentation`, `enhancement`, `blocked`, `code`, `P2`
+- Labels: `documentation`, `enhancement`, `blocked`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/18
 
@@ -840,8 +853,8 @@ Register the single supported worksheet surface consistently without mixing desc
 - Maintain one manifest for exactly 22 supported functions, their category, descriptions and argument descriptions.
 - Use exactly one MacroOptions category: `KPR Dates`.
 - Describe both scalar behavior and dynamic-array-only multi-cell behavior for value-taking functions.
-- Build `ArgumentDescriptions` as a 1-based array whose length exactly matches the signature, contains no blank element and respects Excel's supported description length.
-- Add explicit, repeatable register-all and best-effort unregister entry points suitable for manual use, add-in startup and UI delegation.
+- For every function with one or more arguments, build `ArgumentDescriptions` as a 1-based array whose length exactly matches the signature, contains no blank element and respects Excel's supported description length. Omit `ArgumentDescriptions` for zero-argument `HostDateSystem`.
+- Add explicit, repeatable register-all and best-effort metadata-cleanup entry points suitable for manual use, add-in startup and UI delegation. Excel exposes no symmetric UDF-unregister operation, so cleanup must not claim to remove the VBA function itself; any residual Excel-owned metadata is documented.
 - Registration overwrites by function name and is idempotent by construction.
 - Keep infrastructure procedures technically public only where Excel requires it and classify them as unsupported infrastructure.
 - Preserve caller/application state and avoid selections, activation, alerts or duplicate registration side effects.
@@ -852,9 +865,9 @@ Register the single supported worksheet surface consistently without mixing desc
 - [ ] Every one of the 22 supported functions has exactly one manifest record.
 - [ ] No `_Spill` name or infrastructure procedure appears in the supported manifest.
 - [ ] Function and argument descriptions match the normative signatures and optional-argument order.
-- [ ] Argument-description arrays are 1-based, complete, nonblank and within the documented length limit.
+- [ ] Argument-description arrays for functions with arguments are 1-based, complete, nonblank and within the documented length limit; `HostDateSystem` omits the argument entirely.
 - [ ] Repeated registration produces the same MacroOptions state and no duplicate UI artifact.
-- [ ] Repeated best-effort unregistration is controlled and documented.
+- [ ] Repeated best-effort metadata cleanup is controlled, documents Excel's lack of a symmetric unregister API and makes no claim that the VBA function itself is removed.
 - [ ] Registration can run through `Application.Run` under the direct-VBA 1900 contract.
 - [ ] The manifest is machine-readable enough for #27 to compare completeness and uniqueness without parsing descriptive prose.
 - [ ] Only `KPR Dates` is registered.
@@ -933,11 +946,9 @@ Native-error cases record both the expected Excel error code and why that error 
 
 Provide a deterministic, automation-friendly VBA test runner with structured exact-source evidence and complete caller-state restoration.
 
-## Test modules
+## Test module and evidence files
 
-- `KPR_Test_Assert.bas`
-- `KPR_Test_Runner.bas`
-- committed evidence documentation and schema under `test/evidence/`
+Extend the existing `test/modules/KPR_REGRESSION_TESTS.bas` as the single hand-maintained runner, assertion and named-suite module. Do not create parallel `KPR_Test_Assert.bas`, `KPR_Test_Runner.bas`, `KPR_Test_Dates.bas`, `KPR_Test_Shape.bas` or `KPR_Test_State.bas` components. Committed evidence documentation and schemas remain under `test/evidence/`.
 
 ## Public test-infrastructure interface
 
@@ -945,6 +956,8 @@ Provide a deterministic, automation-friendly VBA test runner with structured exa
 - `KPR_Test_RunSuite(ByVal SuiteName As String, ByVal SourceSha As String, ByVal OutputFolder As String) As Boolean`
 
 These entry points are callable through `Application.Run`, but are not supported production API. Calls from the runner into `KPR_Dates_*` are direct VBA calls and therefore use the documented 1900 serial contract rather than requiring a worksheet `Range` caller.
+
+The temporary focused `KPR_Tests_Run` entry point is retired or made private when the final interface lands. `KPR_Tests_RunHost` remains public macro-only test infrastructure because its controlled scratch-workbook lifecycle cannot run from a worksheet UDF.
 
 ## Evidence contract
 
@@ -960,6 +973,7 @@ Write a machine-readable summary, a case-level TSV and environment metadata cove
 - [ ] Calculation mode, events, screen updating, alerts, status bar, active workbook/sheet and selection are restored after success and failure.
 - [ ] No automated path displays a `MsgBox` or leaves files/workbooks open.
 - [ ] Evidence validates against the committed schema and records the supplied exact source SHA.
+- [ ] No duplicate runner/assertion/suite module is created; the focused suites and final dispatcher remain in `KPR_REGRESSION_TESTS.bas`.
 
 ## Dependencies
 
@@ -984,24 +998,22 @@ Exercise the complete single public date surface and prove scalar/array parity w
 
 ## Suites
 
-- `KPR_Test_Dates.bas`
-- `KPR_Test_Shape.bas`
-- `KPR_Test_State.bas`
+Add named `dates`, `shape`, `parity`, `errors` and `state` suites to the existing dispatcher in `KPR_REGRESSION_TESTS.bas`. Keep the already-landed focused suites and macro-only host runner. Do not split the hand-maintained harness into additional VBA components.
 
 ## Required coverage
 
-Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years and 29 February; month, quarter and year boundaries; `AddDays`, `AddWeeks`, `AddMonths` and `AddYears`; clipping/preservation rules; pillar parse/format and all three rounding modes; non-invariant rounded round trips; weekday bases and locators; all 22 public names; scalar, 1×1, row, column and rectangular inputs; 1-D VBA arrays as 1×N; scalar expansion; non-scalar `Opt_` rejection; shape mismatches; blanks; mixed validity; native errors and their originating conditions; exactly 100,000 versus 100,001 elements; overflow; repeatability; state restoration; worksheet/VBA caller distinction; volatile `HostDateSystem` recalculation; and 1904 worksheet refusal.
+Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years and 29 February; month, quarter and year boundaries; `AddDays`, `AddWeeks`, `AddMonths` and `AddYears`; clipping/preservation rules; pillar parse/format and all three rounding modes; non-invariant rounded round trips; weekday bases and locators; all 22 public names; scalar, 1×1, row, column and rectangular inputs for the 21 value-taking functions; 1-D VBA arrays as 1×N; scalar expansion; non-scalar `Opt_` rejection; shape mismatches; blanks; mixed validity; native errors and their originating conditions; exactly 100,000 versus 100,001 elements; overflow; repeatability; state restoration; worksheet/VBA caller distinction; volatile scalar-only `HostDateSystem` recalculation; and 1904 worksheet refusal for value-taking functions.
 
 ## Acceptance criteria
 
-- [ ] Every supported function has positive, edge and invalid-domain cases.
+- [ ] Every value-taking function has positive, edge and invalid-domain cases; scalar-only `HostDateSystem` has the documented caller/date-system cases instead.
 - [ ] Every value-taking function is compared across scalar, 1×1 and corresponding array elements.
 - [ ] Row, column and rectangle orientation is asserted, not inferred from displayed values.
 - [ ] Mixed arrays prove that one invalid/error element does not corrupt valid neighbors.
 - [ ] The documented conditions produce `#VALUE!`, `#NUM!`, host-configuration `#N/A` and propagated input errors in scalar and array cases.
 - [ ] Host-generated and propagated `#N/A` cases assert the same Excel value while retaining separate case provenance; `HostDateSystem()` supplies caller context for the worksheet cases.
 - [ ] Direct VBA tests run under the 1900 contract without a worksheet caller.
-- [ ] 1900 worksheet calls succeed and 1904 worksheet calls return one call-level `#N/A`.
+- [ ] The 21 value-taking functions succeed for valid 1900 worksheet calls and return one call-level `#N/A` from a 1904 worksheet; `HostDateSystem()` reports `1900` and `1904` respectively.
 - [ ] `HostDateSystem()` refreshes between 1900 and 1904 worksheet cases after ordinary recalculation, without relying on a full rebuild.
 - [ ] State restoration is tested after both passing and deliberately failing cases.
 - [ ] Two consecutive runs produce identical case results.
@@ -1061,7 +1073,7 @@ Do not treat Excel's permissive parsing, implicit coercion, pre-1900-03-01 seria
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `documentation`, `enhancement`, `blocked`, `code`, `P3`
+- Labels: `documentation`, `enhancement`, `blocked`, `code`, `P3`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/23
 
@@ -1073,16 +1085,16 @@ Provide a reproducible demonstration workbook for the single scalar/array-capabl
 
 ## Deliverable
 
-Add `demo/modules/KPR_Demo_Dates.bas` with a callable builder that creates a new workbook from a clean Excel instance, lays out fixed examples, applies deterministic formatting and saves only to an explicit output path.
+Add `demo/modules/KPR_Demo_Dates.bas` with a callable builder that creates a new workbook in the current controlled Excel application, lays out fixed examples, applies deterministic formatting and saves only to an explicit output path.
 
 The tracked builder is authoritative. A generated workbook may be attached later as a v0.0.2 release asset after exact-source certification.
 
 ## Acceptance criteria
 
 - [ ] The builder creates the same sheets, labels, formulas, examples, widths, styles and named areas on repeated runs.
-- [ ] Examples use the same 22 public names for scalar and multi-cell calls; no `_Spill` function is shown.
+- [ ] Examples use one supported surface: the 21 value-taking functions keep the same names for scalar and multi-cell calls, `HostDateSystem` is shown as scalar-only, and no `_Spill` function is shown.
 - [ ] Scalar examples are clearly distinguished from dynamic-array-only multi-cell examples.
-- [ ] Examples cover native-error categories, array shapes, the 100,000-element policy and documented pillar behavior without creating an excessive workbook.
+- [ ] Examples cover native-error categories, representative array shapes, the 100,000-element policy and documented pillar behavior; the capacity limit is explained without materializing an excessive 100,000-cell demo spill.
 - [ ] The workbook labels calendars and business-day calculations as future scope.
 - [ ] No example claims CSE compatibility, certified accuracy, production readiness or compatibility beyond the agreed evidence.
 - [ ] The builder preserves Excel state and never overwrites an existing path without a controlled error.
@@ -1115,7 +1127,7 @@ Add a modern Excel Ribbon surface whose callbacks delegate to registration, demo
 
 - `src/modules/KPR_UI_Ribbon.bas`
 - `src/ribbon/customUI14.xml`
-- a deterministic, safe package-injection helper for untracked workbook/add-in artifacts
+- `tools/inject_ribbon.py`, a deterministic package-injection helper that reads and writes only explicit untracked workbook/add-in paths
 
 ## Ribbon contract
 
@@ -1135,6 +1147,7 @@ Use the Office 2010+ `customUI/2009/07` schema, stable KPR IDs, built-in `imageM
 - [ ] Repeated injection replaces the KPR customUI part idempotently and creates no duplicate relationships.
 - [ ] A failed injection leaves the original target recoverable and produces no committed binary.
 - [ ] Focused deterministic tests parse RibbonX and exercise valid, repeated and failed package injection without mutating the source artifact.
+- [ ] Injection uses explicit input/output paths and atomic replacement or a recoverable backup; it never discovers or rewrites a tracked Office binary.
 - [x] #29's exact-source certification scope explicitly includes RibbonX loading and exercise.
 
 ## Dependencies
@@ -1250,6 +1263,10 @@ Add two deliberately separate controls:
 
 Neither control may claim that VBA imports, compiles or executes in Excel.
 
+## Already-landed static baseline
+
+At the audited pre-#15 baseline `a18929e`, the deterministic gate already has 23 passing rules, 29 required files, 25 degraded/negative scenarios and one positive self-test. Work from #10–#14 already enforces export headers, case-insensitive component uniqueness, module visibility and dependencies, facade ownership, strict parsing bans, window constants, host-guard placement, volatility scope, workbook-fallback exclusion, required members, facade return types and the day-zero ban. #27 preserves and integrates those controls; it does not claim them as newly invented here. #27 still owns the complete final inventories and manifest cross-checks, adding the plan to `REQUIRED_FILES`, the offline renderer fixtures, the live drift monitor and its separate workflow.
+
 ## Track A — deterministic tree checks
 
 Extend the existing static gate using only the checked-out tree and frozen test fixtures:
@@ -1264,7 +1281,7 @@ Extend the existing static gate using only the checked-out tree and frozen test 
 - Every RibbonX callback resolves to a classified callback procedure.
 - RibbonX and evidence schemas parse successfully.
 - The fixture generator's `--check` mode reports no drift and the generated module is classified correctly.
-- The documented test inventory includes `KPR_Test_Oracle.bas`.
+- The documented test inventory includes `KPR_REGRESSION_TESTS.bas`, `KPR_Test_Fixtures_Generated.bas` and `KPR_Test_Oracle.bas`, with no obsolete split runner/assertion/suite modules.
 - The register renderer is unit-tested against a checked-in frozen issue snapshot so its formatting and bounded replacement are deterministic without network access.
 - No generated Office binary, test-results output, `_Spill` API or calendar/business-day production placeholder is tracked.
 - Existing repository checks continue to pass.
@@ -1396,7 +1413,7 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - Compile the VBA project with no compile error or missing reference.
 - Run scalar cases through direct VBA calls under the documented 1900 contract.
 - Exercise worksheet `Range` calls in a 1900 workbook.
-- Exercise a 1904 workbook and prove that each public worksheet `Range` call returns one call-level `#N/A` rather than a shifted result.
+- Exercise a 1904 workbook and prove that each of the 21 value-taking public worksheet `Range` calls returns one call-level `#N/A` rather than a shifted result; `KPR_Dates_HostDateSystem()` must report `1904`.
 - Recalculate volatile `KPR_Dates_HostDateSystem()` normally between 1900 and 1904 worksheet cases and prove that it refreshes without a full calculation rebuild.
 - On dynamic-array Excel, run the complete multi-cell shape, broadcasting, optional-argument, per-element error and 100,000-element suites.
 - Make no CSE or legacy multi-cell claim unless separately tested and evidenced.
@@ -1406,7 +1423,7 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - Install/use/remove the CommandBars UI twice.
 - Generate the demo deterministically.
 - Export the imported VBA source again and compare the normalized round trip.
-- Record Excel/Windows environment, exact SHA, caller contexts, case totals and failures in the committed evidence schema.
+- Record Excel/Windows environment, exact SHA, caller contexts, case totals and failures using the committed evidence schema.
 - Keep run records under ignored `test-results/` and attach them to this issue and the GitHub pre-release.
 
 ## Caller-context probe and not-covered statement
@@ -1431,7 +1448,7 @@ A probe that Excel cannot execute reproducibly must be recorded as not testable 
 - [ ] All deterministic regression and allowed cross-oracle cases pass.
 - [ ] Scalar/array parity, shapes, capacity, native errors and their originating conditions, certified direct-VBA behavior and caller-state restoration pass.
 - [ ] Host-generated and propagated `#N/A` are proven value-identical, with `HostDateSystem()` used as the worksheet-context discriminator.
-- [ ] 1900 worksheet behavior, 1904 worksheet refusal and ordinary-recalculation refresh of volatile `HostDateSystem()` pass.
+- [ ] 1900 worksheet behavior, 1904 refusal for all 21 value-taking functions, `HostDateSystem() = 1904`, and ordinary-recalculation refresh of the volatile diagnostic pass.
 - [ ] The caller-context probe matrix is attached and every untestable context is identified.
 - [ ] Release documentation explicitly lists the non-`Range` Excel host contexts that are not covered.
 - [ ] MacroOptions, Ribbon and CommandBars lifecycles are idempotent.
