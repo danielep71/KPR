@@ -610,7 +610,7 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 <details>
 <summary><strong>#14 — Define and implement the pillar rounding modes and token grammar</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `behavior-change`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
@@ -651,16 +651,16 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 
 ## Acceptance criteria
 
-- [ ] Scalar calls reach one pillar core through the public functions; #17 later routes array elements through that same core.
-- [ ] Focused deterministic tests cover all three modes across positive, negative, exact, tie and boundary cases.
-- [ ] Month-end and leap-day anchors are deterministic.
-- [ ] Invalid modes return the contract's native error.
-- [ ] Formatting and parsing are mutually consistent for every supported pillar token.
-- [ ] The focused case matrix demonstrates non-invariant rounded round trips for handoff to #19 and #21.
-- [ ] No emitted token names a week count above `3W`. Under `NEAREST`, when the `1M` anchor is inside the supported window, 24 days emits `3W` and 27 days emits `1M`; 25 and 26 days resolve by calendar-day distance to that anchor, with an equal distance choosing the month. If the `1M` anchor is outside the supported window it is not a candidate and the remaining in-window anchors decide. The boundary is derived from the uniform candidate-set and equidistance rules, not pinned to a fixed day count.
-- [ ] The week cap is exercised under `FLOOR` and `CEILING`, not only `NEAREST`.
-- [ ] A duplicate unit and a signed alias each return `#VALUE!` under their own condition identifier.
-- [ ] No duplicate pillar UDF or `_Spill` twin is created.
+- [x] Scalar calls reach one pillar core through the public functions; #17 later routes array elements through that same core.
+- [x] Focused deterministic tests cover all three modes across positive, negative, exact, tie and boundary cases.
+- [x] Month-end and leap-day anchors are deterministic.
+- [x] Invalid modes return the contract's native error.
+- [x] Formatting and parsing are mutually consistent for every supported pillar token.
+- [x] The focused case matrix demonstrates non-invariant rounded round trips for handoff to #19 and #21.
+- [x] No emitted token names a week count above `3W`. Under `NEAREST`, when the `1M` anchor is inside the supported window, 24 days emits `3W` and 27 days emits `1M`; 25 and 26 days resolve by calendar-day distance to that anchor, with an equal distance choosing the month. If the `1M` anchor is outside the supported window it is not a candidate and the remaining in-window anchors decide. The boundary is derived from the uniform candidate-set and equidistance rules, not pinned to a fixed day count.
+- [x] The week cap is exercised under `FLOOR` and `CEILING`, not only `NEAREST`.
+- [x] A duplicate unit and a signed alias each return `#VALUE!` under their own condition identifier.
+- [x] No duplicate pillar UDF or `_Spill` twin is created.
 
 ## Dependencies
 
@@ -704,7 +704,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 - [ ] Month, quarter and year boundaries are correct across leap years and year transitions.
 - [ ] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
 - [ ] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
-- [ ] Pillar functions use the policy from #14 and expose only the singular `DateFromPillar` name.
+- [ ] Pillar functions and their facade documentation use the policy from #14 and expose only the singular `DateFromPillar` name.
 - [ ] Every value-taking function has one element implementation usable by scalar and array calls.
 - [ ] `HostDateSystem` implements the caller policy from #13 and remains scalar.
 - [ ] No `_Spill` name, calendar, holiday, weekend-mask, business-day or roll-convention function is introduced.
@@ -713,7 +713,7 @@ These commits reduce boundary risk but do not complete this issue: the facade st
 
 - [x] #12
 - [x] #13
-- [ ] #14
+- [x] #14
 
 </details>
 
@@ -902,7 +902,7 @@ Native-error cases record both the expected Excel error code and why that error 
 - [ ] A `--check` mode fails when committed TSV or VBA output is stale.
 - [ ] The generated module is classified as generated source and remains a valid VBE export with `Option Explicit`.
 - [ ] Fixtures cover accepted/rejected inputs, `1900-03-01 .. 9999-12-31`, leap years, date boundaries, arithmetic, pillar modes and weekday bases.
-- [ ] Pillar fixtures include duplicate units, signed aliases, every rounding mode, positive/negative exact/tie/boundary cases, non-invariant rounded round trips, the `3W` cap and the 25-day `3W`/`1M` boundary.
+- [ ] Pillar fixtures include duplicate units, signed aliases, every rounding mode, positive/negative exact/tie/boundary cases, non-invariant rounded round trips, the `3W` cap and the calendar-dependent `3W`/`1M` transition defined by #14.
 - [ ] Shape fixtures cover scalar, 1×1, row, column, rectangle, 1-D VBA arrays, optional-argument rejection and shape mismatch.
 - [ ] Capacity fixtures cover exactly 100,000 and 100,001 elements.
 - [ ] Expected `#VALUE!`, `#NUM!`, host-generated `#N/A` and propagated native errors are encoded explicitly with originating-condition metadata.
@@ -913,7 +913,7 @@ Native-error cases record both the expected Excel error code and why that error 
 ## Dependencies
 
 - [x] #12
-- [ ] #14
+- [x] #14
 - [ ] #15
 
 </details>
