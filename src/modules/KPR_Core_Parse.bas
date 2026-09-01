@@ -44,7 +44,7 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   is still reported through its Boolean return and condition ByRef output.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '
 ' AUTHOR
 '   Daniele Penza
@@ -220,16 +220,23 @@ Public Function TryParseDateScalar( _
             'Native numeric serial => remove the time component
                 Serial = KPR_FloorSerial(CDbl(ScalarIn))
 
-#If Win64 Then
-        Case vbLongLong
-            'LongLong is a native numeric subtype on 64-bit VBA
-                Serial = KPR_FloorSerial(CDbl(ScalarIn))
-#End If
-
         Case Else
-            'Anything else is outside the accepted type set
+            'LongLong is a native numeric subtype on VBA7. The test lives inside
+            'the Case body rather than as its own Case, so the conditional
+            'directive never sits between two Case clauses, and it is gated on
+            'VBA7 rather than Win64 because the vbLongLong constant exists in
+            'the VBA7 enum regardless of Office bitness.
+#If VBA7 Then
+                If VT = vbLongLong Then
+                    Serial = KPR_FloorSerial(CDbl(ScalarIn))
+                Else
+                    Condition = KPR_COND_DATE_TYPE_REJECTED
+                    Exit Function
+                End If
+#Else
                 Condition = KPR_COND_DATE_TYPE_REJECTED
                 Exit Function
+#End If
 
     End Select
 
@@ -508,17 +515,23 @@ Public Function TryParseLongScalar( _
             'Accepted numeric types; coerce once to a common working type
                 X = CDbl(ScalarIn)
 
-#If Win64 Then
-        Case vbLongLong
-            'LongLong is native numeric on 64-bit VBA; the Long gate still owns
-            'whether its value can be accepted by this parser
-                X = CDbl(ScalarIn)
-#End If
-
         Case Else
-            'Boolean, Date, text, Null, objects and errors are all rejected
+            'LongLong is accepted on VBA7 and the Long-range gate below still
+            'owns whether its value can be taken. Everything else (Boolean,
+            'Date, text, Null, objects, errors) is rejected. See
+            'TryParseDateScalar for why the directive sits inside the Case body
+            'and is gated on VBA7.
+#If VBA7 Then
+                If VT = vbLongLong Then
+                    X = CDbl(ScalarIn)
+                Else
+                    Condition = KPR_COND_INTEGER_TYPE_REJECTED
+                    Exit Function
+                End If
+#Else
                 Condition = KPR_COND_INTEGER_TYPE_REJECTED
                 Exit Function
+#End If
 
     End Select
 

@@ -287,7 +287,13 @@ only from an identifiable worksheet caller:
    1,462 days.
 4. If an identifiable worksheet host should be readable but its date system
    cannot be resolved reliably, return one call-level library-produced `#N/A`
-   under `HOST_UNRESOLVED`.
+   under `HOST_UNRESOLVED`. This condition is reserved for exactly that
+   sequence: a worksheet `Range` was identified, and reading its own
+   workbook's date system then failed. A failure while obtaining or
+   classifying `Application.Caller` itself is not `HOST_UNRESOLVED`; it
+   follows the same path as any other non-`Range` caller, meaning no
+   worksheet host could be identified and the documented 1900 serial
+   contract applies. That raising case is recorded in #29's probe matrix.
 5. If no worksheet host can be identified, apply the documented 1900 serial
    contract. Never consult `ActiveWorkbook`, `ThisWorkbook`, or another
    unrelated workbook as a fallback.

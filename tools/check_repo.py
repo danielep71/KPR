@@ -139,7 +139,24 @@ VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
             "Pillar_Format_Nearest",
         }
     ),
+    "kpr_dates_days": frozenset({"KPR_Dates_HostDateSystem"}),
 }
+
+# Host date-system policy: names the facade rules pin to. The guard must appear
+# exactly once in every value-taking public function, before any argument is
+# resolved; the diagnostic must call the classifier directly instead.
+VBA_HOST_GUARD = "PassHostGuard"
+VBA_HOST_CLASSIFIER = "TryResolveHostDateSystem"
+VBA_HOST_DIAGNOSTIC = "KPR_Dates_HostDateSystem"
+VBA_VOLATILE_CALL = "Application.Volatile True"
+VBA_ARGUMENT_RESOLVERS = ("TryResolveDate", "TryResolveLong", "TryResolveBool")
+
+# Date-system authority belongs to the caller's own workbook and nothing else.
+# The prohibition is scoped to the facade's host-resolution path rather than
+# all of src/, because later registration, UI or demo code may have legitimate
+# explicit workbook operations. Comments and string literals are ignored.
+VBA_WORKBOOK_FALLBACKS = ("ActiveWorkbook", "ThisWorkbook", "ActiveSheet")
+VBA_HOST_PATH_PROCEDURES = (VBA_HOST_CLASSIFIER, VBA_HOST_GUARD, VBA_HOST_DIAGNOSTIC)
 
 # DateSerial with a day argument of zero names the day before the first of the
 # given month. The idiom is compact but not total: it raises error 5 whenever
@@ -1433,6 +1450,167 @@ def check_vba_window_constants(repo: Repository) -> dict[str, object]:
     )
 
 
+def _vba_procedures(text: str) -> list[tuple[str, str, str]]:
+    """Return (visibility, name, body) for every Function or Sub in a module."""
+    out: list[tuple[str, str, str]] = []
+    pattern = re.compile(
+        r"^(Public|Private)\s+(?:Function|Sub)\s+(\w+)\b(.*?)^End\s+(?:Function|Sub)\s*$",
+        re.IGNORECASE | re.MULTILINE | re.DOTALL,
+    )
+    for match in pattern.finditer(text):
+        raw = match.group(3).splitlines()
+        # Drop the remainder of the declaration, including any continuation
+        # lines ending in " _", so the body starts at the first real line.
+        index = 0
+        while index < len(raw) and raw[index].rstrip().endswith("_"):
+            index += 1
+        body = "\n".join(raw[index + 1 :])
+        out.append((match.group(1).casefold(), match.group(2), body))
+    return out
+
+
+def _strip_vba_strings(line: str) -> str:
+    """Blank out double-quoted literals so a token inside a string is not a hit."""
+    return re.sub(r'"[^"]*"', '""', line)
+
+
+def _facade_sources(repo: Repository) -> list[tuple[str, str]]:
+    return [
+        (path, text)
+        for path, text in _vba_sources(repo)
+        if PurePosixPath(path).stem.casefold().startswith(VBA_FACADE_STEM_PREFIX)
+        and not any(
+            line.strip().startswith(VBA_PRIVATE_MODULE_DIRECTIVE)
+            for line in text.splitlines()
+        )
+    ]
+
+
+def check_vba_host_guard(repo: Repository) -> dict[str, object]:
+    """Every value-taking public function runs the date-system guard exactly once.
+
+    The guard must precede the first argument resolver or calculation, so a
+    1904 host is refused before any serial is interpreted. The diagnostic is
+    exempt from the guard but must call the shared classifier exactly once,
+    because an identified 1904 workbook has to be reported there, not refused.
+    """
+    failures: list[dict[str, object]] = []
+    checked = 0
+    for path, text in _facade_sources(repo):
+        for visibility, name, body in _vba_procedures(text):
+            if visibility != "public" or not name.casefold().startswith(VBA_PUBLIC_FUNCTION_PREFIX):
+                continue
+            code = _strip_vba_comments(body)
+            checked += 1
+            if name == VBA_HOST_DIAGNOSTIC:
+                calls = len(re.findall(rf"\b{VBA_HOST_CLASSIFIER}\s*\(", code))
+                if calls != 1:
+                    failures.append(
+                        finding(path, f"{name} must call {VBA_HOST_CLASSIFIER} exactly once; found {calls}.")
+                    )
+                if re.search(rf"\b{VBA_HOST_GUARD}\s*\(", code):
+                    failures.append(
+                        finding(path, f"{name} must not call {VBA_HOST_GUARD}; it reports 1904 rather than refusing it.")
+                    )
+                continue
+            guards = [m.start() for m in re.finditer(rf"\b{VBA_HOST_GUARD}\s*\(", code)]
+            if len(guards) != 1:
+                failures.append(
+                    finding(path, f"{name} must call {VBA_HOST_GUARD} exactly once; found {len(guards)}.")
+                )
+                continue
+            first_resolver = min(
+                (m.start() for r in VBA_ARGUMENT_RESOLVERS for m in re.finditer(rf"\b{r}\s*\(", code)),
+                default=None,
+            )
+            if first_resolver is not None and first_resolver < guards[0]:
+                failures.append(
+                    finding(path, f"{name} resolves an argument before {VBA_HOST_GUARD} runs.")
+                )
+    return rule_result(
+        "vba-host-guard",
+        "VBA date-system guard placement",
+        failures,
+        f"All {checked} public worksheet functions run the date-system guard as required",
+    )
+
+
+def check_vba_volatile_scope(repo: Repository) -> dict[str, object]:
+    """Only the host diagnostic is volatile, and volatility is its first statement.
+
+    A zero-argument function has no precedents and would otherwise be
+    evaluated once and never again. Every date calculation must stay
+    non-volatile, because volatility is contagious and would make a model
+    recalculate constantly.
+    """
+    failures: list[dict[str, object]] = []
+    total = 0
+    for path, text in _vba_sources(repo):
+        if not path.startswith("src/"):
+            continue
+        for visibility, name, body in _vba_procedures(text):
+            # Declarations are not statements: Dim, Const and Static lines are
+            # skipped when locating the first executable line.
+            code_lines = [
+                l
+                for l in body.splitlines()
+                if l.strip()
+                and not l.lstrip().startswith("'")
+                and not re.match(r"^\s*(Dim|Const|Static)\b", l, re.IGNORECASE)
+            ]
+            hits = [l for l in code_lines if VBA_VOLATILE_CALL in _strip_vba_strings(l)]
+            total += len(hits)
+            if name == VBA_HOST_DIAGNOSTIC:
+                if len(hits) != 1:
+                    failures.append(
+                        finding(path, f"{name} must call {VBA_VOLATILE_CALL} exactly once; found {len(hits)}.")
+                    )
+                elif not code_lines or VBA_VOLATILE_CALL not in _strip_vba_strings(code_lines[0]):
+                    failures.append(
+                        finding(path, f"{VBA_VOLATILE_CALL} must be the first executable statement of {name}.")
+                    )
+            elif hits:
+                failures.append(
+                    finding(path, f"{name} must not be volatile; only {VBA_HOST_DIAGNOSTIC} may call {VBA_VOLATILE_CALL}.")
+                )
+    return rule_result(
+        "vba-volatile-scope",
+        "VBA volatility scope",
+        failures,
+        f"{VBA_VOLATILE_CALL} appears exactly once, first in {VBA_HOST_DIAGNOSTIC}",
+    )
+
+
+def check_vba_workbook_fallback(repo: Repository) -> dict[str, object]:
+    """No active-workbook fallback on the facade's host-resolution path.
+
+    The caller's own workbook is the only authority on its date system. The
+    scope is the three host procedures, not all of src/.
+    """
+    failures: list[dict[str, object]] = []
+    checked = 0
+    for path, text in _facade_sources(repo):
+        for visibility, name, body in _vba_procedures(text):
+            if name not in VBA_HOST_PATH_PROCEDURES:
+                continue
+            checked += 1
+            for number, line in enumerate(body.splitlines(), start=1):
+                if line.lstrip().startswith("'"):
+                    continue
+                probe = _strip_vba_strings(line)
+                for token in VBA_WORKBOOK_FALLBACKS:
+                    if re.search(rf"\b{token}\b", probe):
+                        failures.append(
+                            finding(path, f"{name} references {token}; the caller's workbook is the only date-system authority.")
+                        )
+    return rule_result(
+        "vba-no-workbook-fallback",
+        "VBA no active-workbook fallback",
+        failures,
+        f"All {checked} host-resolution procedures avoid ActiveWorkbook, ThisWorkbook and ActiveSheet",
+    )
+
+
 CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_required_files,
     check_stale_identity,
@@ -1451,6 +1629,9 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_vba_module_dependencies,
     check_vba_locale_parsing,
     check_vba_window_constants,
+    check_vba_host_guard,
+    check_vba_volatile_scope,
+    check_vba_workbook_fallback,
     check_vba_required_members,
     check_vba_facade_return_type,
     check_vba_day_zero_idiom,
@@ -1617,7 +1798,26 @@ def _positive_fixture(root: Path) -> None:
     write(
         "src/modules/KPR_DATES_DAYS.bas",
         'Attribute VB_Name = "KPR_DATES_DAYS"\nOption Explicit\n'
-        'Public Function KPR_Dates_DayOfWeek() As Variant\nEnd Function\n',
+        "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Variant\n"
+        "    Dim FailErr As Variant\n"
+        "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+        "    If Not TryResolveDate(DateIn, 0, FailErr) Then Exit Function\n"
+        "End Function\n"
+        "Public Function KPR_Dates_HostDateSystem() As Variant\n"
+        "    Dim DateSystem As Long\n"
+        "    Application.Volatile True\n"
+        "    If TryResolveHostDateSystem(DateSystem, 0) Then KPR_Dates_HostDateSystem = DateSystem\n"
+        "End Function\n"
+        "Private Function TryResolveHostDateSystem(ByRef DateSystem As Long, ByRef Condition As Long) As Boolean\n"
+        "    DateSystem = 1900\n"
+        "    TryResolveHostDateSystem = True\n"
+        "End Function\n"
+        "Private Function PassHostGuard(ByRef ErrOut As Variant) As Boolean\n"
+        "    PassHostGuard = True\n"
+        "End Function\n"
+        "Private Function TryResolveDate(ByVal DateIn As Variant, ByRef ParsedDate As Date, ByRef ErrOut As Variant) As Boolean\n"
+        "    TryResolveDate = True\n"
+        "End Function\n",
         newline="\r\n",
     )
     _initialize_fixture(root)
@@ -1715,6 +1915,49 @@ def run_self_tests(root: Path) -> None:
             newline="\r\n",
         )
 
+    def missing_host_guard(case: Path) -> None:
+        facade = case / "src/modules/KPR_DATES_DAYS.bas"
+        facade.write_text(
+            facade.read_text(encoding="utf-8").replace(
+                "    If Not PassHostGuard(FailErr) Then Exit Function\n", "", 1
+            ),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def guard_after_resolver(case: Path) -> None:
+        facade = case / "src/modules/KPR_DATES_DAYS.bas"
+        text = facade.read_text(encoding="utf-8")
+        guard = "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+        resolve = "    If Not TryResolveDate(DateIn, 0, FailErr) Then Exit Function\n"
+        facade.write_text(
+            text.replace(guard + resolve, resolve + guard, 1), encoding="utf-8", newline="\r\n"
+        )
+
+    def stray_volatile(case: Path) -> None:
+        facade = case / "src/modules/KPR_DATES_DAYS.bas"
+        facade.write_text(
+            facade.read_text(encoding="utf-8").replace(
+                "    Dim FailErr As Variant\n",
+                "    Dim FailErr As Variant\n    Application.Volatile True\n",
+                1,
+            ),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def workbook_fallback(case: Path) -> None:
+        facade = case / "src/modules/KPR_DATES_DAYS.bas"
+        facade.write_text(
+            facade.read_text(encoding="utf-8").replace(
+                "    DateSystem = 1900\n",
+                "    DateSystem = IIf(ActiveWorkbook.Date1904, 1904, 1900)\n",
+                1,
+            ),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
     def missing_private_module(case: Path) -> None:
         core = case / "src/modules/KPR_Core_Parse.bas"
         core.write_text(
@@ -1775,8 +2018,8 @@ def run_self_tests(root: Path) -> None:
         rewrite_module(
             case,
             lambda text: text.replace(
-                "Public Function KPR_Dates_DayOfWeek() As Variant",
-                "Public Function KPR_Dates_DayOfWeek() As Long",
+                "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Variant",
+                "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Long",
                 1,
             ),
         )
@@ -1809,6 +2052,10 @@ def run_self_tests(root: Path) -> None:
         ("forbidden module dependency", "vba-module-dependencies", forbidden_dependency),
         ("locale-sensitive parsing", "vba-locale-parsing", locale_parsing),
         ("drifted window constant", "vba-window-constants", drifted_window_constant),
+        ("missing host guard", "vba-host-guard", missing_host_guard),
+        ("guard after resolver", "vba-host-guard", guard_after_resolver),
+        ("stray volatile call", "vba-volatile-scope", stray_volatile),
+        ("active-workbook fallback", "vba-no-workbook-fallback", workbook_fallback),
         ("day-zero DateSerial idiom", "vba-day-zero-idiom", day_zero_idiom),
         ("narrow facade return type", "vba-facade-return-type", narrow_facade_return),
         ("missing required member", "vba-required-members", missing_required_member),

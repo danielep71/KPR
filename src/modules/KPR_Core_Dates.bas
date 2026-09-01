@@ -59,10 +59,17 @@ Attribute VB_Name = "KPR_Core_Dates"
 '
 ' SCOPE BOUNDARY (THIS REVISION)
 '   Pillar rounding is NEAREST only, as migrated. FLOOR and CEILING arrive with
-'   Opt_Rounding in issue #14.
+'   Opt_Rounding in issue #14, which owns the rounding modes and the accepted
+'   token grammar together.
 '
-'   Duplicate pillar units are now rejected, matching the contract. That change
-'   is owned by issue #15, as is the introduction of DaysInMonth.
+'   Duplicate pillar units and signed aliases are already rejected here, matching
+'   the contract grammar. Both rejections signal a bare parse failure: the
+'   PILLAR_DUPLICATE_UNIT and PILLAR_ALIAS_SIGNED identifiers the contract
+'   registers for them do not exist in KPR_Condition yet, so a caller cannot
+'   tell the two apart or distinguish either from a malformed token. Issue #14
+'   closes that gap when it takes ownership of the grammar; this module cannot
+'   do it alone, because the dependency matrix does not let it reach the
+'   condition vocabulary in KPR_Core_Err.
 '
 ' NOTES
 '   - Date math follows Excel / VBA DateSerial, DateAdd, DateDiff and Weekday

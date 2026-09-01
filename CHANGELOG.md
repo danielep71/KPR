@@ -9,6 +9,19 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- The worksheet/VBA date-system policy: every value-taking function inspects
+  its caller once before touching any argument, refuses an identified 1904
+  worksheet host with one call-level `#N/A`, and proceeds under the documented
+  1900 serial contract when no worksheet host can be identified. No
+  active-workbook fallback exists, and the static gate enforces guard
+  placement, volatility scope and the absence of a fallback.
+- `KPR_Dates_HostDateSystem`, a deliberately volatile scalar diagnostic that
+  reports `1900`, `1904` or `#N/A` for the current caller, discriminating a
+  library-produced `#N/A` from a propagated one.
+- A macro-only `KPR_Tests_RunHost` runner that exercises the real
+  worksheet-`Range` caller path under both date systems in a scratch
+  workbook, alongside a pure `host` suite in the dispatcher.
+
 - Strict scalar input parsing: ISO-8601 `YYYY-MM-DD` text only, validated
   component by component, with locale-formatted and numeric-looking text
   rejected rather than reinterpreted. Numeric-looking text is recognized by a

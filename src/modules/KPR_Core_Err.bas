@@ -50,7 +50,7 @@ Attribute VB_Name = "KPR_Core_Err"
 '     unless a handler needs to substitute a different value first.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '
 ' AUTHOR
 '   Daniele Penza
@@ -109,6 +109,10 @@ Attribute VB_Name = "KPR_Core_Err"
 
             'Shape conditions
             KPR_COND_SHAPE_UNSUPPORTED = 50
+
+            'Host date-system conditions
+            KPR_COND_HOST_DATE1904 = 60
+            KPR_COND_HOST_UNRESOLVED = 61
         End Enum
 
 '------------------------------------------------------------------------------
@@ -217,8 +221,8 @@ Public Function ErrNA() As Variant
 '   None. Construction only.
 '
 ' NOTES
-'   - Not called by the migrated surface. Reserved for the host date-system
-'     refusal path introduced by issue #17.
+'   - Reached only through ErrForCondition, for HOST_DATE1904 and
+'     HOST_UNRESOLVED.
 '   - #N/A here means the library declines to answer, not that a lookup failed.
 '     The distinction matters because a sheet cannot tell the two apart, so
 '     the provenance of this value belongs in the contract rather than in a
@@ -269,8 +273,9 @@ Public Function ErrForCondition( _
 '   outcome.
 '
 ' NOTES
-'   - Host #N/A mappings are added by issue #13 together with the caller and
-'     date-system rules.
+'   - The two host conditions are the only #N/A the library produces. A
+'     propagated incoming #N/A is the same Excel value, but it never passes
+'     through this mapper: it is returned verbatim at the boundary.
 '
 ' UPDATED
 '   2026-08-31
@@ -307,6 +312,12 @@ Public Function ErrForCondition( _
                  KPR_COND_RESULT_WINDOW
 
                 ErrForCondition = ErrNum()
+
+        'Result unavailable in this host configuration
+            Case KPR_COND_HOST_DATE1904, _
+                 KPR_COND_HOST_UNRESOLVED
+
+                ErrForCondition = ErrNA()
 
         'Success sentinel, propagation conditions and unknown codes
             Case Else

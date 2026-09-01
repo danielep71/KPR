@@ -21,6 +21,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '       control       optional Boolean controls and their defaults
 '       boundary      window mapping, propagation and composition, via the facade
 '       mapper        ErrForCondition mappings and its refusals
+'       host          the date-system guard and diagnostic from direct VBA,
+'                     and #N/A provenance
 '
 '   Later issues add suites by writing one Private Sub and one Case line. The
 '   dispatcher is deliberately the only shared machinery.
@@ -38,12 +40,22 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 ' USAGE
 '   Three entry points, all reaching the same implementation:
 '
-'       KPR_Tests_Run                 every suite; appears in the Alt+F8 macro
-'                                     list and prints its report to the
+'       KPR_Tests_Run                 every pure suite; appears in the Alt+F8
+'                                     macro list and prints its report to the
 '                                     Immediate window
-'       KPR_Tests_RunSuite "integer"  one suite, printed the same way
+'       KPR_Tests_RunSuite "integer"  one pure suite, printed the same way
 '       KPR_Tests_RunAll()            returns a two-column array for a worksheet
 '                                     or for programmatic use
+'
+'   And one stateful entry point that is deliberately NOT reachable from the
+'   dispatcher above:
+'
+'       KPR_Tests_RunHost             creates a scratch workbook, exercises the
+'                                     real worksheet-Range caller path under
+'                                     1900 and 1904, and closes the workbook.
+'                                     Macro-only: it adds and closes a
+'                                     workbook, which cannot legally happen
+'                                     inside a worksheet function call.
 '
 '   KPR_Tests_RunAll returns an array, so it cannot be inspected with ? in the
 '   Immediate window and cannot appear in the macro list. Use KPR_Tests_Run
@@ -60,10 +72,12 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 ' ALLOWED DEPENDENCIES
 '   KPR_Core_Parse and KPR_Core_Err, called directly to assert exact condition
 '   classification, and KPR_DATES_DAYS for boundary behaviour. No other core is
-'   reachable from here.
+'   reachable from here. The stateful host runner additionally uses
+'   Excel.Workbooks.Add and the scratch workbook it creates, always through the
+'   exact object reference and never through ActiveWorkbook.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '
 ' AUTHOR
 '   Daniele Penza
@@ -258,12 +272,22 @@ Public Function KPR_Tests_RunAll( _
     Dim SuiteName   As String       'Requested suite, normalized
     Dim Results     As Variant      'Returned summary and failure detail
     Dim I           As Long         'Row cursor
+    Dim OuterFails  As Collection   'State of any run this call interrupted
+    Dim OuterChecks As Long         'Its assertion count
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
     'Contain any unexpected error as a reported failure
         On Error GoTo Err_Handler
+
+    'This function is worksheet-callable, so a cell holding =KPR_Tests_RunAll()
+    'can be recalculated in the MIDDLE of another run: the stateful host
+    'runner calls Application.Calculate, and that reaches such a cell. Save
+    'whatever run is in progress and restore it on exit, so an interrupted
+    'runner reports its own results rather than this call's.
+        Set OuterFails = mFailures
+        OuterChecks = mChecks
 
     'Fresh state for this run
         Set mFailures = New Collection
@@ -284,6 +308,8 @@ Public Function KPR_Tests_RunAll( _
     'Run the requested suite, or refuse a name that is not in the registry
         If Not RunSuite(SuiteName) Then
             KPR_Tests_RunAll = "unknown suite: " & SuiteName
+            Set mFailures = OuterFails
+            mChecks = OuterChecks
             Exit Function
         End If
 
@@ -301,8 +327,10 @@ Public Function KPR_Tests_RunAll( _
             Results(I + 1, 2) = mFailures(I)(1)
         Next I
 
-    'Return the array
+    'Return the array, then hand back any interrupted run's state
         KPR_Tests_RunAll = Results
+        Set mFailures = OuterFails
+        mChecks = OuterChecks
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -311,6 +339,8 @@ Public Function KPR_Tests_RunAll( _
 Err_Handler:
     'A raise reaching here is a defect, so report it rather than swallowing it
         KPR_Tests_RunAll = "unexpected runtime error " & CStr(Err.Number) & ": " & Err.Description
+        Set mFailures = OuterFails
+        mChecks = OuterChecks
 
 End Function
 
@@ -355,6 +385,7 @@ Private Function RunSuite( _
                 Run_ControlCases
                 Run_BoundaryCases
                 Run_MapperCases
+                Run_HostCases
 
         Case "date-type":       Run_DateTypeCases
         Case "date-text":       Run_DateTextCases
@@ -363,6 +394,7 @@ Private Function RunSuite( _
         Case "control":         Run_ControlCases
         Case "boundary":        Run_BoundaryCases
         Case "mapper":          Run_MapperCases
+        Case "host":            Run_HostCases
 
         Case Else
             'Not in the registry
@@ -371,6 +403,289 @@ Private Function RunSuite( _
     End Select
 
 End Function
+
+'
+'------------------------------------------------------------------------------
+'
+'                       SUITE - HOST POLICY FROM DIRECT VBA
+'
+'------------------------------------------------------------------------------
+'
+
+Private Sub Run_HostCases()
+'
+' The date-system guard and diagnostic as seen from direct VBA, plus #N/A
+' provenance. This suite runs without a worksheet caller, so it can only
+' assert the "no worksheet host identified" path and the value identity of the
+' two #N/A sources. The worksheet-Range paths are exercised by the stateful
+' KPR_Tests_RunHost macro.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const ERR_NA    As Long = 2042      'Excel #N/A error number
+    Dim Reported    As Variant          'HostDateSystem result
+    Dim LibraryNA   As Variant          'Library-produced #N/A
+    Dim IncomingNA  As Variant          'Propagated incoming #N/A
+
+'------------------------------------------------------------------------------
+' DIAGNOSTIC UNDER DIRECT VBA
+'------------------------------------------------------------------------------
+    'No worksheet host can be identified from VBA, so the documented answer is
+    '1900 rather than an error
+        mChecks = mChecks + 1
+        Reported = KPR_Dates_HostDateSystem()
+        If VarType(Reported) = vbError Then
+            Record "host/diagnostic direct vba", "expected 1900, got Excel error " & CStr(CLng(Reported))
+        ElseIf CLng(Reported) <> 1900 Then
+            Record "host/diagnostic direct vba", "expected 1900, got " & CStr(Reported)
+        End If
+
+'------------------------------------------------------------------------------
+' GUARD PASSES UNDER DIRECT VBA
+'------------------------------------------------------------------------------
+    'Every value function must proceed on the certified path, not refuse
+        AssertDateResult "host/guard passes DayOfWeek path", _
+                         KPR_Dates_BeginOfMonth("2026-03-15"), DateSerial(2026, 3, 1)
+        AssertDateResult "host/guard passes arithmetic path", _
+                         KPR_Dates_AddWeeks("2026-03-15", 1), DateSerial(2026, 3, 22)
+        AssertDateResult "host/guard passes locator path", _
+                         KPR_Dates_NthWeekdayOfMonth(2026, 3, 1, 1), DateSerial(2026, 3, 2)
+
+'------------------------------------------------------------------------------
+' #N/A PROVENANCE
+'------------------------------------------------------------------------------
+    'Both host conditions map to #N/A
+        AssertErrorValue "host/map DATE1904", ErrForCondition(KPR_COND_HOST_DATE1904), ERR_NA
+        AssertErrorValue "host/map UNRESOLVED", ErrForCondition(KPR_COND_HOST_UNRESOLVED), ERR_NA
+
+    'A library #N/A and a propagated incoming #N/A are the SAME Excel value.
+    'The two cases keep separate labels precisely because the value cannot tell
+    'them apart; only the diagnostic can.
+        LibraryNA = ErrForCondition(KPR_COND_HOST_DATE1904)
+        IncomingNA = KPR_Dates_DayOfWeek(CVErr(xlErrNA))
+        AssertErrorValue "provenance/library NA is NA", LibraryNA, ERR_NA
+        AssertErrorValue "provenance/propagated NA is NA", IncomingNA, ERR_NA
+        mChecks = mChecks + 1
+        If CLng(LibraryNA) <> CLng(IncomingNA) Then
+            Record "provenance/values identical", "library and propagated #N/A differ as values"
+        End If
+
+End Sub
+
+
+'
+'------------------------------------------------------------------------------
+'
+'                    STATEFUL HOST RUNNER (MACRO ONLY, NOT DISPATCHED)
+'
+'------------------------------------------------------------------------------
+'
+
+Public Sub KPR_Tests_RunHost()
+'
+'==============================================================================
+'                               KPR_Tests_RunHost
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Exercises the real worksheet-Range caller path under both date systems by
+'   writing formulas into a scratch workbook, and prints the report to the
+'   Immediate window.
+'
+' WHY THIS IS SEPARATE
+'   KPR_Tests_RunAll is callable from a worksheet cell. Adding a workbook,
+'   writing formulas and closing a workbook cannot legally happen inside a
+'   worksheet function call, so this runner is a macro and is deliberately
+'   not part of the dispatcher. It never joins "all".
+'
+' WHAT IT PROVES
+'   - HostDateSystem reports 1900 in a 1900 workbook, 1904 after the same
+'     workbook is toggled, and 1900 again after it is toggled back, each time
+'     after ordinary calculation rather than a full rebuild.
+'   - Value functions proceed under 1900 and return call-level #N/A under 1904.
+'   - Host-produced and propagated #N/A remain separately labelled cases.
+'
+' WHAT IT DOES NOT PROVE
+'   The Immediate-window probe and the non-Range host contexts are recorded in
+'   Windows Excel by hand; see #13 and #29.
+'
+' STATE
+'   - Creates one workbook through Workbooks.Add and holds the exact object.
+'   - Every reference is through that object. ActiveWorkbook is never read.
+'   - Formulas are qualified with the source workbook name so the UDFs resolve
+'     regardless of which workbook is active.
+'   - Calculation is switched to manual for the duration of the run and the
+'     caller's mode is restored on every exit path. This is not cosmetic:
+'     toggling Date1904 in automatic mode triggers a recalculation DURING the
+'     property set, the volatile diagnostic re-evaluates inside it, and its
+'     classifier then reads Date1904 on the workbook whose Date1904 is being
+'     changed. That reentrant read crashed Excel rather than raising. With
+'     manual calculation the toggle completes first and the only
+'     recalculations are the explicit Application.Calculate calls.
+'   - The scratch workbook is closed with SaveChanges:=False on every exit
+'     path, including a raise.
+'   - Formulas use ISO text, so the test is about caller classification and
+'     not about serial interpretation.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const ERR_NA        As Long = 2042  'Excel #N/A error number
+    Const EXPECT_CHECKS As Long = 9     'Three cases, three assertions each
+    Dim Scratch         As Workbook     'The scratch workbook, held by reference
+    Dim Sheet           As Worksheet    'Its first sheet
+    Dim Source          As String       'Source workbook name, quoted for formulas
+    Dim PriorCalc       As XlCalculation 'Caller's calculation mode, restored on exit
+    Dim CalcChanged     As Boolean      'TRUE once PriorCalc has been captured
+    Dim Results         As Variant      'Report array
+    Dim I               As Long         'Row cursor
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Fresh state for this run
+        Set mFailures = New Collection
+        mChecks = 0
+
+    'Qualify UDF calls with this workbook, escaping any apostrophe in its name
+        Source = "'" & Replace(ThisWorkbook.Name, "'", "''") & "'!"
+
+    'From here on, every exit must restore state and close the scratch workbook
+        On Error GoTo Cleanup
+
+    'Nothing may calculate except on explicit request. Captured before the
+    'workbook exists so that Cleanup can always restore it.
+        PriorCalc = Application.Calculation
+        CalcChanged = True
+        Application.Calculation = xlCalculationManual
+
+    'Create and hold the scratch workbook by reference
+        Set Scratch = Application.Workbooks.Add
+        Set Sheet = Scratch.Worksheets(1)
+
+'------------------------------------------------------------------------------
+' 1900 WORKBOOK
+'------------------------------------------------------------------------------
+    'Start from a known state
+        Scratch.Date1904 = False
+        HostCase Sheet, Source, "1900", 1900, ERR_NA, False, True
+
+'------------------------------------------------------------------------------
+' 1904 WORKBOOK: SAME WORKBOOK, ORDINARY RECALCULATION
+'------------------------------------------------------------------------------
+    'Toggle the same workbook and recalculate normally, not a full rebuild
+        Scratch.Date1904 = True
+        HostCase Sheet, Source, "1904", 1904, ERR_NA, True, False
+
+'------------------------------------------------------------------------------
+' BACK TO 1900: THE VOLATILE DIAGNOSTIC MUST FOLLOW
+'------------------------------------------------------------------------------
+    'Toggle back and confirm the diagnostic tracks the change
+        Scratch.Date1904 = False
+        HostCase Sheet, Source, "1900 again", 1900, ERR_NA, False, False
+
+'------------------------------------------------------------------------------
+' CLEANUP
+'------------------------------------------------------------------------------
+Cleanup:
+    'A raise reaching here is itself a failure to report
+        If Err.Number <> 0 Then
+            Record "host/runner", "unexpected runtime error " & CStr(Err.Number) & ": " & Err.Description
+            Err.Clear
+        End If
+
+    'Close exactly the scratch workbook, never anything else, then restore the
+    'caller's calculation mode. Order matters: closing under manual calculation
+    'means no recalculation can run against a workbook being torn down.
+        On Error Resume Next
+        If Not Scratch Is Nothing Then Scratch.Close SaveChanges:=False
+        If CalcChanged Then Application.Calculation = PriorCalc
+        On Error GoTo 0
+
+'------------------------------------------------------------------------------
+' REPORT
+'------------------------------------------------------------------------------
+    'A count other than the fixed number this runner makes means its state was
+    'overwritten mid-run, so nothing it reports can be trusted. Say so loudly.
+        If mChecks <> EXPECT_CHECKS Then
+            Record "host/runner state", "expected " & CStr(EXPECT_CHECKS) & _
+                   " assertions but counted " & CStr(mChecks) & _
+                   "; another run interrupted this one and its results were lost"
+        End If
+
+    'Summary first, then one line per failure
+        Debug.Print "KPR host regression  checks: " & CStr(mChecks) & "  failures: " & CStr(mFailures.Count)
+        For I = 1 To mFailures.Count
+            Debug.Print "  FAIL  " & CStr(mFailures(I)(0)) & " : " & CStr(mFailures(I)(1))
+        Next I
+
+End Sub
+
+Private Sub HostCase( _
+    ByVal Sheet As Worksheet, _
+    ByVal Source As String, _
+    ByVal Label As String, _
+    ByVal ExpectSystem As Long, _
+    ByVal ErrNA As Long, _
+    ByVal ExpectRefusal As Boolean, _
+    ByVal WriteDiagnostic As Boolean)
+'
+' Writes the probe formulas into the scratch sheet, calculates, and asserts.
+'
+' The diagnostic in A1 is written ONCE, on the first case, and never touched
+' again. Rewriting it would dirty the cell and mask the property under test:
+' that a volatile zero-argument function refreshes on ordinary calculation
+' after the date system changes. The value probes in A2 and A3 are rewritten
+' on every case, because a non-volatile cell is not expected to notice a
+' date-system toggle by itself; what they test is the guard's answer for a
+' formula entered under each system.
+'
+
+'------------------------------------------------------------------------------
+' WRITE PROBES
+'------------------------------------------------------------------------------
+    'The diagnostic, once only
+        If WriteDiagnostic Then
+            Sheet.Range("A1").Formula = "=" & Source & "KPR_Dates_HostDateSystem()"
+        End If
+
+    'A value function and a propagated #N/A, freshly entered under this system
+        Sheet.Range("A2").Formula = "=" & Source & "KPR_Dates_BeginOfMonth(""2026-03-15"")"
+        Sheet.Range("A3").Formula = "=" & Source & "KPR_Dates_BeginOfMonth(NA())"
+
+    'Ordinary calculation only, requested explicitly under manual mode. A full
+    'rebuild would mask a stale volatile cell.
+        Application.Calculate
+
+'------------------------------------------------------------------------------
+' ASSERT
+'------------------------------------------------------------------------------
+    'The diagnostic reports the current date system
+        mChecks = mChecks + 1
+        If VarType(Sheet.Range("A1").Value) = vbError Then
+            Record "host/" & Label & " diagnostic", "expected " & CStr(ExpectSystem) & ", got an Excel error"
+        ElseIf CLng(Sheet.Range("A1").Value) <> ExpectSystem Then
+            Record "host/" & Label & " diagnostic", "expected " & CStr(ExpectSystem) & ", got " & CStr(Sheet.Range("A1").Value)
+        End If
+
+    'A value function proceeds under 1900 and is refused under 1904
+        If ExpectRefusal Then
+            AssertErrorValue "host/" & Label & " value function refused", Sheet.Range("A2").Value, ErrNA
+        Else
+            AssertDateResult "host/" & Label & " value function proceeds", Sheet.Range("A2").Value, DateSerial(2026, 3, 1)
+        End If
+
+    'A propagated #N/A is #N/A in both systems; it keeps its own label because
+    'under 1904 the value is indistinguishable from host refusal
+        AssertErrorValue "host/" & Label & " propagated NA", Sheet.Range("A3").Value, ErrNA
+
+End Sub
 
 '
 '------------------------------------------------------------------------------
@@ -615,7 +930,7 @@ Private Sub Run_DateTypeCases()
         AssertDateValue "serial/fractional", 46096.75, DateSerial(2026, 3, 15)
         AssertDateValue "serial/currency", CCur(46096.75), DateSerial(2026, 3, 15)
         AssertDateValue "serial/decimal", CDec(46096.75), DateSerial(2026, 3, 15)
-#If Win64 Then
+#If VBA7 Then
         AssertDateValue "serial/longlong", CLngLng(46096), DateSerial(2026, 3, 15)
 #End If
 
@@ -766,7 +1081,7 @@ Private Sub Run_IntegerCases()
         AssertLongCondition "long/double", CDbl(12), True, "NONE"
         AssertLongCondition "long/currency", CCur(12), True, "NONE"
         AssertLongCondition "long/decimal", CDec(12), True, "NONE"
-#If Win64 Then
+#If VBA7 Then
         AssertLongCondition "long/longlong", CLngLng(12), True, "NONE"
 #End If
 

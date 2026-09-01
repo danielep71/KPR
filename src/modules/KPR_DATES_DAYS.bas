@@ -18,8 +18,9 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   documented rather than enforced by a static casing rule.
 '
 ' SCOPE / PUBLIC SURFACE (THIS REVISION)
-'   Sixteen migrated functions. The frozen contract specifies twenty-two;
-'   issue #15 adds the six missing names and applies the final signatures.
+'   Seventeen functions: the sixteen migrated calculations and the host
+'   diagnostic. The frozen contract specifies twenty-two; issue #15 adds the
+'   five missing names and applies the final signatures.
 '
 '   - Day primitives
 '       * KPR_Dates_DayOfWeek           (Optional Opt_WeekBaseMonday)
@@ -49,6 +50,9 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '       * KPR_Dates_PillarFromDates
 '       * KPR_Dates_DatesFromPillar
 '
+'   - Host diagnostic (scalar only, deliberately volatile)
+'       * KPR_Dates_HostDateSystem
+'
 '   KPR_Dates_DatesFromPillar returns exactly one date; the plural name is a
 '   baseline defect. The contract names it KPR_Dates_DateFromPillar, and the
 '   rename lands with issue #15 so that this migration stays a pure move.
@@ -67,6 +71,35 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   facade, on registration, on UI, on tests or on demo code. This module
 '   declares no Option Private Module, because its members must reach the
 '   worksheet.
+'
+' CALLER AND DATE-SYSTEM CONTRACT
+'   Every value-taking function runs PassHostGuard once, before any argument
+'   is resolved. The guard reads Application.Caller through one guarded object
+'   assignment and classifies it:
+'
+'       worksheet Range   read that Range's own workbook Date1904
+'                           1900 => proceed
+'                           1904 => one call-level #N/A (HOST_DATE1904)
+'                           unreadable => one call-level #N/A (HOST_UNRESOLVED)
+'       anything else     "no worksheet host could be identified":
+'                         proceed under the documented 1900 serial contract
+'
+'   A 1904 host is refused rather than compensated, because every serial the
+'   caller supplied would otherwise have two possible meanings. ActiveWorkbook,
+'   ThisWorkbook and ActiveSheet are never consulted; the static gate rejects
+'   them on the host-resolution path.
+'
+'   "No worksheet host could be identified" is not a claim that the caller is
+'   direct VBA. Direct VBA, the Immediate window, Application.Run and the
+'   regression harness are the certified uses of that path. Other non-Range
+'   callers exist (shape macros, data validation, chart series, conditional
+'   formatting, defined names) and v0.0.2 makes no claim for them; they are
+'   #29 probe targets. See TryResolveHostDateSystem for the full list.
+'
+'   Library-produced #N/A and a propagated incoming #N/A are the same Excel
+'   value. KPR_Dates_HostDateSystem is the discriminator: 1904 identifies host
+'   refusal; 1900 leaves an incoming error or another input path as the
+'   source. It is the only volatile function in the library.
 '
 ' SHAPE CONTRACT (THIS REVISION)
 '   - All public functions are SCALAR ONLY.
@@ -105,6 +138,12 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '                 outside the window, arithmetic or pillar shift beyond
 '                 KPR_MIN_DATE / KPR_MAX_DATE)
 '
+'       #N/A     the result is unavailable in this host configuration
+'                (identified 1904 worksheet caller, or an identified worksheet
+'                 caller whose date system cannot be read)
+'
+'       incoming native errors are returned unchanged
+'
 '   Rationale: message strings are invisible to IFERROR / ISERROR, break any
 '   downstream arithmetic that references the cell, and cannot be aggregated or
 '   filtered. Native error values are the only return that composes.
@@ -121,11 +160,15 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   the issues named against each line:
 '
 '     - Existing Boolean controls implement their strict Variant semantics;
-'       Opt_Rounding and its token parser arrive with issue #14.
-'     - Duplicate pillar units accumulate rather than being rejected.    (#15)
+'       Opt_Rounding, its token parser and the CONTROL_TOKEN_UNKNOWN condition
+'       arrive with issue #14.
 '     - Pillar rounding is NEAREST only; Opt_Rounding is absent.         (#14)
-'     - No host date-system detection exists, so a 1904 workbook is answered
-'       with silently shifted values.                                    (#17)
+'     - The pillar parser already rejects duplicate units and signed aliases,
+'       but signals a bare failure. The PILLAR_* condition identifiers the
+'       contract registers for those rejections do not yet exist, so the two
+'       cases are indistinguishable to a caller.                         (#14)
+'     - The date-system guard runs once per scalar call. #17 must preserve
+'       that once-per-call placement when array traversal is introduced. (#17)
 '     - Multi-cell inputs are rejected rather than traversed, and a control
 '       larger than 1x1 reports a shape rejection rather than the contract's
 '       distinct CONTROL_NOT_SCALAR condition.                           (#16)
@@ -145,11 +188,11 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 ' DEPENDENCIES / INTEGRATION
 '   - KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates, KPR_Core_Err
 '   - Private helpers in this module: TryResolveDate, TryResolveLong,
-'     TryResolveBool
+'     TryResolveBool, TryResolveHostDateSystem, PassHostGuard
 '   - No dependency on registration, UI, tests or demo code.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-01
 '
 ' AUTHOR
 '   Daniele Penza
@@ -243,6 +286,9 @@ Public Function KPR_Dates_DayOfWeek( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -358,6 +404,9 @@ Public Function KPR_Dates_DaysInMonth( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUT
 '------------------------------------------------------------------------------
@@ -465,6 +514,9 @@ Public Function KPR_Dates_DaysInYear( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUT
 '------------------------------------------------------------------------------
@@ -565,6 +617,9 @@ Public Function KPR_Dates_BeginOfMonth( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUT
 '------------------------------------------------------------------------------
@@ -649,6 +704,9 @@ Public Function KPR_Dates_EndOfMonth( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -735,6 +793,9 @@ Public Function KPR_Dates_IsMonthEnd( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -829,6 +890,9 @@ Public Function KPR_Dates_IsQuarterEnd( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -929,6 +993,9 @@ Public Function KPR_Dates_IsYearEnd( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUT
 '------------------------------------------------------------------------------
@@ -1019,6 +1086,9 @@ Public Function KPR_Dates_IsLeapYear( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUT
 '------------------------------------------------------------------------------
@@ -1094,6 +1164,7 @@ Public Function KPR_Dates_AddWeeks( _
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
+'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
 '   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
 '
 ' NOTES
@@ -1121,6 +1192,9 @@ Public Function KPR_Dates_AddWeeks( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -1210,6 +1284,8 @@ Public Function KPR_Dates_AddMonths( _
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
+'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '   - KPR_Core_Dates.TryAddMonths
 '   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
 '
@@ -1248,6 +1324,9 @@ Public Function KPR_Dates_AddMonths( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -1336,6 +1415,8 @@ Public Function KPR_Dates_AddYears( _
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
+'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '   - KPR_Core_Dates.TryAddMonths
 '   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
 '
@@ -1369,6 +1450,9 @@ Public Function KPR_Dates_AddYears( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUT
@@ -1490,8 +1574,10 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 '   #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
+'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
+'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum, KPR_Core_Err.ErrForCondition
 '   - VBA.DateSerial, VBA.Weekday
 '
 ' NOTES
@@ -1539,6 +1625,9 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
     'Reject a fractional, out-of-range or non-numeric YearIn
         If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
@@ -1693,8 +1782,10 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 '   #VALUE!; values outside the Long range return #NUM!.
 '
 ' DEPENDENCIES
+'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
+'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum, KPR_Core_Err.ErrForCondition
 '   - VBA.DateSerial, VBA.Weekday
 '
 ' NOTES
@@ -1737,6 +1828,9 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
     'Reject a fractional, out-of-range or non-numeric YearIn
         If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
@@ -1860,8 +1954,8 @@ Public Function KPR_Dates_PillarFromDates( _
 '     else a native Excel error value
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  either date not parseable / not scalar / outside the supported
-'            window / unexpected runtime error
+'   #VALUE!  either date not parseable / not scalar, or unexpected runtime error
+'   #NUM!    either date falls outside KPR_MIN_DATE .. KPR_MAX_DATE
 '
 ' DEPENDENCIES
 '   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
@@ -1897,6 +1991,9 @@ Public Function KPR_Dates_PillarFromDates( _
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
+
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
 ' PARSE INPUTS
@@ -2020,6 +2117,9 @@ Public Function KPR_Dates_DatesFromPillar( _
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
 '------------------------------------------------------------------------------
 ' PARSE INPUTS
 '------------------------------------------------------------------------------
@@ -2089,6 +2189,112 @@ Err_Handler:
     'Unexpected runtime error => #VALUE!
         FailErr = ErrValue()
         Resume Fail
+
+End Function
+
+'
+'------------------------------------------------------------------------------
+'
+'                          PUBLIC API - HOST DIAGNOSTIC
+'
+'------------------------------------------------------------------------------
+'
+
+Public Function KPR_Dates_HostDateSystem() As Variant
+'
+'==============================================================================
+'                           KPR_Dates_HostDateSystem
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Reports the date system the library is answering under for this caller:
+'   1900, 1904, or #N/A when an identified worksheet host cannot be read.
+'
+' WHY THIS EXISTS
+'   A library-produced host-configuration #N/A and a propagated incoming #N/A
+'   are the same Excel value. This diagnostic supplies the caller context that
+'   the returned value cannot: 1904 identifies host refusal, 1900 leaves an
+'   incoming error or another documented input path as the source.
+'
+' SIGNATURE
+'   KPR_Dates_HostDateSystem() -> Variant
+'
+' RETURNS
+'   Variant
+'     1900  identified worksheet caller in a 1900 workbook, OR no worksheet
+'           host could be identified (direct VBA, Immediate window,
+'           Application.Run, the regression harness)
+'     1904  identified worksheet caller in a 1904 workbook
+'     #N/A  an identified worksheet Range whose workbook date system could
+'           not be read reliably (HOST_UNRESOLVED)
+'
+' VOLATILITY
+'   Application.Volatile True is the first executable statement. A
+'   zero-argument function has no precedents, so without it Excel would
+'   evaluate this cell once on entry and never again, and a toggled date
+'   system would leave it reporting a stale answer at the one moment it is
+'   being relied on. Only this diagnostic is volatile; every date calculation
+'   stays non-volatile, and the static gate enforces both halves of that.
+'
+'   Volatility is contagious: any cell that references this one becomes
+'   volatile too. Use it as a debugging aid in a cell or two, not as a
+'   building block fanned across a model.
+'
+' ERROR POLICY (USER FACING)
+'   #N/A     identified worksheet host whose date system cannot be read
+'   #VALUE!  unexpected runtime error (containment only; a defect if reached)
+'
+' DEPENDENCIES
+'   - TryResolveHostDateSystem
+'   - KPR_Core_Err.ErrForCondition
+'
+' NOTES
+'   - This function calls the classifier directly rather than PassHostGuard,
+'     because an identified 1904 workbook must be REPORTED as 1904 here, not
+'     refused with #N/A as the value functions do.
+'   - Scalar only: it has no value argument to vectorize over.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim DateSystem      As Long             'Classified host date system
+    Dim Condition       As KPR_Condition    'Failure condition, if any
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Re-evaluate on every ordinary recalculation; this must be the first statement
+        Application.Volatile True
+
+    'Route unexpected runtime errors to handler
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' CLASSIFY HOST
+'------------------------------------------------------------------------------
+    'Report rather than refuse: 1904 is an answer here
+        If Not TryResolveHostDateSystem(DateSystem, Condition) Then
+            KPR_Dates_HostDateSystem = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Return the year that names the date system
+        KPR_Dates_HostDateSystem = DateSystem
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Unexpected runtime error => #VALUE! (containment only)
+        KPR_Dates_HostDateSystem = ErrValue()
 
 End Function
 
@@ -2342,5 +2548,220 @@ Private Function TryResolveBool( _
 
     'Contract: TRUE only when ParsedBool was assigned
         TryResolveBool = True
+
+End Function
+
+'
+'------------------------------------------------------------------------------
+'
+'                            PRIVATE HOST RESOLUTION
+'
+'------------------------------------------------------------------------------
+'
+
+Private Function TryResolveHostDateSystem( _
+    ByRef DateSystem As Long, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                          TryResolveHostDateSystem
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Classifies the caller of the current public call and reports the date
+'   system the library answers under.
+'
+' SIGNATURE
+'   TryResolveHostDateSystem(DateSystem, Condition) -> Boolean
+'
+' OUTPUTS
+'   DateSystem (ByRef)   1900 or 1904, assigned ONLY on success
+'   Condition  (ByRef)   KPR_COND_NONE on success, else KPR_COND_HOST_UNRESOLVED
+'
+' RETURNS
+'   Boolean
+'     TRUE  => DateSystem assigned
+'     FALSE => a worksheet Range was identified but its workbook date system
+'              could not be read reliably
+'
+' CALLER CONTRACT
+'   1. Application.Caller is read ONCE through a single guarded object
+'      assignment. A worksheet Range is the only caller form that identifies a
+'      worksheet host.
+'   2. For a Range, the workbook is reached through the caller's own
+'      Worksheet.Parent. ActiveWorkbook, ThisWorkbook and ActiveSheet are never
+'      consulted: the caller's workbook is the only authority on its date
+'      system, and any other workbook would be an unrelated one.
+'   3. If the Range was identified but reading its date system raises, the
+'      result is HOST_UNRESOLVED. This is the ONLY path that fails.
+'   4. Every other outcome, including a non-object caller, a non-Range object,
+'      and a failure while obtaining or classifying Application.Caller itself,
+'      means "no worksheet host could be identified". The documented 1900
+'      serial contract applies and the caller owns the interpretation of the
+'      values it constructed.
+'
+' WHAT "NO WORKSHEET HOST" DOES NOT MEAN
+'   It does not mean the caller is proven direct VBA. Direct VBA, the
+'   Immediate window, Application.Run and the regression harness are the
+'   CERTIFIED uses of this path. Excel also exposes non-Range callers in other
+'   contexts, and v0.0.2 makes no compatibility claim for any of them:
+'       - a String naming a macro-attached shape
+'       - an Error value from the Immediate window and from Application.Run
+'       - Error or other non-Range forms in data-validation, chart-series,
+'         conditional-formatting and defined-name evaluation
+'   Their caller forms and observed behaviour are #29 probe targets, as is the
+'   case where Application.Caller raises rather than returning a value.
+'
+' ERROR POLICY
+'   - Does not raise. Every failure while reading the caller is absorbed into
+'     the no-host path; only a date-system read failure on an identified Range
+'     reports a condition.
+'
+' DEPENDENCIES
+'   - Excel.Application.Caller, Excel.Workbook.Date1904
+'
+' NOTES
+'   - The two reads are deliberately not cached across calls. A cache that
+'     outlived a date-system toggle would reintroduce the 1,462-day shift this
+'     routine exists to prevent. The cost is one Caller read and one property
+'     read per public call; #17 collapses that to once per array call.
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim CallerObject    As Object       'Application.Caller when it is an object
+    Dim CallerRange     As Range        'Strongly typed caller when it is a Range
+    Dim HostWorkbook    As Workbook     'The caller's own workbook
+    Dim Is1904          As Boolean      'Workbook.Date1904 for the caller
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Default outcome: no worksheet host identified => documented 1900 contract
+        TryResolveHostDateSystem = True
+        Condition = KPR_COND_NONE
+        DateSystem = 1900
+
+'------------------------------------------------------------------------------
+' IDENTIFY THE CALLER
+'------------------------------------------------------------------------------
+    'One guarded object assignment. A non-object caller (Error from the
+    'Immediate window, String from a shape) fails the Set and stays Nothing; a
+    'raise during the read is absorbed into the same no-host outcome.
+        On Error Resume Next
+        Set CallerObject = Application.Caller
+        On Error GoTo 0
+
+    'No object => no worksheet host could be identified
+        If CallerObject Is Nothing Then Exit Function
+
+    'An object that is not a Range is also not a worksheet host
+        If Not TypeOf CallerObject Is Range Then Exit Function
+
+    'Bind strongly typed; the caller is a worksheet Range from here on
+        Set CallerRange = CallerObject
+
+'------------------------------------------------------------------------------
+' READ THE CALLER'S DATE SYSTEM
+'------------------------------------------------------------------------------
+    'Reach the workbook through the caller itself, never through an active
+    'object. Any failure from here on is HOST_UNRESOLVED: the host was
+    'identified, so answering under 1900 would be a guess.
+        On Error GoTo Unresolved
+        Set HostWorkbook = CallerRange.Worksheet.Parent
+        Is1904 = HostWorkbook.Date1904
+        On Error GoTo 0
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Report the identified system
+        If Is1904 Then DateSystem = 1904
+        Exit Function
+
+'------------------------------------------------------------------------------
+' UNRESOLVED
+'------------------------------------------------------------------------------
+Unresolved:
+    'Identified worksheet host, unreadable date system
+        On Error GoTo 0
+        Condition = KPR_COND_HOST_UNRESOLVED
+        TryResolveHostDateSystem = False
+
+End Function
+
+Private Function PassHostGuard( _
+    ByRef ErrOut As Variant) _
+    As Boolean
+'
+'==============================================================================
+'                                PassHostGuard
+'------------------------------------------------------------------------------
+' PURPOSE
+'   The once-per-call date-system guard for every value-taking public
+'   function.
+'
+' SIGNATURE
+'   PassHostGuard(ErrOut) -> Boolean
+'
+' OUTPUTS
+'   ErrOut (ByRef)   assigned ONLY on refusal, to the call-level #N/A
+'
+' RETURNS
+'   Boolean
+'     TRUE  => proceed under the 1900 serial contract
+'     FALSE => refuse: 1904 worksheet host (HOST_DATE1904) or an identified
+'              host whose date system cannot be read (HOST_UNRESOLVED)
+'
+' BEHAVIOR
+'   - Runs before any argument resolver or calculation, so it is call-level
+'     and precedes every element-level outcome.
+'   - A 1904 host is refused rather than compensated. Compensation would mean
+'     silently choosing between two interpretations of every serial the caller
+'     supplied; refusal makes the mismatch visible.
+'
+' DEPENDENCIES
+'   - TryResolveHostDateSystem
+'   - KPR_Core_Err.ErrForCondition
+'
+' UPDATED
+'   2026-09-01
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim DateSystem      As Long             'Classified host date system
+    Dim Condition       As KPR_Condition    'Failure condition, if any
+
+'------------------------------------------------------------------------------
+' CLASSIFY
+'------------------------------------------------------------------------------
+    'Default is refusal until the classifier says otherwise
+        PassHostGuard = False
+
+    'An identified host with an unreadable date system is refused
+        If Not TryResolveHostDateSystem(DateSystem, Condition) Then
+            ErrOut = ErrForCondition(Condition)
+            Exit Function
+        End If
+
+    'An identified 1904 host is refused
+        If DateSystem = 1904 Then
+            ErrOut = ErrForCondition(KPR_COND_HOST_DATE1904)
+            Exit Function
+        End If
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Proceed under the documented 1900 contract
+        PassHostGuard = True
 
 End Function

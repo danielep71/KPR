@@ -535,6 +535,15 @@ Prevent 1,462-day worksheet serial shifts while preserving certified direct-VBA 
 - Do not equate every non-`Range` value with direct VBA. Excel may expose a String caller for a macro-attached shape and Error or other non-`Range` callers in data-validation, chart-series, defined-name and related evaluation contexts.
 - v0.0.2 makes no compatibility claim for those non-`Range` Excel host contexts. Their caller forms and observed behavior must be probed and recorded during #29.
 - Never use `ActiveWorkbook`, `ThisWorkbook` or another unrelated workbook as a fallback.
+- Read `Application.Caller` through one guarded object assignment (`Set CallerObject = Application.Caller`). A non-object result, a non-`Range` object, or a failure while obtaining or classifying the caller all mean no worksheet host could be identified; apply the documented 1900 serial contract. That raising case is recorded in #29's probe matrix.
+- Reserve `HOST_UNRESOLVED` for the narrower sequence in which a worksheet `Range` was successfully identified and its worksheet/workbook date system could not then be read reliably.
+
+## Implementation shape
+
+- One private classifier in the facade, `TryResolveHostDateSystem`, returns `1900` or `1904` and fails only under `HOST_UNRESOLVED`.
+- One private guard wrapper, `PassHostGuard`, converts `1904` into `HOST_DATE1904`/`#N/A` and runs exactly once in every value-taking public function, before its first argument resolver or calculation.
+- `HostDateSystem` calls the classifier directly, because an identified 1904 workbook must be reported as `1904` there, not refused.
+- The policy lifts into a `KPR_Core_Host` module only when a second facade genuinely needs it.
 
 ## Diagnostic function
 
@@ -546,6 +555,19 @@ Add scalar-only `KPR_Dates_HostDateSystem()`:
 - return `#N/A` only when an identifiable worksheet host should be readable but its date system cannot be resolved reliably.
 
 Only this diagnostic is deliberately volatile; the date calculations remain non-volatile.
+
+## Static rules
+
+- `vba-host-guard`: every value-taking `KPR_Dates_*` function contains exactly one `PassHostGuard` call, before its first argument resolver or calculation; `HostDateSystem` is exempt but must call the shared classifier exactly once.
+- `vba-volatile-scope`: `Application.Volatile True` appears exactly once, only in `KPR_Dates_HostDateSystem`, and is its first executable statement.
+- `vba-no-workbook-fallback`: no executable reference to `ActiveWorkbook`, `ThisWorkbook` or `ActiveSheet` on the facade's host-resolution path. The rule is scoped to that path, not all of `src/`, because later registration, UI or demo code may have legitimate explicit workbook operations; comments and string literals are ignored.
+- `KPR_Dates_HostDateSystem` is pinned in `vba-required-members`.
+
+## Focused tests
+
+- A pure `host` suite in `KPR_REGRESSION_TESTS` asserts the direct-VBA path and `#N/A` provenance and joins the worksheet-callable dispatcher.
+- A separate macro-only runner, `KPR_Tests_RunHost`, exercises the real worksheet-`Range` caller path. It creates a scratch workbook and holds its exact object reference, uses source-workbook-qualified formulas with the name escaped, tests 1900 and then toggles the same workbook to 1904 under ordinary calculation, verifies `HostDateSystem` reports `1900`, `1904` and `1900` again, verifies value functions proceed under 1900 and return call-level `#N/A` under 1904, keeps separate labels for host-produced and propagated `#N/A`, closes only the exact scratch workbook with `SaveChanges:=False`, and guarantees cleanup on every exit path. It is deliberately not reachable from `KPR_Tests_RunAll`, which is worksheet-callable and cannot legally add or close a workbook. Formulas use ISO text so the runner tests caller classification, not serial interpretation.
+- The runner does not replace manual evidence: the Immediate-window probe is recorded in Windows Excel by hand, and #13 does not close until the exact final SHA has been imported, compiled and the focused probes executed.
 
 ## Error taxonomy and provenance
 
