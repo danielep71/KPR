@@ -1,7 +1,27 @@
-# KPR v0.0.2 date-layer behavioural contract
+<div align="center">
 
-Status: normative v0.0.2 contract for implementation, registration, regression
-tests, demo material, and user documentation.
+# 📅 KPR Date-Layer Behavioural Contract
+
+### Normative v0.0.2 reference for the Gregorian date primitive layer
+
+**Strict inputs · Deterministic dates · Native Excel errors · Shape-preserving arrays**
+
+<br>
+
+![Milestone](https://img.shields.io/badge/Milestone-v0.0.2-217346?style=for-the-badge)
+![Authority](https://img.shields.io/badge/Authority-Normative-6f42c1?style=for-the-badge)
+![Surface](https://img.shields.io/badge/Public_Surface-22_Functions-0969da?style=for-the-badge)
+![Date Window](https://img.shields.io/badge/Date_Window-1900--03--01_to_9999--12--31-d97706?style=for-the-badge)
+![Capacity](https://img.shields.io/badge/Array_Cap-100%2C000-2ea44f?style=for-the-badge)
+
+</div>
+
+---
+
+> [!IMPORTANT]
+> **Normative status.** This is the v0.0.2 behavioural contract for
+> implementation, registration, regression tests, demo material, and user
+> documentation.
 
 This document freezes observable behaviour. It and
 [the implementation plan](IMPLEMENTATION_PLAN.md) are complementary and
@@ -11,19 +31,21 @@ non-overlapping in authority:
 - this contract governs observable behaviour; and
 - where both state a behavioural rule, this contract governs.
 
-If descriptive material elsewhere conflicts with this document, this document
-governs v0.0.2 behaviour. A contract change requires an explicit, reviewed
-behavioural decision rather than an incidental implementation change.
+> [!WARNING]
+> If descriptive material elsewhere conflicts with this document, this document
+> governs v0.0.2 behaviour. A contract change requires an explicit, reviewed
+> behavioural decision rather than an incidental implementation change.
 
-The calculation work through issue #17 implements this contract. Static checks
-and the focused Excel results recorded on the closed implementation issues
-support those issue-level conclusions. That evidence is deliberately narrower
-than release certification: it does not make the current `main` branch a
-supported release or certify the final candidate's complete import,
-compilation, regression, UI, demo, and source round trip. Those exact-source
-claims remain owned by issue #29.
+> [!NOTE]
+> The calculation work through issue #17 implements this contract. Static checks
+> and the focused Excel results recorded on the closed implementation issues
+> support those issue-level conclusions. That evidence is deliberately narrower
+> than release certification: it does not make the current `main` branch a
+> supported release or certify the final candidate's complete import,
+> compilation, regression, UI, demo, and source round trip. Those exact-source
+> claims remain owned by issue #29.
 
-## 1. Scope and terminology
+## 🎯 1. Scope and terminology
 
 The v0.0.2 date layer contains pure proleptic-Gregorian date primitives,
 strict date and control parsing, date arithmetic, weekday locators, and pillar
@@ -50,7 +72,7 @@ In this document:
 - **element-level error** means an Excel error stored only at the affected
   output position while valid neighbours continue to evaluate.
 
-## 2. Exact supported public surface
+## 🧩 2. Exact supported public surface
 
 Every public declaration returns `Variant` so it can return either its semantic
 success type or a native Excel error. Every public argument is `ByVal`. Required
@@ -112,9 +134,9 @@ The plural pre-release name `KPR_Dates_DatesFromPillar` is replaced by singular
 
 Exactly these 22 names are supported public API in v0.0.2.
 
-## 3. Date, integer, control, and token inputs
+## 🧾 3. Date, integer, control, and token inputs
 
-### 3.1 Date-value matrix
+### 📅 3.1 Date-value matrix
 
 Date parsing is independent of Windows and Excel locale. Production code must
 not use `CDate`, `IsDate`, or an equivalent permissive conversion to interpret
@@ -157,7 +179,7 @@ constructed safely. A syntactically exact ISO date outside the supported window 
 `#NUM!` under `DATE_WINDOW`; an impossible component such as `2025-02-29`
 returns `#VALUE!` under `DATE_TEXT_IMPOSSIBLE`.
 
-### 3.2 Integer-value matrix
+### 🔢 3.2 Integer-value matrix
 
 `nDays`, `nWeeks`, `nMonths`, `nYears`, `YearIn`, `MonthIn`, `WdIndex`, and `n`
 use one strict integer parser at each output position. `YearIn` is the argument
@@ -190,7 +212,7 @@ range returns `INTEGER_RANGE` and `#NUM!` even when it also has a fractional
 part. Only after the range test may integrality be checked and the conversion
 performed.
 
-### 3.3 Optional-control matrix
+### 🎛️ 3.3 Optional-control matrix
 
 An `Opt_` argument may be omitted, a scalar, or a 1x1 Range/array. It never
 vectorizes. A multi-cell or multi-element optional argument returns call-level
@@ -217,7 +239,7 @@ under `CONTROL_TOKEN_UNKNOWN`.
 An incoming scalar Excel error supplied as an optional control propagates
 verbatim as a call-level result under `CONTROL_ERROR_PROPAGATED`.
 
-### 3.4 Pillar-token matrix
+### 🏷️ 3.4 Pillar-token matrix
 
 The accepted grammar is deliberately wider than the emitted grammar. Parsing
 accepts every form a caller may reasonably write; formatting emits one canonical
@@ -275,7 +297,7 @@ week-and-month form such as `1M2W`, and a zero-quantity component are never
 emitted. Every emitted token is re-parseable by `DateFromPillar`; the reverse
 does not hold, because the accepted grammar is wider.
 
-## 4. Caller and workbook date-system contract
+## 🖥️ 4. Caller and workbook date-system contract
 
 Every public date-layer call classifies `Application.Caller` once at its public
 boundary, before element conversion or traversal. Date-system authority comes
@@ -313,7 +335,7 @@ names, and related Excel evaluation contexts may provide Error or other caller
 forms. Those contexts are probed during Windows certification and are outside
 the v0.0.2 compatibility claim.
 
-### `KPR_Dates_HostDateSystem()`
+### 🔎 `KPR_Dates_HostDateSystem()`
 
 `KPR_Dates_HostDateSystem()` is the sole deliberately volatile date-layer
 function. It calls `Application.Volatile True` at entry and returns:
@@ -329,9 +351,9 @@ Changing the caller context or workbook date system and performing an ordinary
 recalculation must re-evaluate the diagnostic; a full calculation rebuild is
 not required. The other 21 functions remain non-volatile.
 
-## 5. Scalar, array, shape, and capacity contract
+## 🧮 5. Scalar, array, shape, and capacity contract
 
-### 5.1 Supported shapes
+### 📐 5.1 Supported shapes
 
 - A scalar or a 1x1 Range/array is scalar.
 - A one-dimensional initialized VBA array is interpreted as a `1xN` row.
@@ -350,7 +372,7 @@ An all-scalar call returns a scalar `Variant`, not a 1x1 array. A non-scalar
 call returns a two-dimensional `Variant` array even when the resolved shape is
 one row or one column.
 
-### 5.2 Call-level and element-level outcomes
+### ⚠️ 5.2 Call-level and element-level outcomes
 
 The public boundary applies these stages once per call:
 
@@ -397,7 +419,7 @@ evaluated in signature order. The first failing argument determines that
 element's result, whether the failure is an incoming native error or a
 library-classified parse, domain, or range failure.
 
-## 6. Native-error taxonomy and provenance
+## 🚦 6. Native-error taxonomy and provenance
 
 Public functions return intentional native Excel errors, never message strings,
 `MsgBox` output, or plausible-looking fallback values.
@@ -419,7 +441,7 @@ originating-condition metadata. For an identifiable worksheet caller, volatile
 Provenance is carried by the condition identifiers in section 7, not by the
 returned error value.
 
-## 7. Condition identifier registry
+## 🆔 7. Condition identifier registry
 
 Every condition that produces an error or reports host unavailability has a
 stable semantic identifier. Successful evaluation has no identifier.
@@ -476,7 +498,7 @@ Registry rules:
 | `HOST_DATE1904` | Identifiable worksheet caller in a 1904 workbook | `#N/A` | Call |
 | `HOST_UNRESOLVED` | Identifiable worksheet host whose date system cannot be resolved reliably | `#N/A` | Call |
 
-### 7.1 Unexpected internal failures
+### 🛡️ 7.1 Unexpected internal failures
 
 The registry deliberately has no `INTERNAL_UNEXPECTED` condition identifier.
 Defensive catch-all handlers are containment only and must be unreachable in
@@ -485,11 +507,11 @@ contract and a regression/certification failure, never an expected fixture or
 evidence outcome. It must not be normalized into a passing `#VALUE!`, `#NUM!`,
 or `#N/A` case.
 
-## 8. Function semantics
+## ⚙️ 8. Function semantics
 
 All functions use the parsing, host, array, and error rules above.
 
-### 8.1 Boundaries and predicates
+### 📍 8.1 Boundaries and predicates
 
 - `DayOfWeek` returns 1 through 7. With `Opt_WeekBaseMonday=True`, Monday is 1
   and Sunday is 7. With `False`, Sunday is 1 and Saturday is 7.
@@ -534,7 +556,7 @@ guessing is what the strict-parsing rules in section 3 exist to remove.
 year, and no comparable ambiguity arises. The mixed surface is deliberate: each
 function takes the smallest input that determines its answer.
 
-### 8.2 Date arithmetic
+### ➕ 8.2 Date arithmetic
 
 - `AddDays` adds the parsed signed integer as exact calendar days.
 - `AddWeeks` adds exactly seven times the parsed signed integer as calendar
@@ -550,7 +572,7 @@ Every intermediate and final result is range-gated before conversion to a VBA
 `Date`. Arithmetic overflow or a result outside the supported window returns
 `#NUM!` rather than a runtime error or rollover.
 
-### 8.3 Weekday locators
+### 🗓️ 8.3 Weekday locators
 
 `NthWeekdayOfMonth` returns occurrence `n` of `WdIndex` in `YearIn`/`MonthIn`
 under the selected weekday base. A valid request for an occurrence that does
@@ -562,7 +584,7 @@ year/month. Its argument domains and weekday-base interpretation are identical.
 Any otherwise valid locator whose result is before 1900-03-01 returns `#NUM!`
 under `RESULT_WINDOW`.
 
-### 8.4 Pillar formatting and rounding
+### 🧱 8.4 Pillar formatting and rounding
 
 `PillarFromDates` returns `0D` for equal dates. An absolute interval shorter
 than seven days returns the exact signed day token. Longer intervals compare
@@ -656,7 +678,7 @@ DateFromPillar(StartDate, PillarFromDates(StartDate, EndDate)) = EndDate
 
 Tests and documentation must not imply that equality for rounded intervals.
 
-## 9. Excel-version compatibility
+## 🪟 9. Excel-version compatibility
 
 Scalar calls and multi-cell calls have separate compatibility claims:
 
@@ -671,7 +693,7 @@ The implementation performs no Excel-version detection and does not create or
 simulate Excel's placement-level `#SPILL!` error. Spill placement remains
 Excel's responsibility.
 
-## 10. Supported API boundary and future namespaces
+## 🔒 10. Supported API boundary and future namespaces
 
 The 22 names in section 2 are the complete supported v0.0.2 calculation API.
 VBA may require other procedures to be technically `Public` for cross-module
@@ -695,7 +717,7 @@ The following are explicitly outside v0.0.2:
 - duplicate `_Spill` functions or `KPR_Dates_Spill.bas`; and
 - generated `.xlsm`, `.xlam`, `.xlsx`, or other Office binaries in git.
 
-## 11. Issue #9 acceptance traceability
+## ✅ 11. Issue #9 acceptance traceability
 
 Issue #9 states twelve acceptance criteria. Each is listed below in issue order
 with its normative coverage in this document.
