@@ -882,7 +882,7 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 ## Dependencies
 
 - [x] #15
-- [ ] #16
+- [x] #16
 
 </details>
 
