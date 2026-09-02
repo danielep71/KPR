@@ -843,7 +843,7 @@ The delivered services are:
 <details>
 <summary><strong>#17 — Make the public date surface array-capable</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `enhancement`, `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
@@ -887,9 +887,9 @@ A host without the dynamic-array API reports `NOT_AVAILABLE` and cannot close th
 ## Acceptance criteria
 
 - [x] Exactly 22 supported public names remain.
-- [ ] Every value-taking function returns the same value/error for a scalar, a 1×1 wrapper and the corresponding element of an N-element call.
-- [ ] Row, column and rectangle orientation follows #16.
-- [ ] The 100,000-element cap and optional-argument rule apply uniformly.
+- [x] Every value-taking function returns the same value/error for a scalar, a 1×1 wrapper and the corresponding element of an N-element call.
+- [x] Row, column and rectangle orientation follows #16.
+- [x] The 100,000-element cap and optional-argument rule apply uniformly.
 - [x] No duplicate public calculation function or spill module exists.
 - [x] Documentation distinguishes broad scalar support from dynamic-array-only multi-cell support.
 - [x] The #13 date-system guard runs exactly once per public call before shape resolution and traversal; no per-element implementation touches `Application.Caller`.
@@ -906,7 +906,7 @@ A host without the dynamic-array API reports `NOT_AVAILABLE` and cannot close th
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `documentation`, `enhancement`, `blocked`, `code`, `P2`, `tests`
+- Labels: `documentation`, `enhancement`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/18
 
@@ -943,7 +943,7 @@ Register the single supported worksheet surface consistently without mixing desc
 ## Dependencies
 
 - [x] #15
-- [ ] #17
+- [x] #17
 
 </details>
 
@@ -1098,7 +1098,7 @@ Accepted and rejected date inputs; minimum/maximum serial boundaries; leap years
 
 ## Dependencies
 
-- [ ] #17
+- [x] #17
 - [ ] #20
 
 </details>
@@ -1180,7 +1180,7 @@ The tracked builder is authoritative. A generated workbook may be attached later
 
 ## Dependencies
 
-- [ ] #17
+- [x] #17
 - [ ] #18
 
 </details>
