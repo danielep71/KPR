@@ -797,6 +797,10 @@ The delivered services are:
 - `TryAllocateOutput` for classified 1-based output allocation; and
 - `TryUnwrapControl` for independent optional-control classification without reading a multi-element control.
 
+## Post-closure evolution
+
+#17 later added `TryClassifyShape`, a classification-only preflight in `KPR_Core_Array`. It exists so the facade can classify every value argument before control validation, broadcast resolution and the capacity gate, preserving contract §5.2 without reading any content. That addition belongs to #17's wiring work and does not reopen or expand #16's completed services-only scope.
+
 ## Contract
 
 - Value arguments may vectorize. `Opt_` arguments must be omitted, scalar or 1×1; a larger optional argument reports `CONTROL_NOT_SCALAR`, which maps to call-level `#VALUE!`.
@@ -851,6 +855,17 @@ The delivered services are:
 
 Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell value inputs without introducing duplicated function names or modules.
 
+## Implementation status
+
+Implementation landed on `main` in `a750cd5a935529b807c43631e92cd9f1b15ee8b3`. The 21 value-taking wrappers now use the staged array path, `TryClassifyShape` preserves the contract's call-level ordering, controls resolve through `TryUnwrapControl`, and the focused parity and dynamic-array runners are present. Static validation proves the structural criteria; closure still requires the focused Excel executions below.
+
+Required focused result before closure:
+
+- `KPR_Tests_Run`: zero failures on the complete dispatched suites; and
+- `KPR_Tests_RunArray`: dynamic-array API `SUPPORTED`, seven checks and zero failures.
+
+A host without the dynamic-array API reports `NOT_AVAILABLE` and cannot close this issue, because v0.0.2's multi-cell claim is deliberately limited to dynamic-array Excel.
+
 ## Implementation contract
 
 - Every value-taking public function uses the common shape services from #16 and calls its own shared element implementation.
@@ -871,13 +886,13 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 
 ## Acceptance criteria
 
-- [ ] Exactly 22 supported public names remain.
+- [x] Exactly 22 supported public names remain.
 - [ ] Every value-taking function returns the same value/error for a scalar, a 1×1 wrapper and the corresponding element of an N-element call.
 - [ ] Row, column and rectangle orientation follows #16.
 - [ ] The 100,000-element cap and optional-argument rule apply uniformly.
-- [ ] No duplicate public calculation function or spill module exists.
-- [ ] Documentation distinguishes broad scalar support from dynamic-array-only multi-cell support.
-- [ ] The #13 date-system guard runs exactly once per public call before shape resolution and traversal; no per-element implementation touches `Application.Caller`.
+- [x] No duplicate public calculation function or spill module exists.
+- [x] Documentation distinguishes broad scalar support from dynamic-array-only multi-cell support.
+- [x] The #13 date-system guard runs exactly once per public call before shape resolution and traversal; no per-element implementation touches `Application.Caller`.
 
 ## Dependencies
 
@@ -985,11 +1000,11 @@ Native-error cases record both the expected Excel error code and why that error 
 </details>
 
 <details>
-<summary><strong>#20 — Add the regression runner, assertions and evidence schema</strong></summary>
+<summary><strong>#20 — Complete the regression runner, assertions and evidence schema</strong></summary>
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `blocked`, `P1`, `tests`
+- Labels: `documentation`, `blocked`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/20
 
@@ -997,11 +1012,15 @@ Native-error cases record both the expected Excel error code and why that error 
 
 ## Objective
 
-Provide a deterministic, automation-friendly VBA test runner with structured exact-source evidence and complete caller-state restoration.
+Complete the deterministic, automation-friendly VBA test runner with structured exact-source evidence and complete caller-state restoration.
 
 ## Test module and evidence files
 
 Extend the existing `test/modules/KPR_REGRESSION_TESTS.bas` as the single hand-maintained runner, assertion and named-suite module. Do not create parallel `KPR_Test_Assert.bas`, `KPR_Test_Runner.bas`, `KPR_Test_Dates.bas`, `KPR_Test_Shape.bas` or `KPR_Test_State.bas` components. Committed evidence documentation and schemas remain under `test/evidence/`.
+
+## Already-landed baseline
+
+By `a750cd5`, the module already contains the temporary dispatcher and value/error assertions; focused scalar, host, pillar, surface, shape and parity suites; and the macro-only `KPR_Tests_RunHost`, `KPR_Tests_RunShape` and `KPR_Tests_RunArray` runners. #20 completes and hardens that single module, adds the durable public test interface and structured evidence output, and must not recreate already-landed coverage as parallel infrastructure.
 
 ## Public test-infrastructure interface
 
@@ -1010,7 +1029,7 @@ Extend the existing `test/modules/KPR_REGRESSION_TESTS.bas` as the single hand-m
 
 These entry points are callable through `Application.Run`, but are not supported production API. Calls from the runner into `KPR_Dates_*` are direct VBA calls and therefore use the documented 1900 serial contract rather than requiring a worksheet `Range` caller.
 
-The temporary focused `KPR_Tests_Run` entry point is retired or made private when the final interface lands. `KPR_Tests_RunHost` remains public macro-only test infrastructure because its controlled scratch-workbook lifecycle cannot run from a worksheet UDF.
+The temporary focused `KPR_Tests_Run` entry point is retired or made private when the final interface lands. `KPR_Tests_RunHost`, `KPR_Tests_RunShape` and `KPR_Tests_RunArray` remain public macro-only test infrastructure, or are orchestrated by an equivalent public macro path, because their controlled scratch-workbook lifecycles cannot run from a worksheet UDF.
 
 ## Evidence contract
 
@@ -1036,7 +1055,7 @@ Write a machine-readable summary, a case-level TSV and environment metadata cove
 </details>
 
 <details>
-<summary><strong>#21 — Add contract, shape, parity, error and state regression suites</strong></summary>
+<summary><strong>#21 — Complete contract, shape, parity, error and state regression suites</strong></summary>
 
 - State: `open`
 - Assignee: @danielep71
@@ -1048,11 +1067,15 @@ Write a machine-readable summary, a case-level TSV and environment metadata cove
 
 ## Objective
 
-Exercise the complete single public date surface and prove scalar/array parity without relying on visual inspection.
+Complete the regression coverage for the single public date surface and prove scalar/array parity without relying on visual inspection.
 
 ## Suites
 
-Add named `dates`, `shape`, `parity`, `errors` and `state` suites to the existing dispatcher in `KPR_REGRESSION_TESTS.bas`. Keep the already-landed focused suites and macro-only host runner. Do not split the hand-maintained harness into additional VBA components.
+Complete named `dates`, `shape`, `parity`, `errors` and `state` coverage in the existing dispatcher in `KPR_REGRESSION_TESTS.bas`. Keep and extend the already-landed focused suites and macro-only runners. Do not split the hand-maintained harness into additional VBA components.
+
+## Already-landed baseline
+
+Issues #12–#17 already supplied focused date/input, boundary, mapper, host, pillar, surface, shape and parity coverage, plus macro-only host, Range-shape and dynamic-array spill runners. #21 consumes #20's final runner/evidence interface, fills the remaining contract/error/state matrix, executes the independent #19 fixtures, and proves the complete suite as one regression system. It does not rename or duplicate the existing shape/parity work.
 
 ## Required coverage
 
@@ -1319,7 +1342,11 @@ Neither control may claim that VBA imports, compiles or executes in Excel.
 
 ## Already-landed static baseline
 
-At the audited pre-#15 baseline `a18929e`, the deterministic gate already has 23 passing rules, 29 required files, 25 degraded/negative scenarios and one positive self-test. Work from #10–#14 already enforces export headers, case-insensitive component uniqueness, module visibility and dependencies, facade ownership, strict parsing bans, window constants, host-guard placement, volatility scope, workbook-fallback exclusion, required members, facade return types and the day-zero ban. #27 preserves and integrates those controls; it does not claim them as newly invented here. #27 still owns the complete final inventories and manifest cross-checks, adding the plan to `REQUIRED_FILES`, the offline renderer fixtures, the live drift monitor and its separate workflow.
+At the audited pre-#15 baseline `a18929e`, the deterministic gate already had 23 passing rules, 29 required files, 25 degraded/negative scenarios and one positive self-test. Work from #10–#14 already enforced export headers, case-insensitive component uniqueness, module visibility and dependencies, facade ownership, strict parsing bans, window constants, host-guard placement, volatility scope, workbook-fallback exclusion, required members, facade return types and the day-zero ban.
+
+At the post-#17 baseline `a750cd5`, the gate has 24 passing rules, 29 required files, 31 pinned members, 37 degraded/negative scenarios and one positive self-test. Work from #15–#17 additionally enforces the exact 22-name surface, rejects legacy/plural and `_Spill` names, forbids guards inside element implementations, preserves array-engine purity, pins guard-before-classification/materialization ordering, and confines production `Application.Caller` access to `TryResolveHostDateSystem`.
+
+#27 preserves and integrates all of those already-landed controls; it does not claim them as newly invented here. #27 still owns the complete final inventories and manifest cross-checks, adding the plan to `REQUIRED_FILES`, the offline renderer fixtures, the live drift monitor and its separate workflow.
 
 ## Track A — deterministic tree checks
 
