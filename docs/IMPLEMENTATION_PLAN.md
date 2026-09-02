@@ -914,7 +914,7 @@ Register the single supported worksheet surface consistently without mixing desc
 
 ## Dependencies
 
-- [ ] #15
+- [x] #15
 - [ ] #17
 
 </details>
@@ -924,7 +924,7 @@ Register the single supported worksheet surface consistently without mixing desc
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `blocked`, `ci`, `P1`, `tests`
+- Labels: `ci`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/19
 
@@ -967,7 +967,7 @@ Native-error cases record both the expected Excel error code and why that error 
 
 - [x] #12
 - [x] #14
-- [ ] #15
+- [x] #15
 
 </details>
 
@@ -1104,7 +1104,7 @@ Do not treat Excel's permissive parsing, implicit coercion, pre-1900-03-01 seria
 
 ## Dependencies
 
-- [ ] #15
+- [x] #15
 - [ ] #20
 
 </details>
