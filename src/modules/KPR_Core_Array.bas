@@ -14,15 +14,53 @@ Attribute VB_Name = "KPR_Core_Array"
 '   allows the array engine in issue #16 to traverse shapes without duplicating
 '   value parsing.
 '
-' SCOPE (THIS REVISION)
-'   - Array_Rank        reports true array rank, 0 through 60
-'   - TryUnwrapScalar   single-cell Range and 1x1 array unwrapping
+' SCOPE
+'   Shape services for the single public surface (issue #16):
 '
-'   Multi-element traversal, scalar expansion and exact-shape broadcasting are
-'   NOT implemented here yet. They are owned by issue #16. This revision
-'   preserves the baseline's scalar-only acceptance exactly.
+'   - Array_Rank          true array rank, 0 through 60
+'   - TryUnwrapScalar     single-cell Range and 1x1 array unwrapping (scalar path)
+'   - TryUnwrapControl    the same for Opt_ controls, reporting CONTROL_NOT_SCALAR
+'                         for a valid multi-element shape without reading it
+'   - CheckCapacity       Rows x Cols <= 100,000, computed in Double
+'   - TryMaterialize      classify one argument, gate capacity, then snapshot it
+'                         into a scalar or a 1-based 2-D payload
+'   - AccumulateShape     fold one argument's shape into the output shape
+'   - ElementAt           the element at a position; total over a valid descriptor
+'   - TryAllocateOutput   a 1-based 2-D output of a validated shape
+'
+'   The engine owns shape classification, broadcast resolution, allocation and
+'   unwrapping ONLY. It contains no date algorithm, never classifies the host,
+'   and performs no function-pointer dispatch: VBA has no clean way to call an
+'   element implementation from here, so the per-element loop lives in the
+'   facade (#17) and calls these services. #16 changes no public behaviour.
+'
+' ORDER OF OPERATIONS THE FACADE MUST KEEP
+'   1. PassHostGuard first. A Range in a 1904 workbook must be refused BEFORE
+'      it is materialized: once Value2 has been read, its serials are in hand
+'      and nothing downstream can tell they meant something else. The engine
+'      never sees the guard by design, so this ordering is the facade's duty
+'      and #17 depends on it.
+'   2. Resolve Opt_ controls with TryUnwrapControl, which never reads the
+'      contents of a multi-element control.
+'   3. TryMaterialize each value argument. Capacity is decided from the
+'      dimensions alone, before Value2 is read, before a normalized array is
+'      allocated and before any element is copied or inspected.
+'   4. AccumulateShape across the arguments, then TryAllocateOutput.
+'   5. Traverse row-major: R = 1 To Rows, C = 1 To Cols. Traversal is
+'      deterministic and touches no Excel state.
 '
 ' SHAPE VOCABULARY
+'   KPR_SHAPE_SCALAR   a scalar, a single-cell Range or a 1x1 array; expands to
+'                      every output position
+'   KPR_SHAPE_ARRAY    a Rows x Cols payload with Rows or Cols above 1
+'
+'   A one-dimensional VBA array is 1xN. Worksheet Range orientation is
+'   preserved. All non-scalar arguments must match exactly; there is no
+'   row-to-column outer product and no implicit cross-broadcast. A multi-area,
+'   zero-element, jagged or rank-3+ input and any non-Range object are
+'   SHAPE_UNSUPPORTED.
+'
+' RANK
 '   Rank is reported rather than capped, so a caller can reject a shape it does
 '   not support at its own boundary. Folding rank 3 and above into rank 2 would
 '   let such an array reach code that indexes it with two subscripts, raising
@@ -52,11 +90,18 @@ Attribute VB_Name = "KPR_Core_Array"
 '   Nothing here is supported API.
 '
 ' ALLOWED DEPENDENCIES
-'   KPR_Core_Err. Not referenced in this revision; both members convert every
-'   failure to a return value rather than raising.
+'   KPR_Core_Err, for the condition vocabulary. No member raises; every
+'   failure is a return value with a classified condition.
+'
+' PURITY
+'   The static gate forbids in this module: UsedRange, Select, Activate,
+'   Calculate, EnableEvents, ScreenUpdating, Selection, Application.Caller,
+'   AddressOf, CallByName, Application.Run, and the date intrinsics
+'   DateSerial, DateValue, CDate, Weekday, Year, Month and Day. A shape engine
+'   that reads calendar values or Excel state has stopped being a shape engine.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '
 ' AUTHOR
 '   Daniele Penza
@@ -67,6 +112,18 @@ Attribute VB_Name = "KPR_Core_Array"
 '------------------------------------------------------------------------------
     Option Explicit         'Force explicit variable declarations
     Option Private Module   'Internal module: invisible outside this VBA project
+
+'------------------------------------------------------------------------------
+' SHAPE VOCABULARY
+'------------------------------------------------------------------------------
+    'Argument shape as seen by the engine
+        Public Enum KPR_ArgShape
+            KPR_SHAPE_SCALAR = 0
+            KPR_SHAPE_ARRAY = 1
+        End Enum
+
+    'Capacity cap on the resolved output, per contract section 5
+        Public Const KPR_MAX_ELEMENTS As Long = 100000
 
 '
 '------------------------------------------------------------------------------
@@ -321,5 +378,492 @@ Fail:
         TryUnwrapScalar = False
     'Do not leave stale error state for the caller to observe
         Err.Clear
+
+End Function
+
+'
+'------------------------------------------------------------------------------
+'
+'                              ARRAY ENGINE SERVICES
+'
+'------------------------------------------------------------------------------
+'
+
+Public Function CheckCapacity( _
+    ByVal Rows As Long, _
+    ByVal Cols As Long, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                                 CheckCapacity
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Gates a shape against the 100,000-element cap.
+'
+' RETURNS
+'   Boolean
+'     TRUE  => Rows x Cols is at most KPR_MAX_ELEMENTS; Condition is NONE
+'     FALSE => CAPACITY_EXCEEDED
+'
+' NOTES
+'   - The product is taken in Double. A worksheet Range can have over a
+'     million rows and sixteen thousand columns, and the Long product of a
+'     large Range overflows before it can be compared.
+'   - Called from the dimensions alone, before any content is read.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    If (CDbl(Rows) * CDbl(Cols)) > CDbl(KPR_MAX_ELEMENTS) Then
+        Condition = KPR_COND_CAPACITY_EXCEEDED
+        CheckCapacity = False
+    Else
+        Condition = KPR_COND_NONE
+        CheckCapacity = True
+    End If
+
+End Function
+
+Public Function TryMaterialize( _
+    ByVal ValueIn As Variant, _
+    ByRef Payload As Variant, _
+    ByRef Kind As KPR_ArgShape, _
+    ByRef Rows As Long, _
+    ByRef Cols As Long, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                                TryMaterialize
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Classifies one value argument, gates its capacity, and snapshots it into a
+'   payload the engine can index: the scalar itself, or a 1-based 2-D Variant.
+'
+' SIGNATURE
+'   TryMaterialize(ValueIn, Payload, Kind, Rows, Cols, Condition) -> Boolean
+'
+' OUTPUTS
+'   Payload   (ByRef)  assigned ONLY on success
+'   Kind      (ByRef)  KPR_SHAPE_SCALAR or KPR_SHAPE_ARRAY
+'   Rows/Cols (ByRef)  the argument's dimensions; 1 x 1 for a scalar
+'   Condition (ByRef)  always assigned
+'
+' BEHAVIOR
+'   - Type is tested before anything is copied. A Variant holding a Range is
+'     never Let-assigned; that would invoke Range.Value and materialize the
+'     whole Range before capacity or area count could be checked.
+'   - A single-area Range reports Rows and Cols from the Range object, is
+'     capacity-gated, and only THEN read once through Value2. A one-cell Range
+'     is a scalar. Value2 is used as supplied: no UsedRange intersection, no
+'     trimming, no per-cell reads.
+'   - A 2-D VBA array reports its bounds, is capacity-gated, then normalized to
+'     a 1-based copy. A 1-D array becomes 1 x N the same way. A one-element
+'     array is a scalar.
+'   - Elements are inspected only during the normalizing copy, which happens
+'     after the gate. An element that is itself an array makes the input
+'     jagged: SHAPE_UNSUPPORTED.
+'   - Empty, Null and error elements are preserved at their positions. The
+'     engine does not interpret them; #17 parses per element.
+'   - A multi-area Range, a zero-element array, a rank above 2, and any
+'     non-Range object are SHAPE_UNSUPPORTED.
+'
+' ERROR POLICY
+'   - Does not raise. Every failure path returns FALSE with a condition.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Rng         As Range        'Bound Range when ValueIn is a Range object
+    Dim Rank        As Long         'Array rank
+    Dim LB1         As Long         'Lower bound, dimension 1
+    Dim UB1         As Long         'Upper bound, dimension 1
+    Dim LB2         As Long         'Lower bound, dimension 2
+    Dim UB2         As Long         'Upper bound, dimension 2
+    Dim R           As Long         'Row cursor
+    Dim C           As Long         'Column cursor
+    Dim Snapshot    As Variant      'Normalized 1-based copy
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Trap runtime errors from property access and convert them to a rejection
+        On Error GoTo Unsupported
+        TryMaterialize = False
+        Condition = KPR_COND_SHAPE_UNSUPPORTED
+
+'------------------------------------------------------------------------------
+' RANGE
+'------------------------------------------------------------------------------
+    If IsObject(ValueIn) Then
+
+        'Only a Range is a shape
+            If Not TypeOf ValueIn Is Range Then GoTo Unsupported
+            Set Rng = ValueIn
+
+        'One area only; a union has no single rectangle
+            If Rng.Areas.Count <> 1 Then GoTo Unsupported
+
+        'Dimensions from the object, before any value is read
+            Rows = Rng.Rows.Count
+            Cols = Rng.Columns.Count
+            If Not CheckCapacity(Rows, Cols, Condition) Then Exit Function
+
+        'One read. A single cell comes back as a scalar, a block as 1-based 2-D
+            If (Rows = 1) And (Cols = 1) Then
+                Kind = KPR_SHAPE_SCALAR
+                Payload = Rng.Value2
+            Else
+                Kind = KPR_SHAPE_ARRAY
+                Payload = Rng.Value2
+            End If
+            Condition = KPR_COND_NONE
+            TryMaterialize = True
+            Exit Function
+
+    End If
+
+'------------------------------------------------------------------------------
+' VBA ARRAY
+'------------------------------------------------------------------------------
+    If IsArray(ValueIn) Then
+
+        Rank = Array_Rank(ValueIn)
+
+        Select Case Rank
+
+            Case 1
+                'One-dimensional is 1 x N
+                    LB1 = LBound(ValueIn): UB1 = UBound(ValueIn)
+                    If UB1 < LB1 Then GoTo Unsupported
+                    Rows = 1
+                    Cols = UB1 - LB1 + 1
+                    If Not CheckCapacity(Rows, Cols, Condition) Then Exit Function
+
+                'A single element is a scalar; an element that is an array is jagged
+                    If Cols = 1 Then
+                        If IsArray(ValueIn(LB1)) Then GoTo Unsupported
+                        Kind = KPR_SHAPE_SCALAR
+                        Payload = ValueIn(LB1)
+                    Else
+                        ReDim Snapshot(1 To 1, 1 To Cols)
+                        For C = 1 To Cols
+                            If IsArray(ValueIn(LB1 + C - 1)) Then GoTo Unsupported
+                            Snapshot(1, C) = ValueIn(LB1 + C - 1)
+                        Next C
+                        Kind = KPR_SHAPE_ARRAY
+                        Payload = Snapshot
+                    End If
+
+            Case 2
+                'Two-dimensional: rows then columns, bounds normalized to 1
+                    LB1 = LBound(ValueIn, 1): UB1 = UBound(ValueIn, 1)
+                    LB2 = LBound(ValueIn, 2): UB2 = UBound(ValueIn, 2)
+                    If (UB1 < LB1) Or (UB2 < LB2) Then GoTo Unsupported
+                    Rows = UB1 - LB1 + 1
+                    Cols = UB2 - LB2 + 1
+                    If Not CheckCapacity(Rows, Cols, Condition) Then Exit Function
+
+                    If (Rows = 1) And (Cols = 1) Then
+                        If IsArray(ValueIn(LB1, LB2)) Then GoTo Unsupported
+                        Kind = KPR_SHAPE_SCALAR
+                        Payload = ValueIn(LB1, LB2)
+                    Else
+                        ReDim Snapshot(1 To Rows, 1 To Cols)
+                        For R = 1 To Rows
+                            For C = 1 To Cols
+                                If IsArray(ValueIn(LB1 + R - 1, LB2 + C - 1)) Then GoTo Unsupported
+                                Snapshot(R, C) = ValueIn(LB1 + R - 1, LB2 + C - 1)
+                            Next C
+                        Next R
+                        Kind = KPR_SHAPE_ARRAY
+                        Payload = Snapshot
+                    End If
+
+            Case Else
+                'Rank 0 cannot occur here; rank 3 and above is unsupported
+                    GoTo Unsupported
+
+        End Select
+
+        Condition = KPR_COND_NONE
+        TryMaterialize = True
+        Exit Function
+
+    End If
+
+'------------------------------------------------------------------------------
+' SCALAR
+'------------------------------------------------------------------------------
+    'Everything else is a scalar payload, including Empty, Null and errors
+        Kind = KPR_SHAPE_SCALAR
+        Rows = 1
+        Cols = 1
+        Payload = ValueIn
+        Condition = KPR_COND_NONE
+        TryMaterialize = True
+        Exit Function
+
+'------------------------------------------------------------------------------
+' UNSUPPORTED
+'------------------------------------------------------------------------------
+Unsupported:
+    'Any failure while classifying is a shape rejection, never a raise
+        Err.Clear
+        Condition = KPR_COND_SHAPE_UNSUPPORTED
+        TryMaterialize = False
+
+End Function
+
+Public Function AccumulateShape( _
+    ByRef OutKind As KPR_ArgShape, _
+    ByRef OutRows As Long, _
+    ByRef OutCols As Long, _
+    ByVal ArgKind As KPR_ArgShape, _
+    ByVal ArgRows As Long, _
+    ByVal ArgCols As Long, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                               AccumulateShape
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Folds one argument's shape into the running output shape.
+'
+' BEHAVIOR
+'   - Start with OutKind = KPR_SHAPE_SCALAR and OutRows = OutCols = 1.
+'   - A scalar argument leaves the output shape unchanged: it expands.
+'   - The first array argument sets the output shape.
+'   - Every later array argument must match it exactly in rows and columns;
+'     otherwise SHAPE_MISMATCH. There is no outer product and no
+'     cross-broadcast: a 1 x N against an N x 1 is a mismatch.
+'   - An all-scalar call leaves the output scalar, never a 1 x 1 array.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' FOLD
+'------------------------------------------------------------------------------
+    Condition = KPR_COND_NONE
+    AccumulateShape = True
+
+    'A scalar never constrains the shape
+        If ArgKind = KPR_SHAPE_SCALAR Then Exit Function
+
+    'First array sets the shape
+        If OutKind = KPR_SHAPE_SCALAR Then
+            OutKind = KPR_SHAPE_ARRAY
+            OutRows = ArgRows
+            OutCols = ArgCols
+            Exit Function
+        End If
+
+    'Later arrays must match exactly
+        If (ArgRows <> OutRows) Or (ArgCols <> OutCols) Then
+            Condition = KPR_COND_SHAPE_MISMATCH
+            AccumulateShape = False
+        End If
+
+End Function
+
+Public Function ElementAt( _
+    ByRef Payload As Variant, _
+    ByVal Kind As KPR_ArgShape, _
+    ByVal R As Long, _
+    ByVal C As Long) _
+    As Variant
+'
+'==============================================================================
+'                                   ElementAt
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns the element at 1-based position (R, C) of a materialized payload.
+'
+' TOTALITY
+'   Total over a valid descriptor: Payload and Kind must come from a successful
+'   TryMaterialize, and (R, C) must lie inside the output shape that
+'   AccumulateShape resolved. Under those preconditions no failure exists, so
+'   there is no condition channel. A scalar payload returns itself at every
+'   position, which IS scalar expansion.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    If Kind = KPR_SHAPE_SCALAR Then
+        ElementAt = Payload
+    Else
+        ElementAt = Payload(R, C)
+    End If
+
+End Function
+
+Public Function TryAllocateOutput( _
+    ByVal Rows As Long, _
+    ByVal Cols As Long, _
+    ByRef OutArr As Variant, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                               TryAllocateOutput
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Allocates a 1-based Rows x Cols Variant array for the output, after the
+'   capacity gate.
+'
+' RETURNS
+'   Boolean
+'     TRUE  => OutArr allocated
+'     FALSE => CAPACITY_EXCEEDED, or SHAPE_UNSUPPORTED for a non-positive
+'              dimension
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Fresh       As Variant      'Newly allocated output
+
+'------------------------------------------------------------------------------
+' ALLOCATE
+'------------------------------------------------------------------------------
+    TryAllocateOutput = False
+    If (Rows < 1) Or (Cols < 1) Then
+        Condition = KPR_COND_SHAPE_UNSUPPORTED
+        Exit Function
+    End If
+    If Not CheckCapacity(Rows, Cols, Condition) Then Exit Function
+
+    ReDim Fresh(1 To Rows, 1 To Cols)
+    OutArr = Fresh
+    Condition = KPR_COND_NONE
+    TryAllocateOutput = True
+
+End Function
+
+Public Function TryUnwrapControl( _
+    ByVal ValueIn As Variant, _
+    ByRef ScalarOut As Variant, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                               TryUnwrapControl
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Reduces an Opt_ control to its single scalar, reporting the contract's
+'   distinct conditions for a multi-element control and an unsupported shape.
+'
+' BEHAVIOR
+'   - Classifies independently of TryMaterialize and is NOT capacity-gated. A
+'     control of 100,001 cells is CONTROL_NOT_SCALAR, not CAPACITY_EXCEEDED,
+'     because the failure is that it has more than one element, however many.
+'   - A multi-element control is rejected from its dimensions alone; its
+'     contents are never read.
+'   - A single-cell Range or one-element array unwraps to its payload.
+'   - A multi-area Range, an empty array, a rank above 2 and any non-Range
+'     object are SHAPE_UNSUPPORTED.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Rng         As Range        'Bound Range when ValueIn is a Range object
+    Dim Rank        As Long         'Array rank
+    Dim Count       As Double       'Element count, in Double for large Ranges
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    On Error GoTo Unsupported
+    TryUnwrapControl = False
+    Condition = KPR_COND_SHAPE_UNSUPPORTED
+
+'------------------------------------------------------------------------------
+' RANGE
+'------------------------------------------------------------------------------
+    If IsObject(ValueIn) Then
+        If Not TypeOf ValueIn Is Range Then GoTo Unsupported
+        Set Rng = ValueIn
+        If Rng.Areas.Count <> 1 Then GoTo Unsupported
+        Count = CDbl(Rng.Rows.Count) * CDbl(Rng.Columns.Count)
+        If Count <> 1# Then
+            Condition = KPR_COND_CONTROL_NOT_SCALAR
+            Exit Function
+        End If
+        ScalarOut = Rng.Value2
+        Condition = KPR_COND_NONE
+        TryUnwrapControl = True
+        Exit Function
+    End If
+
+'------------------------------------------------------------------------------
+' VBA ARRAY
+'------------------------------------------------------------------------------
+    If IsArray(ValueIn) Then
+        Rank = Array_Rank(ValueIn)
+        Select Case Rank
+            Case 1
+                If UBound(ValueIn) < LBound(ValueIn) Then GoTo Unsupported
+                Count = CDbl(UBound(ValueIn) - LBound(ValueIn) + 1)
+                If Count <> 1# Then Condition = KPR_COND_CONTROL_NOT_SCALAR: Exit Function
+                If IsArray(ValueIn(LBound(ValueIn))) Then GoTo Unsupported
+                ScalarOut = ValueIn(LBound(ValueIn))
+            Case 2
+                If (UBound(ValueIn, 1) < LBound(ValueIn, 1)) Or (UBound(ValueIn, 2) < LBound(ValueIn, 2)) Then GoTo Unsupported
+                Count = CDbl(UBound(ValueIn, 1) - LBound(ValueIn, 1) + 1) * CDbl(UBound(ValueIn, 2) - LBound(ValueIn, 2) + 1)
+                If Count <> 1# Then Condition = KPR_COND_CONTROL_NOT_SCALAR: Exit Function
+                If IsArray(ValueIn(LBound(ValueIn, 1), LBound(ValueIn, 2))) Then GoTo Unsupported
+                ScalarOut = ValueIn(LBound(ValueIn, 1), LBound(ValueIn, 2))
+            Case Else
+                GoTo Unsupported
+        End Select
+        Condition = KPR_COND_NONE
+        TryUnwrapControl = True
+        Exit Function
+    End If
+
+'------------------------------------------------------------------------------
+' SCALAR
+'------------------------------------------------------------------------------
+    ScalarOut = ValueIn
+    Condition = KPR_COND_NONE
+    TryUnwrapControl = True
+    Exit Function
+
+'------------------------------------------------------------------------------
+' UNSUPPORTED
+'------------------------------------------------------------------------------
+Unsupported:
+    Err.Clear
+    Condition = KPR_COND_SHAPE_UNSUPPORTED
+    TryUnwrapControl = False
 
 End Function

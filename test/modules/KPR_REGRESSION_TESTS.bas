@@ -27,6 +27,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                     cap, grammar conditions and format/parse consistency
 '       surface       the five members added by #15, the YearIn conversions,
 '                     the singular pillar name and the window floor boundaries
+'       shape         the #16 array engine services on in-memory inputs:
+'                     classification, 1xN, broadcasting, capacity, elements
 '
 '   Later issues add suites by writing one Private Sub and one Case line. The
 '   dispatcher is deliberately the only shared machinery.
@@ -60,6 +62,12 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                                     Macro-only: it adds and closes a
 '                                     workbook, which cannot legally happen
 '                                     inside a worksheet function call.
+'       KPR_Tests_RunShape            creates a scratch workbook and exercises
+'                                     the array engine on real Ranges: row,
+'                                     column, rectangle, multi-area, blanks and
+'                                     errors, UsedRange independence, and
+'                                     caller-state restoration. Macro-only for
+'                                     the same reason.
 '
 '   KPR_Tests_RunAll returns an array, so it cannot be inspected with ? in the
 '   Immediate window and cannot appear in the macro list. Use KPR_Tests_Run
@@ -74,8 +82,9 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '   detail and must not reach fixtures or evidence.
 '
 ' ALLOWED DEPENDENCIES
-'   KPR_Core_Parse, KPR_Core_Dates and KPR_Core_Err, called directly to assert
-'   exact condition classification, and KPR_DATES_DAYS for boundary behaviour. No other core is
+'   KPR_Core_Parse, KPR_Core_Dates, KPR_Core_Array and KPR_Core_Err, called
+'   directly to assert exact classification, and KPR_DATES_DAYS for boundary
+'   behaviour. No other core is
 '   reachable from here. The stateful host runner additionally uses
 '   Excel.Workbooks.Add and the scratch workbook it creates, always through the
 '   exact object reference and never through ActiveWorkbook.
@@ -392,6 +401,7 @@ Private Function RunSuite( _
                 Run_HostCases
                 Run_PillarCases
                 Run_SurfaceCases
+                Run_ShapeCases
 
         Case "date-type":       Run_DateTypeCases
         Case "date-text":       Run_DateTextCases
@@ -403,6 +413,7 @@ Private Function RunSuite( _
         Case "host":            Run_HostCases
         Case "pillar":          Run_PillarCases
         Case "surface":         Run_SurfaceCases
+        Case "shape":           Run_ShapeCases
 
         Case Else
             'Not in the registry
@@ -908,6 +919,288 @@ End Sub
 '
 '------------------------------------------------------------------------------
 '
+'                          SUITE - ARRAY ENGINE SERVICES
+'
+'------------------------------------------------------------------------------
+'
+
+Private Sub Run_ShapeCases()
+'
+' The #16 engine on in-memory inputs. Public behaviour is unchanged by #16, so
+' every case here calls the services directly. Range inputs and caller-state
+' restoration need a worksheet and live in KPR_Tests_RunShape.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Payload     As Variant          'Materialized payload
+    Dim Kind        As KPR_ArgShape     'Classified kind
+    Dim Rows        As Long             'Rows reported
+    Dim Cols        As Long             'Columns reported
+    Dim Cond        As KPR_Condition    'Reported condition
+    Dim OutKind     As KPR_ArgShape     'Accumulated output kind
+    Dim OutRows     As Long             'Accumulated output rows
+    Dim OutCols     As Long             'Accumulated output cols
+    Dim Big         As Variant          'Large in-memory array
+    Dim Two         As Variant          'Two-dimensional in-memory array
+    Dim Jagged      As Variant          'Array containing an array
+    Dim Zero        As Variant          'Zero-based 2-D array
+    Dim Scalar      As Variant          'Unwrapped control
+    Dim OutArr      As Variant          'Allocated output
+    Dim Bag         As Collection       'A non-Range object
+    Dim I           As Long             'Cursor
+
+'------------------------------------------------------------------------------
+' CLASSIFICATION
+'------------------------------------------------------------------------------
+    'A scalar is 1 x 1 and expands
+        AssertMaterialize "shape/scalar", 42, True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+        AssertMaterialize "shape/empty scalar", Empty, True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+        AssertMaterialize "shape/error scalar", CVErr(xlErrNA), True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+
+    'A one-element array is a scalar; a 1-D array is 1 x N
+        AssertMaterialize "shape/1-D one element", Array(7), True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+        AssertMaterialize "shape/1-D three", Array(1, 2, 3), True, "NONE", KPR_SHAPE_ARRAY, 1, 3
+
+    '2-D arrays keep rows x cols; a 1 x 1 is a scalar
+        ReDim Two(1 To 3, 1 To 2)
+        AssertMaterialize "shape/2-D 3x2", Two, True, "NONE", KPR_SHAPE_ARRAY, 3, 2
+        ReDim Two(1 To 1, 1 To 1)
+        Two(1, 1) = "x"
+        AssertMaterialize "shape/2-D 1x1 is scalar", Two, True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+
+    'Zero-based bounds are normalized to 1-based and positions preserved
+        ReDim Zero(0 To 1, 0 To 2)
+        Zero(0, 0) = "a": Zero(1, 2) = "f"
+        AssertMaterialize "shape/0-based 2x3", Zero, True, "NONE", KPR_SHAPE_ARRAY, 2, 3
+        If TryMaterialize(Zero, Payload, Kind, Rows, Cols, Cond) Then
+            mChecks = mChecks + 1
+            If ElementAt(Payload, Kind, 1, 1) <> "a" Or ElementAt(Payload, Kind, 2, 3) <> "f" Then
+                Record "shape/0-based positions", "elements not at their original positions after normalization"
+            End If
+        End If
+
+    'Rejections
+        AssertMaterialize "shape/empty array", Array(), False, "SHAPE_UNSUPPORTED", 0, 0, 0
+        Jagged = Array(1, Array(2, 3))
+        AssertMaterialize "shape/jagged", Jagged, False, "SHAPE_UNSUPPORTED", 0, 0, 0
+        ReDim Two(1 To 2, 1 To 2, 1 To 2)
+        AssertMaterialize "shape/rank 3", Two, False, "SHAPE_UNSUPPORTED", 0, 0, 0
+        Set Bag = New Collection
+        AssertMaterialize "shape/non-Range object", Bag, False, "SHAPE_UNSUPPORTED", 0, 0, 0
+
+'------------------------------------------------------------------------------
+' CAPACITY, DECIDED BEFORE ANY COPY
+'------------------------------------------------------------------------------
+    'Exactly 100,000 is accepted; 100,001 is refused
+        ReDim Big(1 To 100000)
+        AssertMaterialize "capacity/100000 accepted", Big, True, "NONE", KPR_SHAPE_ARRAY, 1, 100000
+        ReDim Big(1 To 100001)
+        AssertMaterialize "capacity/100001 refused", Big, False, "CAPACITY_EXCEEDED", 0, 0, 0
+        ReDim Two(1 To 250, 1 To 400)
+        AssertMaterialize "capacity/250x400 accepted", Two, True, "NONE", KPR_SHAPE_ARRAY, 250, 400
+        ReDim Two(1 To 250, 1 To 401)
+        AssertMaterialize "capacity/250x401 refused", Two, False, "CAPACITY_EXCEEDED", 0, 0, 0
+
+    'The gate itself, in Double, at Range-sized dimensions that overflow Long
+        mChecks = mChecks + 1
+        If CheckCapacity(1048576, 16384, Cond) Then
+            Record "capacity/Long overflow guard", "a full-sheet Range passed the gate"
+        ElseIf ConditionName(Cond) <> "CAPACITY_EXCEEDED" Then
+            Record "capacity/Long overflow guard", "expected CAPACITY_EXCEEDED got " & ConditionName(Cond)
+        End If
+
+'------------------------------------------------------------------------------
+' BROADCAST RESOLUTION
+'------------------------------------------------------------------------------
+    'All scalars stay scalar
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_SCALAR, 1, 1, Cond
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_SCALAR, 1, 1, Cond
+        AssertShape "broadcast/all scalar", OutKind, OutRows, OutCols, KPR_SHAPE_SCALAR, 1, 1
+
+    'Scalar then array: the array sets the shape; scalar after: unchanged
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_SCALAR, 1, 1, Cond
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 4, 2, Cond
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_SCALAR, 1, 1, Cond
+        AssertShape "broadcast/scalar array scalar", OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 4, 2
+
+    'Two equal arrays agree; unequal is a mismatch; no outer product
+        mChecks = mChecks + 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 4, 2, Cond) Then
+            Record "broadcast/equal arrays", "identical shapes reported as a mismatch"
+        End If
+        mChecks = mChecks + 1
+        If AccumulateShape(OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 2, 4, Cond) Then
+            Record "broadcast/transposed", "a 2x4 was accepted against a 4x2"
+        ElseIf ConditionName(Cond) <> "SHAPE_MISMATCH" Then
+            Record "broadcast/transposed", "expected SHAPE_MISMATCH got " & ConditionName(Cond)
+        End If
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        AccumulateShape OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 1, 3, Cond
+        mChecks = mChecks + 1
+        If AccumulateShape(OutKind, OutRows, OutCols, KPR_SHAPE_ARRAY, 3, 1, Cond) Then
+            Record "broadcast/row vs column", "a 1x3 row against a 3x1 column was accepted (outer product)"
+        End If
+
+'------------------------------------------------------------------------------
+' ELEMENT ACCESS AND EXPANSION
+'------------------------------------------------------------------------------
+    'A scalar payload is the same at every position
+        TryMaterialize 9, Payload, Kind, Rows, Cols, Cond
+        mChecks = mChecks + 1
+        If ElementAt(Payload, Kind, 3, 7) <> 9 Or ElementAt(Payload, Kind, 1, 1) <> 9 Then
+            Record "element/scalar expansion", "scalar did not expand to every position"
+        End If
+
+    'Row-major positions of a 1 x N and a 2-D payload
+        TryMaterialize Array("a", "b", "c"), Payload, Kind, Rows, Cols, Cond
+        mChecks = mChecks + 1
+        If ElementAt(Payload, Kind, 1, 2) <> "b" Then Record "element/1xN position", "expected b at (1,2)"
+        ReDim Two(1 To 2, 1 To 2)
+        Two(2, 1) = "sw"
+        TryMaterialize Two, Payload, Kind, Rows, Cols, Cond
+        mChecks = mChecks + 1
+        If ElementAt(Payload, Kind, 2, 1) <> "sw" Then Record "element/2-D position", "expected sw at (2,1)"
+
+    'Empty and errors are preserved at their positions, not interpreted
+        Two(1, 1) = Empty: Two(1, 2) = CVErr(xlErrNA)
+        TryMaterialize Two, Payload, Kind, Rows, Cols, Cond
+        mChecks = mChecks + 1
+        If Not IsEmpty(ElementAt(Payload, Kind, 1, 1)) Then Record "element/Empty preserved", "Empty was not preserved"
+        mChecks = mChecks + 1
+        If VarType(ElementAt(Payload, Kind, 1, 2)) <> vbError Then Record "element/error preserved", "vbError was not preserved"
+
+'------------------------------------------------------------------------------
+' OUTPUT ALLOCATION
+'------------------------------------------------------------------------------
+        mChecks = mChecks + 1
+        If Not TryAllocateOutput(3, 4, OutArr, Cond) Then
+            Record "alloc/3x4", "allocation refused: " & ConditionName(Cond)
+        ElseIf LBound(OutArr, 1) <> 1 Or UBound(OutArr, 1) <> 3 Or LBound(OutArr, 2) <> 1 Or UBound(OutArr, 2) <> 4 Then
+            Record "alloc/3x4", "bounds are not 1..3 x 1..4"
+        End If
+        mChecks = mChecks + 1
+        If TryAllocateOutput(1000, 101, OutArr, Cond) Then
+            Record "alloc/over capacity", "100,100 elements were allocated"
+        ElseIf ConditionName(Cond) <> "CAPACITY_EXCEEDED" Then
+            Record "alloc/over capacity", "expected CAPACITY_EXCEEDED got " & ConditionName(Cond)
+        End If
+        mChecks = mChecks + 1
+        If TryAllocateOutput(0, 5, OutArr, Cond) Then Record "alloc/zero rows", "a zero-row output was allocated"
+
+'------------------------------------------------------------------------------
+' CONTROL UNWRAPPING, INDEPENDENT OF CAPACITY
+'------------------------------------------------------------------------------
+        AssertControl "control/scalar", True, True, "NONE"
+        AssertControl "control/1-D one element", Array(True), True, "NONE"
+        AssertControl "control/1-D two elements", Array(True, False), False, "CONTROL_NOT_SCALAR"
+        ReDim Two(1 To 1, 1 To 1): Two(1, 1) = False
+        AssertControl "control/2-D 1x1", Two, True, "NONE"
+        ReDim Two(1 To 2, 1 To 2)
+        AssertControl "control/2-D 2x2", Two, False, "CONTROL_NOT_SCALAR"
+        ReDim Big(1 To 100001)
+        AssertControl "control/100001 is not-scalar, not capacity", Big, False, "CONTROL_NOT_SCALAR"
+        AssertControl "control/empty array", Array(), False, "SHAPE_UNSUPPORTED"
+        AssertControl "control/non-Range object", Bag, False, "SHAPE_UNSUPPORTED"
+
+End Sub
+
+Private Sub AssertMaterialize( _
+    ByVal Label As String, _
+    ByVal ValueIn As Variant, _
+    ByVal ExpectOk As Boolean, _
+    ByVal ExpectCondition As String, _
+    ByVal ExpectKind As KPR_ArgShape, _
+    ByVal ExpectRows As Long, _
+    ByVal ExpectCols As Long)
+'
+' Asserts classification, condition and dimensions from TryMaterialize.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Payload     As Variant          'Materialized payload
+    Dim Kind        As KPR_ArgShape     'Classified kind
+    Dim Rows        As Long             'Rows reported
+    Dim Cols        As Long             'Columns reported
+    Dim Cond        As KPR_Condition    'Reported condition
+    Dim Ok          As Boolean          'Service return
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    mChecks = mChecks + 1
+    Ok = TryMaterialize(ValueIn, Payload, Kind, Rows, Cols, Cond)
+    If Ok <> ExpectOk Then
+        Record Label, "expected ok=" & CStr(ExpectOk) & " got " & CStr(Ok) & " (" & ConditionName(Cond) & ")"
+    ElseIf ConditionName(Cond) <> ExpectCondition Then
+        Record Label, "expected " & ExpectCondition & " got " & ConditionName(Cond)
+    ElseIf Ok And (Kind <> ExpectKind Or Rows <> ExpectRows Or Cols <> ExpectCols) Then
+        Record Label, "expected kind " & CStr(ExpectKind) & " " & CStr(ExpectRows) & "x" & CStr(ExpectCols) & _
+                      " got kind " & CStr(Kind) & " " & CStr(Rows) & "x" & CStr(Cols)
+    End If
+
+End Sub
+
+Private Sub AssertShape( _
+    ByVal Label As String, _
+    ByVal Kind As KPR_ArgShape, _
+    ByVal Rows As Long, _
+    ByVal Cols As Long, _
+    ByVal ExpectKind As KPR_ArgShape, _
+    ByVal ExpectRows As Long, _
+    ByVal ExpectCols As Long)
+'
+' Asserts an accumulated output shape.
+'
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    mChecks = mChecks + 1
+    If Kind <> ExpectKind Or Rows <> ExpectRows Or Cols <> ExpectCols Then
+        Record Label, "expected kind " & CStr(ExpectKind) & " " & CStr(ExpectRows) & "x" & CStr(ExpectCols) & _
+                      " got kind " & CStr(Kind) & " " & CStr(Rows) & "x" & CStr(Cols)
+    End If
+
+End Sub
+
+Private Sub AssertControl( _
+    ByVal Label As String, _
+    ByVal ValueIn As Variant, _
+    ByVal ExpectOk As Boolean, _
+    ByVal ExpectCondition As String)
+'
+' Asserts TryUnwrapControl's outcome and condition.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Scalar      As Variant          'Unwrapped payload
+    Dim Cond        As KPR_Condition    'Reported condition
+    Dim Ok          As Boolean          'Service return
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    mChecks = mChecks + 1
+    Ok = TryUnwrapControl(ValueIn, Scalar, Cond)
+    If Ok <> ExpectOk Then
+        Record Label, "expected ok=" & CStr(ExpectOk) & " got " & CStr(Ok) & " (" & ConditionName(Cond) & ")"
+    ElseIf ConditionName(Cond) <> ExpectCondition Then
+        Record Label, "expected " & ExpectCondition & " got " & ConditionName(Cond)
+    End If
+
+End Sub
+
+'
+'------------------------------------------------------------------------------
+'
 '                    STATEFUL HOST RUNNER (MACRO ONLY, NOT DISPATCHED)
 '
 '------------------------------------------------------------------------------
@@ -1120,6 +1413,156 @@ End Sub
 '
 '------------------------------------------------------------------------------
 '
+'                    STATEFUL SHAPE RUNNER (MACRO ONLY, NOT DISPATCHED)
+'
+'------------------------------------------------------------------------------
+'
+
+Public Sub KPR_Tests_RunShape()
+'
+'==============================================================================
+'                               KPR_Tests_RunShape
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Exercises the array engine on real worksheet Ranges in a scratch workbook
+'   and proves it leaves caller state untouched.
+'
+' WHAT IT PROVES
+'   - Row, column and rectangular Ranges materialize with their orientation.
+'   - A multi-area Range is SHAPE_UNSUPPORTED.
+'   - Blank cells arrive as Empty and error cells as vbError, at position.
+'   - A Range extending beyond UsedRange keeps its requested size.
+'   - Calculation mode, EnableEvents, ScreenUpdating and the selection address
+'     are identical before and after every engine call.
+'
+' STATE
+'   Same discipline as KPR_Tests_RunHost: exact object references, manual
+'   calculation for the run, restoration on every exit path, close with
+'   SaveChanges:=False. Macro-only: it adds and closes a workbook.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const EXPECT_CHECKS As Long = 12    'Fixed assertion count for this runner
+    Dim Scratch         As Workbook     'The scratch workbook, held by reference
+    Dim Sheet           As Worksheet    'Its first sheet
+    Dim PriorCalc       As XlCalculation 'Caller's calculation mode
+    Dim CalcChanged     As Boolean      'TRUE once PriorCalc was captured
+    Dim Payload         As Variant      'Materialized payload
+    Dim Kind            As KPR_ArgShape 'Classified kind
+    Dim Rows            As Long         'Rows reported
+    Dim Cols            As Long         'Columns reported
+    Dim Cond            As KPR_Condition 'Reported condition
+    Dim EventsBefore    As Boolean      'Caller state snapshot
+    Dim ScreenBefore    As Boolean      'Caller state snapshot
+    Dim CalcBefore      As XlCalculation 'Caller state snapshot
+    Dim SelBefore       As String       'Caller state snapshot
+    Dim I               As Long         'Row cursor
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    Set mFailures = New Collection
+    mChecks = 0
+    On Error GoTo Cleanup
+    PriorCalc = Application.Calculation
+    CalcChanged = True
+    Application.Calculation = xlCalculationManual
+    Set Scratch = Application.Workbooks.Add
+    Set Sheet = Scratch.Worksheets(1)
+
+    'Populate A1:C3 with values, a blank at B2 and an error at C3
+        Sheet.Range("A1").Value2 = 1: Sheet.Range("B1").Value2 = 2: Sheet.Range("C1").Value2 = 3
+        Sheet.Range("A2").Value2 = 4: Sheet.Range("C2").Value2 = 6
+        Sheet.Range("A3").Value2 = 7: Sheet.Range("B3").Value2 = 8
+        Sheet.Range("C3").Formula = "=NA()"
+        Application.Calculate
+
+    'Snapshot caller state
+        EventsBefore = Application.EnableEvents
+        ScreenBefore = Application.ScreenUpdating
+        CalcBefore = Application.Calculation
+        SelBefore = Selection.Address(External:=True)
+
+'------------------------------------------------------------------------------
+' ORIENTATION
+'------------------------------------------------------------------------------
+        AssertMaterialize "range/row 1x3", Sheet.Range("A1:C1"), True, "NONE", KPR_SHAPE_ARRAY, 1, 3
+        AssertMaterialize "range/column 3x1", Sheet.Range("A1:A3"), True, "NONE", KPR_SHAPE_ARRAY, 3, 1
+        AssertMaterialize "range/rectangle 3x3", Sheet.Range("A1:C3"), True, "NONE", KPR_SHAPE_ARRAY, 3, 3
+        AssertMaterialize "range/single cell is scalar", Sheet.Range("B1"), True, "NONE", KPR_SHAPE_SCALAR, 1, 1
+
+'------------------------------------------------------------------------------
+' MULTI-AREA
+'------------------------------------------------------------------------------
+        AssertMaterialize "range/multi-area", Application.Union(Sheet.Range("A1"), Sheet.Range("C3")), False, "SHAPE_UNSUPPORTED", 0, 0, 0
+        AssertControl "range/multi-cell control", Sheet.Range("A1:C1"), False, "CONTROL_NOT_SCALAR"
+
+'------------------------------------------------------------------------------
+' BLANKS AND ERRORS AT POSITION
+'------------------------------------------------------------------------------
+        If TryMaterialize(Sheet.Range("A1:C3"), Payload, Kind, Rows, Cols, Cond) Then
+            mChecks = mChecks + 1
+            If Not IsEmpty(ElementAt(Payload, Kind, 2, 2)) Then Record "range/blank at B2", "expected Empty"
+            mChecks = mChecks + 1
+            If VarType(ElementAt(Payload, Kind, 3, 3)) <> vbError Then Record "range/error at C3", "expected vbError"
+            mChecks = mChecks + 1
+            If ElementAt(Payload, Kind, 3, 2) <> 8 Then Record "range/value at B3", "expected 8"
+        End If
+
+'------------------------------------------------------------------------------
+' USEDRANGE INDEPENDENCE
+'------------------------------------------------------------------------------
+    'A1:A50 extends far past the used area and must keep all fifty rows
+        AssertMaterialize "range/beyond UsedRange", Sheet.Range("A1:A50"), True, "NONE", KPR_SHAPE_ARRAY, 50, 1
+
+'------------------------------------------------------------------------------
+' CALLER STATE
+'------------------------------------------------------------------------------
+        mChecks = mChecks + 1
+        If Application.EnableEvents <> EventsBefore Or Application.ScreenUpdating <> ScreenBefore _
+           Or Application.Calculation <> CalcBefore Then
+            Record "state/application", "EnableEvents, ScreenUpdating or Calculation changed during engine calls"
+        End If
+        mChecks = mChecks + 1
+        If Selection.Address(External:=True) <> SelBefore Then
+            Record "state/selection", "selection moved during engine calls"
+        End If
+
+'------------------------------------------------------------------------------
+' CLEANUP
+'------------------------------------------------------------------------------
+Cleanup:
+    If Err.Number <> 0 Then
+        Record "shape/runner", "unexpected runtime error " & CStr(Err.Number) & ": " & Err.Description
+        Err.Clear
+    End If
+    On Error Resume Next
+    If Not Scratch Is Nothing Then Scratch.Close SaveChanges:=False
+    If CalcChanged Then Application.Calculation = PriorCalc
+    On Error GoTo 0
+
+'------------------------------------------------------------------------------
+' REPORT
+'------------------------------------------------------------------------------
+    If mChecks <> EXPECT_CHECKS Then
+        Record "shape/runner state", "expected " & CStr(EXPECT_CHECKS) & " assertions but counted " & CStr(mChecks)
+    End If
+    Debug.Print "KPR shape regression  checks: " & CStr(mChecks) & "  failures: " & CStr(mFailures.Count)
+    For I = 1 To mFailures.Count
+        Debug.Print "  FAIL  " & CStr(mFailures(I)(0)) & " : " & CStr(mFailures(I)(1))
+    Next I
+
+End Sub
+
+'
+'------------------------------------------------------------------------------
+'
 '                                  ASSERTIONS
 '
 '------------------------------------------------------------------------------
@@ -1321,6 +1764,9 @@ Private Function ConditionName( _
         Case KPR_COND_CONTROL_TYPE_REJECTED:    ConditionName = "CONTROL_TYPE_REJECTED"
         Case KPR_COND_CONTROL_ERROR_PROPAGATED: ConditionName = "CONTROL_ERROR_PROPAGATED"
         Case KPR_COND_SHAPE_UNSUPPORTED:        ConditionName = "SHAPE_UNSUPPORTED"
+        Case KPR_COND_SHAPE_MISMATCH:           ConditionName = "SHAPE_MISMATCH"
+        Case KPR_COND_CAPACITY_EXCEEDED:        ConditionName = "CAPACITY_EXCEEDED"
+        Case KPR_COND_CONTROL_NOT_SCALAR:       ConditionName = "CONTROL_NOT_SCALAR"
         Case KPR_COND_HOST_DATE1904:            ConditionName = "HOST_DATE1904"
         Case KPR_COND_HOST_UNRESOLVED:          ConditionName = "HOST_UNRESOLVED"
         Case KPR_COND_CONTROL_TOKEN_UNKNOWN:    ConditionName = "CONTROL_TOKEN_UNKNOWN"

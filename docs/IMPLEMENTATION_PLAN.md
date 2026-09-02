@@ -793,12 +793,15 @@ Create one internal array engine with deterministic orientation, broadcasting, o
 - An all-scalar call returns a scalar, not a 1×1 array.
 - Preserve worksheet Range orientation. Treat a one-dimensional VBA array as 1×N.
 - Reject multi-area, empty, jagged and unsupported array inputs intentionally.
-- A blank required element produces `#VALUE!` at that output position.
-- An error element propagates its exact native error without suppressing valid neighbors.
+- `TryMaterialize` preserves `Empty`, `vbError` and valid payloads at their original positions; it does not interpret them.
+- #17 owns per-element parsing, error propagation and the survival of valid neighbouring results.
 - A shape conflict returns one call-level `#VALUE!`.
 - Cap the resolved output at 100,000 elements. A larger call returns one call-level `#NUM!`.
 - Never intersect a supplied Range with `UsedRange` or silently shorten the requested output.
 - Own shape classification, broadcast resolution, allocation and 1×1 unwrapping only; contain no date algorithms and no generic function-pointer dispatch.
+- Decide capacity from dimensions alone, before reading `Range.Value2`, before allocating a normalized array and before inspecting any element; compute the product in `Double`.
+- Classify `Opt_` controls independently of the capacity-gated value path: a multi-element control is `CONTROL_NOT_SCALAR`/`#VALUE!` from its dimensions alone, never `CAPACITY_EXCEEDED`, and its contents are never read.
+- #16 changes no public behaviour. It delivers services in `KPR_Core_Array`, tested directly; #17 wires the facade to them.
 
 ## Already-landed baseline hardening
 
@@ -811,8 +814,8 @@ Commit `2b6464c` made the current scalar boundary inspect object/array type befo
 - [ ] One-dimensional VBA arrays are asserted as 1×N.
 - [ ] Non-scalar optional arguments, shape mismatches and unsupported arrays return the documented call-level error.
 - [ ] Exactly 100,000 elements are accepted and 100,001 returns `#NUM!`.
-- [ ] Mixed-validity arrays preserve valid values and per-element errors.
-- [ ] Traversal is deterministic and does not select, activate or recalculate unrelated Excel state.
+- [ ] `TryMaterialize` preserves `Empty`, `vbError` and valid payloads at their original positions.
+- [ ] Traversal is deterministic and does not select, activate or recalculate unrelated Excel state; a static purity rule forbids Excel state, host classification, dispatch and date tokens in the engine.
 - [ ] Caller calculation, events, screen updating and selection state remain unchanged.
 - [ ] #19 later encodes the independent generated shape/capacity fixtures; #21 owns their complete regression execution.
 

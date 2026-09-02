@@ -9,6 +9,15 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- The array engine services in `KPR_Core_Array`: classification and
+  one-read materialization of Ranges and VBA arrays, exact-shape broadcast
+  resolution, a 100,000-element capacity gate decided from dimensions before
+  any content is read, row-major element access, output allocation, and
+  control unwrapping that reports `CONTROL_NOT_SCALAR` without reading a
+  multi-element control. No public behaviour changes; #17 wires the facade.
+- A static purity rule forbidding Excel state, host classification,
+  function-pointer dispatch and date intrinsics in the engine.
+
 - The complete 22-name worksheet surface: `AddDays`, `BeginOfQuarter`,
   `EndOfQuarter`, `BeginOfYear` and `EndOfYear`, with the four calendar
   boundaries provided by `KPR_Core_Dates`.

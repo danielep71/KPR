@@ -50,7 +50,7 @@ Attribute VB_Name = "KPR_Core_Err"
 '     unless a handler needs to substitute a different value first.
 '
 ' UPDATED
-'   2026-09-01
+'   2026-09-02
 '
 ' AUTHOR
 '   Daniele Penza
@@ -107,9 +107,12 @@ Attribute VB_Name = "KPR_Core_Err"
             KPR_COND_CONTROL_TYPE_REJECTED = 40
             KPR_COND_CONTROL_ERROR_PROPAGATED = 41
             KPR_COND_CONTROL_TOKEN_UNKNOWN = 42
+            KPR_COND_CONTROL_NOT_SCALAR = 43
 
             'Shape conditions
             KPR_COND_SHAPE_UNSUPPORTED = 50
+            KPR_COND_SHAPE_MISMATCH = 51
+            KPR_COND_CAPACITY_EXCEEDED = 52
 
             'Host date-system conditions
             KPR_COND_HOST_DATE1904 = 60
@@ -310,7 +313,9 @@ Public Function ErrForCondition( _
                  KPR_COND_DOMAIN_OCCURRENCE, _
                  KPR_COND_CONTROL_TYPE_REJECTED, _
                  KPR_COND_CONTROL_TOKEN_UNKNOWN, _
+                 KPR_COND_CONTROL_NOT_SCALAR, _
                  KPR_COND_SHAPE_UNSUPPORTED, _
+                 KPR_COND_SHAPE_MISMATCH, _
                  KPR_COND_PILLAR_TYPE_REJECTED, _
                  KPR_COND_PILLAR_TOKEN_MALFORMED, _
                  KPR_COND_PILLAR_DUPLICATE_UNIT, _
@@ -323,7 +328,8 @@ Public Function ErrForCondition( _
                  KPR_COND_INTEGER_RANGE, _
                  KPR_COND_OCCURRENCE_ABSENT, _
                  KPR_COND_RESULT_WINDOW, _
-                 KPR_COND_PILLAR_AGGREGATE_RANGE
+                 KPR_COND_PILLAR_AGGREGATE_RANGE, _
+                 KPR_COND_CAPACITY_EXCEEDED
 
                 ErrForCondition = ErrNum()
 

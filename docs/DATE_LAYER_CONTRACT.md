@@ -366,13 +366,18 @@ Consequently:
   `CONTROL_NOT_SCALAR`);
 - a resolved target of at most 100,000 elements is permitted;
 - a resolved target of 100,001 or more elements returns call-level `#NUM!`
-  (`CAPACITY_EXCEEDED`);
+  (`CAPACITY_EXCEEDED`), decided from the dimensions alone before any Range is
+  read or any element is inspected;
 - a blank or otherwise invalid required element returns `#VALUE!` only at that
   position;
 - an element result outside the supported numerical/date domain returns
   `#NUM!` only at that position; and
 - an incoming native error propagates unchanged at that position without
   suppressing valid neighbours (`INPUT_ERROR_PROPAGATED`).
+
+Output positions are traversed row-major: every column of the first row,
+then the second row, and so on. The order is deterministic and observable only
+through evaluation sequence, since evaluation has no side effects.
 
 Where more than one value argument at the same output position contains an
 incoming error, the first error in signature order is propagated. Call-level

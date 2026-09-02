@@ -94,7 +94,7 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     # the parser and the error vocabulary directly. Everything else they exercise
     # through the facade. They are deliberately not granted access to every core.
     "kpr_regression_tests": frozenset(
-        {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_dates_days"}
+        {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_core_array", "kpr_dates_days"}
     ),
 }
 
@@ -124,7 +124,18 @@ VBA_WINDOW_PINS = {
 # name rather than left to Windows-only verification.
 VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
     "kpr_core_err": frozenset({"ErrValue", "ErrNum", "ErrNA", "ErrForCondition"}),
-    "kpr_core_array": frozenset({"Array_Rank", "TryUnwrapScalar"}),
+    "kpr_core_array": frozenset(
+        {
+            "Array_Rank",
+            "TryUnwrapScalar",
+            "TryUnwrapControl",
+            "CheckCapacity",
+            "TryMaterialize",
+            "AccumulateShape",
+            "ElementAt",
+            "TryAllocateOutput",
+        }
+    ),
     "kpr_core_parse": frozenset(
         {
             "TryParseDateScalar",
@@ -174,6 +185,21 @@ VBA_ARGUMENT_RESOLVERS = (
 # explicit workbook operations. Comments and string literals are ignored.
 VBA_WORKBOOK_FALLBACKS = ("ActiveWorkbook", "ThisWorkbook", "ActiveSheet")
 VBA_HOST_PATH_PROCEDURES = (VBA_HOST_CLASSIFIER, VBA_HOST_GUARD, VBA_HOST_DIAGNOSTIC)
+
+# The array engine owns shape only. Tokens that would let Excel state, host
+# classification, function-pointer dispatch or a date algorithm migrate into it
+# are forbidden in its executable code; comments and string literals are
+# ignored. Property-style tokens are matched as members (".Select"); bare
+# tokens as whole words.
+VBA_ENGINE_MODULE_STEM = "kpr_core_array"
+VBA_ENGINE_FORBIDDEN_MEMBERS = (
+    "UsedRange", "Select", "Activate", "Calculate", "EnableEvents",
+    "ScreenUpdating", "Caller", "Run",
+)
+VBA_ENGINE_FORBIDDEN_WORDS = (
+    "Selection", "AddressOf", "CallByName",
+    "DateSerial", "DateValue", "CDate", "Weekday", "Year", "Month", "Day",
+)
 
 # The complete supported worksheet surface, frozen in contract section 2. This
 # is a temporary source-declaration control: the facade must declare exactly
@@ -1698,6 +1724,43 @@ def check_vba_workbook_fallback(repo: Repository) -> dict[str, object]:
     )
 
 
+def check_vba_engine_purity(repo: Repository) -> dict[str, object]:
+    """The array engine contains no Excel state access, host logic or date math.
+
+    Member tokens are matched after a dot (`.Select`, `Application.Caller`);
+    bare tokens as whole words. Comments and string literals are stripped
+    first, so documentation may name what the code may not use.
+    """
+    failures: list[dict[str, object]] = []
+    checked = 0
+    member = re.compile(r"\.\s*(" + "|".join(VBA_ENGINE_FORBIDDEN_MEMBERS) + r")\b")
+    word = re.compile(r"(?<![\w.])(" + "|".join(VBA_ENGINE_FORBIDDEN_WORDS) + r")\b")
+    for path, text in _vba_sources(repo):
+        if PurePosixPath(path).stem.casefold() != VBA_ENGINE_MODULE_STEM:
+            continue
+        checked += 1
+        for number, line in enumerate(text.splitlines(), start=1):
+            if line.lstrip().startswith("'"):
+                continue
+            probe = _strip_vba_strings(line).split("'")[0]
+            for pattern in (member, word):
+                for hit in pattern.finditer(probe):
+                    failures.append(
+                        finding(
+                            path,
+                            f"Array engine uses {hit.group(1)}; the engine owns shape only and "
+                            "must not touch Excel state, the host, dispatch or the calendar.",
+                            number,
+                        )
+                    )
+    return rule_result(
+        "vba-engine-purity",
+        "VBA array engine purity",
+        failures,
+        f"The {checked} array engine module contains no forbidden state, host, dispatch or date token",
+    )
+
+
 CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_required_files,
     check_stale_identity,
@@ -1719,6 +1782,7 @@ CHECKS: tuple[Callable[[Repository], dict[str, object]], ...] = (
     check_vba_host_guard,
     check_vba_volatile_scope,
     check_vba_workbook_fallback,
+    check_vba_engine_purity,
     check_vba_required_members,
     check_vba_facade_return_type,
     check_vba_day_zero_idiom,
@@ -2080,6 +2144,29 @@ def run_self_tests(root: Path) -> None:
             newline="\r\n",
         )
 
+    def _engine_probe(case: Path, statement: str) -> None:
+        engine = case / "src/modules/KPR_Core_Array.bas"
+        engine.write_text(
+            engine.read_text(encoding="utf-8")
+            + "Public Function Probe(ByVal R As Object) As Variant\n"
+            + f"    {statement}\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def engine_reads_usedrange(case: Path) -> None:
+        _engine_probe(case, "Probe = R.UsedRange.Rows.Count")
+
+    def engine_classifies_host(case: Path) -> None:
+        _engine_probe(case, "Probe = TypeName(Application.Caller)")
+
+    def engine_dispatches(case: Path) -> None:
+        _engine_probe(case, 'Probe = CallByName(R, "Value", VbGet)')
+
+    def engine_does_date_math(case: Path) -> None:
+        _engine_probe(case, "Probe = Year(R.Value2)")
+
     def missing_host_guard(case: Path) -> None:
         facade = case / "src/modules/KPR_DATES_DAYS.bas"
         facade.write_text(
@@ -2218,6 +2305,10 @@ def run_self_tests(root: Path) -> None:
         ("reverse calendar dependency", "vba-module-dependencies", reverse_dates_dependency),
         ("locale-sensitive parsing", "vba-locale-parsing", locale_parsing),
         ("drifted window constant", "vba-window-constants", drifted_window_constant),
+        ("engine reads UsedRange", "vba-engine-purity", engine_reads_usedrange),
+        ("engine classifies the host", "vba-engine-purity", engine_classifies_host),
+        ("engine dispatches by name", "vba-engine-purity", engine_dispatches),
+        ("engine does date math", "vba-engine-purity", engine_does_date_math),
         ("missing surface member", "vba-public-surface", missing_surface_member),
         ("extra surface member", "vba-public-surface", extra_surface_member),
         ("legacy plural pillar name", "vba-public-surface", legacy_plural_name),
