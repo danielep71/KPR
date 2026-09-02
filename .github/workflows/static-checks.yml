@@ -1,7 +1,7 @@
 name: Static repository checks
 
-# This hosted source-integrity gate complements, but does not replace, Excel
-# compilation and regression certification on the supported Windows hosts.
+# This hosted source-integrity gate complements, but does not replace, focused
+# Windows Excel evidence or the final exact-source certification.
 
 on:
   pull_request:

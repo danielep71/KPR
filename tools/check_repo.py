@@ -82,7 +82,7 @@ VBA_PUBLIC_FUNCTION_PREFIX = "kpr_dates_"
 # the public members of the components listed for it.
 VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     "kpr_core_err": frozenset(),
-    # The calendar core reports classified conditions and needs the vocabulary;
+    # The date core reports classified conditions and needs the vocabulary;
     # it still never constructs a worksheet error value.
     "kpr_core_dates": frozenset({"kpr_core_err"}),
     "kpr_core_parse": frozenset({"kpr_core_err"}),
@@ -90,9 +90,9 @@ VBA_ALLOWED_DEPENDENCIES: dict[str, frozenset[str]] = {
     "kpr_dates_days": frozenset(
         {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_core_array"}
     ),
-    # The regression suites assert exact condition classification, so they call
-    # the parser and the error vocabulary directly. Everything else they exercise
-    # through the facade. They are deliberately not granted access to every core.
+    # Focused regression suites assert parser/error classifications and pure
+    # date/array services directly, while supported behaviour is exercised through
+    # the facade. Access remains limited to the four calculation cores and facade.
     "kpr_regression_tests": frozenset(
         {"kpr_core_err", "kpr_core_parse", "kpr_core_dates", "kpr_core_array", "kpr_dates_days"}
     ),
@@ -178,7 +178,8 @@ VBA_ARGUMENT_RESOLVERS = (
     "TryResolveBool",
     "TryResolveRounding",
     "TryResolvePillar",
-    # #17 stages: the guard must precede classification and materialization too
+    # Array stages: the guard must precede classification, control unwrapping
+    # and materialization too.
     "TryClassifyShape",
     "TryUnwrapControl",
     "TryMaterialize",
@@ -1602,8 +1603,8 @@ def check_vba_host_guard(repo: Repository) -> dict[str, object]:
     for path, text in _facade_sources(repo):
         for visibility, name, body in _vba_procedures(text):
             code = _strip_vba_comments(body)
-            # A private procedure must not run the guard: it would execute per
-            # element once #17 loops the Elem_* functions. Only genuine calls
+            # A private procedure must not run the guard: an Elem_* call executes
+            # once per output element. Only genuine calls
             # count; the guard's own declaration, its result assignment
             # (PassHostGuard = ...) and comments are not calls.
             if visibility == "private":
@@ -2105,7 +2106,7 @@ def run_self_tests(root: Path) -> None:
         )
 
     def reverse_dates_dependency(case: Path) -> None:
-        # Core_Dates -> Core_Err is now allowed; the reverse must still fail.
+        # Core_Dates -> Core_Err is allowed; the reverse must still fail.
         core = case / "src/modules/KPR_Core_Err.bas"
         core.write_text(
             core.read_text(encoding="utf-8")
