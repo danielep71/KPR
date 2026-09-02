@@ -9,6 +9,18 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- The complete 22-name worksheet surface: `AddDays`, `BeginOfQuarter`,
+  `EndOfQuarter`, `BeginOfYear` and `EndOfYear`, with the four calendar
+  boundaries provided by `KPR_Core_Dates`.
+- A private element implementation behind every value-taking public
+  function, so the scalar call is the 1x1 case of the same code the array
+  engine will loop. Elements resolve their own value arguments in signature
+  order and never run the host guard.
+- An exact-inventory static rule: the facade must declare precisely the 22
+  supported names, so a missing member, an extra `KPR_Dates_*` name, the
+  legacy plural and any `_Spill` twin fail the build until #26's manifest
+  replaces the hard-coded list.
+
 - `Opt_Rounding` on `KPR_Dates_PillarFromDates`, accepting `NEAREST`,
   `FLOOR` and `CEILING` over one uniform candidate set. The `3W`/`1M`
   boundary under `NEAREST` is now derived from calendar-day distance rather
@@ -59,6 +71,15 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   Excel error value cannot express.
 
 ### Changed
+
+- `KPR_Dates_DaysInYear` and `KPR_Dates_IsLeapYear` take `YearIn`, a
+  calendar year, as the contract specifies; a date is now rejected rather
+  than silently read as a serial.
+- `KPR_Dates_DatesFromPillar` is renamed to the singular
+  `KPR_Dates_DateFromPillar`. No alias remains.
+- User-facing error documentation no longer lists an unexpected runtime
+  error as a `#VALUE!` condition; the containment handlers are a defect if
+  reached, not a documented outcome.
 
 - An incoming Excel error at the `Pillar` argument of `DatesFromPillar` now
   propagates verbatim instead of being rejected as a non-text payload.

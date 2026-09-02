@@ -13,7 +13,7 @@ Attribute VB_Name = "KPR_Core_Dates"
 '   - Supported window constants and the window predicate
 '   - IsLeapYear
 '   - DaysInMonth
-'   - EndOfMonth
+'   - EndOfMonth, BeginOfQuarter, EndOfQuarter, BeginOfYear, EndOfYear
 '   - TryAddMonths
 '   - TryPillar_Parse
 '   - TryPillar_Format
@@ -75,7 +75,7 @@ Attribute VB_Name = "KPR_Core_Dates"
 '     (29-Feb, short months, EOM) cannot drift between the two surfaces.
 '
 ' UPDATED
-'   2026-09-01
+'   2026-09-02
 '
 ' AUTHOR
 '   Daniele Penza
@@ -365,6 +365,115 @@ Public Function EndOfMonth( _
         EndOfMonth = DateSerial(YearPart, MonthPart, DaysInMonth(YearPart, MonthPart))
 End Function
 
+
+Public Function BeginOfQuarter( _
+    ByVal DateIn As Date) _
+    As Date
+'
+'==============================================================================
+'                                BeginOfQuarter
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns the first day of the calendar quarter containing DateIn, using
+'   quarters Jan-Mar, Apr-Jun, Jul-Sep and Oct-Dec.
+'
+' NOTES
+'   - Pure calendar function: no window gate. A Q1-1900 input yields
+'     1900-01-01, which is a valid VBA Date but outside the supported window;
+'     the facade element gates the result.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Quarter start month is 1, 4, 7 or 10
+        BeginOfQuarter = DateSerial(Year(DateIn), ((Month(DateIn) - 1) \ 3) * 3 + 1, 1)
+
+End Function
+
+Public Function EndOfQuarter( _
+    ByVal DateIn As Date) _
+    As Date
+'
+'==============================================================================
+'                                 EndOfQuarter
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns the last day of the calendar quarter containing DateIn.
+'
+' NOTES
+'   - Month length comes from DaysInMonth, never from the day-zero idiom.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim LastMonth       As Long     'Last month of the quarter: 3, 6, 9 or 12
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    'Quarter end month, then its length
+        LastMonth = ((Month(DateIn) - 1) \ 3) * 3 + 3
+        EndOfQuarter = DateSerial(Year(DateIn), LastMonth, DaysInMonth(Year(DateIn), LastMonth))
+
+End Function
+
+Public Function BeginOfYear( _
+    ByVal DateIn As Date) _
+    As Date
+'
+'==============================================================================
+'                                 BeginOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns 1 January of the year containing DateIn.
+'
+' NOTES
+'   - Pure calendar function: no window gate. Any 1900 input yields
+'     1900-01-01, which the facade element gates as RESULT_WINDOW.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    BeginOfYear = DateSerial(Year(DateIn), 1, 1)
+
+End Function
+
+Public Function EndOfYear( _
+    ByVal DateIn As Date) _
+    As Date
+'
+'==============================================================================
+'                                  EndOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns 31 December of the year containing DateIn.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' ASSIGN RESULT
+'------------------------------------------------------------------------------
+    EndOfYear = DateSerial(Year(DateIn), 12, 31)
+
+End Function
 
 Public Function TryAddMonths( _
     ByVal DateIn As Date, _

@@ -17,28 +17,27 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   Internal modules keep mixed-case KPR_Core_* names. The convention is
 '   documented rather than enforced by a static casing rule.
 '
-' SCOPE / PUBLIC SURFACE (THIS REVISION)
-'   Seventeen functions: the sixteen migrated calculations and the host
-'   diagnostic. The frozen contract specifies twenty-two; issue #15 adds the
-'   five missing names and applies the final signatures.
+' SCOPE / PUBLIC SURFACE
+'   The complete 22-name surface frozen in contract section 2. Twenty-one
+'   value-taking functions, each with a private element implementation, and
+'   one scalar diagnostic.
 '
 '   - Day primitives
 '       * KPR_Dates_DayOfWeek           (Optional Opt_WeekBaseMonday)
 '       * KPR_Dates_DaysInMonth
-'       * KPR_Dates_DaysInYear
+'       * KPR_Dates_DaysInYear          (takes YearIn, not a date)
 '
-'   - Month primitives
-'       * KPR_Dates_BeginOfMonth
-'       * KPR_Dates_EndOfMonth
-'       * KPR_Dates_IsMonthEnd
-'       * KPR_Dates_IsQuarterEnd
+'   - Month, quarter and year boundaries
+'       * KPR_Dates_BeginOfMonth        * KPR_Dates_EndOfMonth
+'       * KPR_Dates_BeginOfQuarter      * KPR_Dates_EndOfQuarter
+'       * KPR_Dates_BeginOfYear         * KPR_Dates_EndOfYear
 '
-'   - Year primitives
-'       * KPR_Dates_IsLeapYear
-'       * KPR_Dates_IsYearEnd
+'   - Boundary predicates
+'       * KPR_Dates_IsMonthEnd          * KPR_Dates_IsQuarterEnd
+'       * KPR_Dates_IsYearEnd           * KPR_Dates_IsLeapYear (takes YearIn)
 '
 '   - Date arithmetic (EOM-aware)
-'       * KPR_Dates_AddWeeks
+'       * KPR_Dates_AddDays             * KPR_Dates_AddWeeks
 '       * KPR_Dates_AddMonths           (Optional Opt_KeepEOM)
 '       * KPR_Dates_AddYears            (Optional Opt_KeepEOM)
 '
@@ -47,15 +46,22 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '       * KPR_Dates_LastWeekdayOfMonth  (Optional Opt_WeekBaseMonday)
 '
 '   - Pillar / tenor formatting
-'       * KPR_Dates_PillarFromDates
-'       * KPR_Dates_DatesFromPillar
+'       * KPR_Dates_PillarFromDates     (Optional Opt_Rounding)
+'       * KPR_Dates_DateFromPillar
 '
 '   - Host diagnostic (scalar only, deliberately volatile)
 '       * KPR_Dates_HostDateSystem
 '
-'   KPR_Dates_DatesFromPillar returns exactly one date; the plural name is a
-'   baseline defect. The contract names it KPR_Dates_DateFromPillar, and the
-'   rename lands with issue #15 so that this migration stays a pure move.
+'   Semantic result types, all declared As Variant so a native error can be
+'   returned: Date for the thirteen boundary, arithmetic, locator and
+'   DateFromPillar functions; Long for DayOfWeek, DaysInMonth, DaysInYear and
+'   HostDateSystem; Boolean for the four Is* predicates; String for
+'   PillarFromDates.
+'
+'   The static gate pins this inventory exactly: a missing name, an extra
+'   KPR_Dates_* name, the legacy plural DatesFromPillar or any _Spill twin
+'   fails the build. That control is temporary and is replaced by the #26
+'   manifest.
 '
 ' ARCHITECTURE
 '   This module is the only place a supported KPR_Dates_* function is declared.
@@ -101,14 +107,31 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   refusal; 1900 leaves an incoming error or another input path as the
 '   source. It is the only volatile function in the library.
 '
+' ELEMENT IMPLEMENTATIONS
+'   Every value-taking public function is a thin wrapper over one private
+'   Elem_* function. The wrapper is call-level: it runs the host guard once,
+'   resolves the optional controls once, and calls the element. The element is
+'   element-level: it resolves the raw value arguments in signature order,
+'   computes, and returns the value or the element's own native error.
+'
+'       host guard -> optional controls -> element arguments in signature order
+'
+'   The scalar call is the 1x1 case of the element. Issue #17 replaces the
+'   single call with a shape-aware loop over the same Elem_* functions; nothing
+'   about an element changes when that happens, and no element ever calls the
+'   guard, which the static gate enforces.
+'
 ' SHAPE CONTRACT (THIS REVISION)
 '   - All public functions are SCALAR ONLY.
 '   - A single-cell Range and a 1x1 wrapper are accepted and unwrapped, so VBA
 '     callers and legacy single-cell references keep working. This applies to
 '     every Variant argument, the pillar token included.
-'   - Multi-cell / multi-element inputs are rejected as #VALUE!.
-'   - Array traversal is deliberately deferred to issue #16. When it arrives it
-'     wraps these scalar cores rather than duplicating them.
+'   - Multi-cell / multi-element inputs are rejected as #VALUE!, and a control
+'     larger than 1x1 reports a shape rejection rather than the contract's
+'     distinct CONTROL_NOT_SCALAR condition until #16 lands.
+'   - Array traversal is deliberately deferred to issue #16 and wired in by
+'     #17, which loops the existing Elem_* functions and must keep the host
+'     guard once per call rather than once per element.
 '
 ' DESIGN / INPUT NORMALIZATION
 '   - Every DateIn-style argument is a Variant funnelled through TryResolveDate,
@@ -130,7 +153,7 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '       #VALUE!  the input cannot be interpreted
 '                (unparseable date, non-scalar input, malformed pillar, month
 '                 outside 1..12, weekday outside 1..7, occurrence outside 1..5,
-'                 unexpected runtime error)
+'                 a control of the wrong type or an unknown token)
 '
 '       #NUM!    the input is well formed but the answer does not exist or
 '                falls outside the supported date window
@@ -155,36 +178,26 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   from a genuine rejection. Month length comes from KPR_Core_Dates.DaysInMonth
 '   and month-end from KPR_Core_Dates.EndOfMonth, both of which are total.
 '
-' KNOWN DIVERGENCES FROM THE FROZEN CONTRACT
-'   Issues #12, #13 and #14 removed the input, host and pillar divergences.
-'   What remains is owned by the issues named against each line:
-'
-'     - The date-system guard runs once per scalar call. #17 must preserve
-'       that once-per-call placement when array traversal is introduced. (#17)
-'     - Multi-cell inputs are rejected rather than traversed, and a control
-'       larger than 1x1 reports a shape rejection rather than the contract's
-'       distinct CONTROL_NOT_SCALAR condition.                           (#16)
-'     - DaysInYear and IsLeapYear still take a date rather than a calendar
-'       year, and DatesFromPillar keeps its plural name.                 (#15)
-'
 ' INTERNAL ERROR POLICY
 '   - Core routines are Try-style (Boolean return, result ByRef) or plain
 '     computation on already-validated inputs.
 '   - This facade owns all worksheet-facing error behavior.
-'   - Defensive catch-all handlers are containment only. They must be
-'     unreachable in contract-conforming execution; an activation is a defect,
-'     never an expected outcome. A raise that a handler converts into a
+'   - Defensive catch-all handlers, in wrappers and in elements alike, are
+'     containment only. They must be unreachable in contract-conforming
+'     execution; an activation is a defect, never an expected outcome, and
+'     is not a documented #VALUE! condition. A raise that a handler converts into a
 '     plausible worksheet error is invisible from the sheet, so a condition
 '     that can be tested is tested rather than trapped.
 '
 ' DEPENDENCIES / INTEGRATION
 '   - KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates, KPR_Core_Err
-'   - Private helpers in this module: TryResolveDate, TryResolveLong,
-'     TryResolveBool, TryResolveHostDateSystem, PassHostGuard
+'   - Private helpers in this module: the Elem_* element implementations,
+'     TryResolveDate, TryResolveLong, TryResolveBool, TryResolveRounding,
+'     TryResolvePillar, TryResolveHostDateSystem, PassHostGuard
 '   - No dependency on registration, UI, tests or demo code.
 '
 ' UPDATED
-'   2026-09-01
+'   2026-09-02
 '
 ' AUTHOR
 '   Daniele Penza
@@ -198,7 +211,7 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '
 '------------------------------------------------------------------------------
 '
-'                           PUBLIC API - DAY PRIMITIVES
+'                         PUBLIC API - DAY PRIMITIVES                          
 '
 '------------------------------------------------------------------------------
 '
@@ -209,103 +222,77 @@ Public Function KPR_Dates_DayOfWeek( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_DayOfWeek
+'                          KPR_Dates_DayOfWeek
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the weekday index for DateIn, with configurable week base:
-'     - Opt_WeekBaseMonday = TRUE  -> 1..7 where Mon=1 .. Sun=7
-'     - Opt_WeekBaseMonday = FALSE -> 1..7 where Sun=1 .. Sat=7
-'
-' WHY THIS EXISTS
-'   A sheet can reach VBA's Weekday only through WEEKDAY, whose return_type
-'   codes are a different vocabulary from this library's. Exposing the choice
-'   as one Boolean keeps the two conventions in the layer's own terms.
+'   Returns the weekday index of a date under the selected week base.
 '
 ' SIGNATURE
-'   KPR_Dates_DayOfWeek(DateIn, [Opt_WeekBaseMonday]) -> Variant
+'   KPR_Dates_DayOfWeek(DateIn, [Opt_WeekBaseMonday]) -> Variant (Long)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
-'
-'   Opt_WeekBaseMonday (optional, default TRUE)
-'     Weekday() base selector:
-'       TRUE  => vbMonday (Mon=1..Sun=7)
-'       FALSE => vbSunday (Sun=1..Sat=7)
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'   Opt_WeekBaseMonday
+'     Optional. Omitted or Empty selects True. Native Boolean only.
 '
 ' RETURNS
 '   Variant
-'     Long (1..7) on success, else a native Excel error value
+'     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or Opt_WeekBaseMonday is not an
-'            omitted, Empty or native Boolean value
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_DayOfWeek
+'   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
-'   - TRUE selects Monday-based numbering (ISO habit); FALSE selects
-'     Sunday-based numbering (US habit).
-'   - The Variant declaration preserves the incoming runtime type. Numeric 0/1,
-'     Boolean-looking text, dates and objects are rejected rather than coerced.
-'   - Omission applies the declared default TRUE. Empty, including a reference
-'     to a blank cell, selects the same documented default in TryResolveBool.
-'   - Weekday is total for any Date once the base is one of the vbDayOfWeek
-'     constants, so the handler below covers only failures inside
-'     TryResolveDate.
+'   - TRUE selects Monday-based numbering (ISO habit); FALSE selects Sunday-based.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date          'Parsed date-only value (per TryResolveDate policy)
-    Dim WkBase          As VbDayOfWeek   'Weekday() base selector (vbMonday or vbSunday)
-    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
-    Dim FailErr         As Variant       'Worksheet-facing error value returned on failure
+    Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-'------------------------------------------------------------------------------
-' PARSE INPUT
-'------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' RESOLVE WEEKDAY BASE
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Resolve Weekday() base once
-        If WkMonday Then
-            WkBase = vbMonday
-        Else
-            WkBase = vbSunday
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return weekday index 1..7 under the selected base
-        KPR_Dates_DayOfWeek = CLng(Weekday(ParsedDate, WkBase))
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_DayOfWeek = Elem_DayOfWeek(DateIn, WkMonday)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -317,99 +304,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_DaysInMonth( _
     ByVal DateIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_DaysInMonth
+'                          KPR_Dates_DaysInMonth
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the number of calendar days in the month containing DateIn.
-'
-' WHY THIS EXISTS
-'   Month length is the one calendar quantity a worksheet cannot derive without
-'   restating the leap rule. Exposing it here means the sheet asks the same
-'   DaysInMonth the shift layer uses, rather than a parallel formula.
+'   Returns the Gregorian length of the containing month.
 '
 ' SIGNATURE
-'   KPR_Dates_DaysInMonth(DateIn) -> Variant
+'   KPR_Dates_DaysInMonth(DateIn) -> Variant (Long)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Long (28..31) on success, else a native Excel error value
+'     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_DaysInMonth
 '
 ' NOTES
-'   - The core DaysInMonth is called directly rather than through EndOfMonth.
-'     Reading the day number of a constructed month-end would build a date only
-'     to take it apart again, and EndOfMonth derives that date from this same
-'     function; the round trip adds a DateSerial and a Day per cell for no
-'     information. No CLng is needed because the core member returns Long.
-'   - The month passed to the core function comes from a parsed Date, so it is
-'     always 1 to 12 and the invalid-month return of zero is unreachable here.
-'   - Parse failures map to #VALUE! while DATE_WINDOW maps to #NUM!, preserving
-'     the contract's distinction at the worksheet boundary.
-'   - Fail and Err_Handler are kept separate so a contract-level rejection and
-'     an unexpected raise cannot be confused while reading the flow. The
-'     handler reasserts FailErr because a raise inside ErrValue itself would
-'     otherwise leave it Empty.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Month length straight from the calendar core; no date is constructed
-        KPR_Dates_DaysInMonth = DaysInMonth(Year(ParsedDate), Month(ParsedDate))
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_DaysInMonth = Elem_DaysInMonth(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -421,109 +392,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_DaysInYear( _
-    ByVal DateIn As Variant) _
+    ByVal YearIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_DaysInYear
+'                          KPR_Dates_DaysInYear
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the number of calendar days in the year containing DateIn:
-'     - 365 for common years
-'     - 366 for leap years (Gregorian rule)
-'
-' WHY THIS EXISTS
-'   Year length is a day-count denominator, and a sheet deriving it inline is a
-'   sheet restating the leap rule. Routing it through the core predicate means
-'   this surface and the calendar layer can never disagree about a year.
+'   Returns 366 for a Gregorian leap year and 365 otherwise.
 '
 ' SIGNATURE
-'   KPR_Dates_DaysInYear(DateIn) -> Variant
+'   KPR_Dates_DaysInYear(YearIn) -> Variant (Long)
 '
 ' INPUTS
-'   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'   YearIn
+'     Native integral numeric, domain 1900 through 9999.
 '
 ' RETURNS
 '   Variant
-'     Long (365 / 366) on success, else a native Excel error value
+'     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an integer outside the Long range
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.IsLeapYear
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_DaysInYear
 '
 ' NOTES
-'   - The year is read from the parsed Date and passed as a calendar year, not
-'     as a serial. IsLeapYear takes a year and would silently treat a serial as
-'     one, so the Year() call is load-bearing rather than incidental.
-'   - 1900 returns 365. It is divisible by 100 but not by 400, so the century
-'     exception applies. Every year reachable through this surface is 1900 or
-'     later, and the window floor of 1 March 1900 means year 1900 is reachable
-'     even though February 1900 is not.
-'   - IsLeapYear applies the rule proleptically, so it reports leap years for
-'     dates before the 1582 Gregorian reform that the historical calendar does
-'     not. No such year is reachable here; the caveat belongs to the core
-'     predicate, not to this surface.
-'   - Parse failures map to #VALUE! while DATE_WINDOW maps to #NUM!, preserving
-'     the contract's distinction at the worksheet boundary.
-'   - Fail and Err_Handler are kept separate so a contract-level rejection and
-'     an unexpected raise cannot be confused while reading the flow. The
-'     handler reasserts FailErr because a raise inside ErrValue itself would
-'     otherwise leave it Empty.
+'   - Takes a calendar year, not a date. No date is constructed, so no window gate applies and year 1900 is fully in the domain.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return 366 for leap years, 365 otherwise
-        If IsLeapYear(Year(ParsedDate)) Then
-            KPR_Dates_DaysInYear = 366&
-        Else
-            KPR_Dates_DaysInYear = 365&
-        End If
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_DaysInYear = Elem_DaysInYear(YearIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -535,20 +480,18 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
-
 '
 '------------------------------------------------------------------------------
 '
-'                        PUBLIC API - MONTH PRIMITIVES
+'               PUBLIC API - MONTH, QUARTER AND YEAR BOUNDARIES                
 '
 '------------------------------------------------------------------------------
 '
@@ -558,71 +501,70 @@ Public Function KPR_Dates_BeginOfMonth( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_BeginOfMonth
+'                          KPR_Dates_BeginOfMonth
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the first calendar day of the month containing DateIn.
+'   Returns the first date of the containing month.
 '
 ' SIGNATURE
-'   KPR_Dates_BeginOfMonth(DateIn) -> Variant
+'   KPR_Dates_BeginOfMonth(DateIn) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_BeginOfMonth
 '
 ' NOTES
-'   - Only the year / month components of the parsed input survive; the result
-'     is always day 1.
-'   - The result can precede the window floor: any accepted date in March 1900
-'     resolves to 1 March 1900, which is the floor itself, so no earlier value
-'     is reachable. No result gate is required here.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the first day of the containing month
-        KPR_Dates_BeginOfMonth = DateSerial(Year(ParsedDate), Month(ParsedDate), 1)
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_BeginOfMonth = Elem_BeginOfMonth(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -634,83 +576,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_EndOfMonth( _
     ByVal DateIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_EndOfMonth
+'                          KPR_Dates_EndOfMonth
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the last calendar day of the month containing DateIn.
+'   Returns the last date of the containing month.
 '
 ' SIGNATURE
-'   KPR_Dates_EndOfMonth(DateIn) -> Variant
+'   KPR_Dates_EndOfMonth(DateIn) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.EndOfMonth
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_EndOfMonth
 '
 ' NOTES
-'   - The core EndOfMonth is total across the whole VBA Date range, December
-'     9999 included, so the top of the window needs no special handling here.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the last day of the containing month
-        KPR_Dates_EndOfMonth = EndOfMonth(ParsedDate)
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_EndOfMonth = Elem_EndOfMonth(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -722,85 +664,443 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
-Public Function KPR_Dates_IsMonthEnd( _
+Public Function KPR_Dates_BeginOfQuarter( _
     ByVal DateIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_IsMonthEnd
+'                          KPR_Dates_BeginOfQuarter
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns TRUE if DateIn is the last calendar day of its month.
+'   Returns the first date of the containing calendar quarter.
 '
 ' SIGNATURE
-'   KPR_Dates_IsMonthEnd(DateIn) -> Variant
+'   KPR_Dates_BeginOfQuarter(DateIn) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Boolean on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_BeginOfQuarter
 '
 ' NOTES
-'   - The test compares day numbers rather than dates. Building the month-end
-'     date only to compare it against the input costs a DateSerial per cell and
-'     answers the same question.
+'   - A Q1-1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_BeginOfQuarter = Elem_BeginOfQuarter(DateIn)
+        Exit Function
 
 '------------------------------------------------------------------------------
-' ASSIGN RESULT
+' FAIL
 '------------------------------------------------------------------------------
-    'Compare the day number to the length of its own month
-        KPR_Dates_IsMonthEnd = _
-            (Day(ParsedDate) = DaysInMonth(Year(ParsedDate), Month(ParsedDate)))
+Fail:
+    'Return the worksheet-facing error value
+        KPR_Dates_BeginOfQuarter = FailErr
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed with #VALUE!; reaching here is a defect
+        FailErr = ErrValue()
+        Resume Fail
+
+End Function
+Public Function KPR_Dates_EndOfQuarter( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                          KPR_Dates_EndOfQuarter
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns the last date of the containing calendar quarter.
+'
+' SIGNATURE
+'   KPR_Dates_EndOfQuarter(DateIn) -> Variant (Date)
+'
+' INPUTS
+'   DateIn
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'
+' RETURNS
+'   Variant
+'     Date on success, or a native Excel error value.
+'
+' ERROR POLICY (USER FACING)
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
+'
+' DEPENDENCIES
+'   - PassHostGuard
+'   - Elem_EndOfQuarter
+'
+' NOTES
+'   - Always inside the window for an in-window input: the quarter end is never earlier than the input.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: a raise reaching the handler is a defect, never an outcome
+        On Error GoTo Err_Handler
+
+    'Default failure is #VALUE!
+        FailErr = ErrValue()
+
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
+'------------------------------------------------------------------------------
+' ELEMENT
+'------------------------------------------------------------------------------
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_EndOfQuarter = Elem_EndOfQuarter(DateIn)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' FAIL
+'------------------------------------------------------------------------------
+Fail:
+    'Return the worksheet-facing error value
+        KPR_Dates_EndOfQuarter = FailErr
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed with #VALUE!; reaching here is a defect
+        FailErr = ErrValue()
+        Resume Fail
+
+End Function
+Public Function KPR_Dates_BeginOfYear( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                          KPR_Dates_BeginOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns 1 January of the containing year.
+'
+' SIGNATURE
+'   KPR_Dates_BeginOfYear(DateIn) -> Variant (Date)
+'
+' INPUTS
+'   DateIn
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'
+' RETURNS
+'   Variant
+'     Date on success, or a native Excel error value.
+'
+' ERROR POLICY (USER FACING)
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
+'
+' DEPENDENCIES
+'   - PassHostGuard
+'   - Elem_BeginOfYear
+'
+' NOTES
+'   - Any 1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: a raise reaching the handler is a defect, never an outcome
+        On Error GoTo Err_Handler
+
+    'Default failure is #VALUE!
+        FailErr = ErrValue()
+
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
+'------------------------------------------------------------------------------
+' ELEMENT
+'------------------------------------------------------------------------------
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_BeginOfYear = Elem_BeginOfYear(DateIn)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' FAIL
+'------------------------------------------------------------------------------
+Fail:
+    'Return the worksheet-facing error value
+        KPR_Dates_BeginOfYear = FailErr
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed with #VALUE!; reaching here is a defect
+        FailErr = ErrValue()
+        Resume Fail
+
+End Function
+Public Function KPR_Dates_EndOfYear( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                          KPR_Dates_EndOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Returns 31 December of the containing year.
+'
+' SIGNATURE
+'   KPR_Dates_EndOfYear(DateIn) -> Variant (Date)
+'
+' INPUTS
+'   DateIn
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'
+' RETURNS
+'   Variant
+'     Date on success, or a native Excel error value.
+'
+' ERROR POLICY (USER FACING)
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
+'
+' DEPENDENCIES
+'   - PassHostGuard
+'   - Elem_EndOfYear
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: a raise reaching the handler is a defect, never an outcome
+        On Error GoTo Err_Handler
+
+    'Default failure is #VALUE!
+        FailErr = ErrValue()
+
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
+'------------------------------------------------------------------------------
+' ELEMENT
+'------------------------------------------------------------------------------
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_EndOfYear = Elem_EndOfYear(DateIn)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' FAIL
+'------------------------------------------------------------------------------
+Fail:
+    'Return the worksheet-facing error value
+        KPR_Dates_EndOfYear = FailErr
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed with #VALUE!; reaching here is a defect
+        FailErr = ErrValue()
+        Resume Fail
+
+End Function
+'
+'------------------------------------------------------------------------------
+'
+'                       PUBLIC API - BOUNDARY PREDICATES                       
+'
+'------------------------------------------------------------------------------
+'
+
+Public Function KPR_Dates_IsMonthEnd( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                          KPR_Dates_IsMonthEnd
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Reports whether a date is the last day of its month.
+'
+' SIGNATURE
+'   KPR_Dates_IsMonthEnd(DateIn) -> Variant (Boolean)
+'
+' INPUTS
+'   DateIn
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'
+' RETURNS
+'   Variant
+'     Boolean on success, or a native Excel error value.
+'
+' ERROR POLICY (USER FACING)
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
+'
+' DEPENDENCIES
+'   - PassHostGuard
+'   - Elem_IsMonthEnd
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: a raise reaching the handler is a defect, never an outcome
+        On Error GoTo Err_Handler
+
+    'Default failure is #VALUE!
+        FailErr = ErrValue()
+
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
+'------------------------------------------------------------------------------
+' ELEMENT
+'------------------------------------------------------------------------------
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_IsMonthEnd = Elem_IsMonthEnd(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -812,98 +1112,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_IsQuarterEnd( _
     ByVal DateIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_IsQuarterEnd
+'                          KPR_Dates_IsQuarterEnd
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns TRUE if DateIn is a quarter-end date:
-'     - month is one of {Mar, Jun, Sep, Dec}
-'     - AND DateIn is the last calendar day of that month
+'   Reports whether a date is the last day of a calendar quarter.
 '
 ' SIGNATURE
-'   KPR_Dates_IsQuarterEnd(DateIn) -> Variant
+'   KPR_Dates_IsQuarterEnd(DateIn) -> Variant (Boolean)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Boolean on success, else a native Excel error value
+'     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_IsQuarterEnd
 '
 ' NOTES
-'   - Quarter months are detected as Month Mod 3 = 0, which is exactly the set
-'     {3, 6, 9, 12}. This is a calendar quarter, not a fiscal quarter; a fiscal
-'     variant belongs in a separate function with an explicit anchor argument.
-'   - The month test is nested outside the month-length lookup rather than
-'     combined with And. VBA does not short-circuit And, so a single expression
-'     would compute the month length for every input; nesting skips it for the
-'     eleven months in twelve that cannot be a quarter end.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
-    Dim MonthPart       As Long      'Calendar month of the parsed date
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Cheap test first; only a quarter month can be a quarter end
-        MonthPart = Month(ParsedDate)
-        If (MonthPart Mod 3) <> 0 Then
-            KPR_Dates_IsQuarterEnd = False
-        Else
-            'Quarter month, so the answer is whether it is also month-end
-                KPR_Dates_IsQuarterEnd = _
-                    (Day(ParsedDate) = DaysInMonth(Year(ParsedDate), MonthPart))
-        End If
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_IsQuarterEnd = Elem_IsQuarterEnd(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -915,90 +1200,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
-'
-'------------------------------------------------------------------------------
-'
-'                         PUBLIC API - YEAR PRIMITIVES
-'
-'------------------------------------------------------------------------------
-'
-
 Public Function KPR_Dates_IsYearEnd( _
     ByVal DateIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_IsYearEnd
+'                          KPR_Dates_IsYearEnd
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns TRUE if DateIn is a year-end date (31 December).
+'   Reports whether a date is 31 December.
 '
 ' SIGNATURE
-'   KPR_Dates_IsYearEnd(DateIn) -> Variant
+'   KPR_Dates_IsYearEnd(DateIn) -> Variant (Boolean)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '
 ' RETURNS
 '   Variant
-'     Boolean on success, else a native Excel error value
+'     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_IsYearEnd
 '
 ' NOTES
-'   - December always has 31 days, so no month-end computation is required:
-'     the test is simply month 12 and day 31.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Year-end is 31 December
-        KPR_Dates_IsYearEnd = ((Month(ParsedDate) = 12) And (Day(ParsedDate) = 31))
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_IsYearEnd = Elem_IsYearEnd(DateIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1010,88 +1288,83 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_IsLeapYear( _
-    ByVal DateIn As Variant) _
+    ByVal YearIn As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_IsLeapYear
+'                          KPR_Dates_IsLeapYear
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns TRUE if the year containing DateIn is a leap year under the
-'   Gregorian rule.
+'   Reports whether a calendar year is a Gregorian leap year.
 '
 ' SIGNATURE
-'   KPR_Dates_IsLeapYear(DateIn) -> Variant
+'   KPR_Dates_IsLeapYear(YearIn) -> Variant (Boolean)
 '
 ' INPUTS
-'   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
+'   YearIn
+'     Native integral numeric, domain 1900 through 9999.
 '
 ' RETURNS
 '   Variant
-'     Boolean on success, else a native Excel error value
+'     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
+'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an integer outside the Long range
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Dates.IsLeapYear
-'   - KPR_Core_Err.ErrValue
+'   - PassHostGuard
+'   - Elem_IsLeapYear
 '
 ' NOTES
-'   - The previous per-function year gate is gone. TryResolveDate already
-'     refuses anything before KPR_MIN_DATE, so no year reaching this point can
-'     be outside the supported range.
-'   - The year is passed as a calendar year, not as a serial. IsLeapYear takes
-'     a Long and would silently treat a serial as a year, so the Year() call is
-'     load-bearing rather than incidental.
+'   - Takes a calendar year, not a date. IsLeapYear(1900) is False; no window gate applies.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Apply the Gregorian leap-year rule to the containing year
-        KPR_Dates_IsLeapYear = IsLeapYear(Year(ParsedDate))
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_IsLeapYear = Elem_IsLeapYear(YearIn)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1103,117 +1376,185 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 '
 '------------------------------------------------------------------------------
 '
-'                         PUBLIC API - DATE ARITHMETIC
+'                         PUBLIC API - DATE ARITHMETIC                         
 '
 '------------------------------------------------------------------------------
 '
 
-Public Function KPR_Dates_AddWeeks( _
+Public Function KPR_Dates_AddDays( _
     ByVal DateIn As Variant, _
-    ByVal nWeeks As Variant) _
+    ByVal nDays As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_AddWeeks
+'                          KPR_Dates_AddDays
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Adds nWeeks to DateIn using calendar-day arithmetic:
-'       Result = DateIn + (7 * nWeeks) days
+'   Shifts a date by an exact number of calendar days.
 '
 ' SIGNATURE
-'   KPR_Dates_AddWeeks(DateIn, nWeeks) -> Variant
+'   KPR_Dates_AddDays(DateIn, nDays) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
-'
-'   nWeeks
-'     Number of weeks to add. Negative values are allowed.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'   nDays
+'     Native integral numeric, domain the Long range.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
-'   #NUM!    result falls outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
 '
-'   nWeeks is a Variant parsed strictly before conversion. Fractions and
-'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
+'   - PassHostGuard
+'   - Elem_AddDays
 '
 ' NOTES
-'   - The shift is computed in Double and range-gated BEFORE coercion back to
-'     Date, so a large nWeeks returns #NUM! rather than raising an overflow.
+'   - The shift is computed in Double and gated before coercion back to Date, so an overflow can never reach CDate.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
-    Dim ResultD         As Double    'Shifted date serial before range gating
-    Dim nWeeksL         As Long      'Strictly parsed nWeeks
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric nWeeks
-        If Not TryResolveLong(nWeeks, nWeeksL, FailErr) Then GoTo Fail
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_AddDays = Elem_AddDays(DateIn, nDays)
+        Exit Function
 
 '------------------------------------------------------------------------------
-' COMPUTE SHIFT
+' FAIL
 '------------------------------------------------------------------------------
-    'Compute the shifted serial in Double to avoid overflow on coercion
-        ResultD = CDbl(ParsedDate) + (7# * CDbl(nWeeksL))
-
-    'Gate the result to the supported date window
-        If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
+Fail:
+    'Return the worksheet-facing error value
+        KPR_Dates_AddDays = FailErr
+        Exit Function
 
 '------------------------------------------------------------------------------
-' ASSIGN RESULT
+' ERR_HANDLER
 '------------------------------------------------------------------------------
-    'Return the shifted date
-        KPR_Dates_AddWeeks = CDate(ResultD)
+Err_Handler:
+    'Containment: fail closed with #VALUE!; reaching here is a defect
+        FailErr = ErrValue()
+        Resume Fail
+
+End Function
+Public Function KPR_Dates_AddWeeks( _
+    ByVal DateIn As Variant, _
+    ByVal nWeeks As Variant) _
+    As Variant
+'
+'==============================================================================
+'                          KPR_Dates_AddWeeks
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Shifts a date by whole weeks.
+'
+' SIGNATURE
+'   KPR_Dates_AddWeeks(DateIn, nWeeks) -> Variant (Date)
+'
+' INPUTS
+'   DateIn
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'   nWeeks
+'     Native integral numeric, domain the Long range.
+'
+' RETURNS
+'   Variant
+'     Date on success, or a native Excel error value.
+'
+' ERROR POLICY (USER FACING)
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
+'
+' DEPENDENCIES
+'   - PassHostGuard
+'   - Elem_AddWeeks
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: a raise reaching the handler is a defect, never an outcome
+        On Error GoTo Err_Handler
+
+    'Default failure is #VALUE!
+        FailErr = ErrValue()
+
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
+    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+        If Not PassHostGuard(FailErr) Then GoTo Fail
+
+'------------------------------------------------------------------------------
+' ELEMENT
+'------------------------------------------------------------------------------
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_AddWeeks = Elem_AddWeeks(DateIn, nWeeks)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1225,15 +1566,14 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_AddMonths( _
     ByVal DateIn As Variant, _
     ByVal nMonths As Variant, _
@@ -1241,111 +1581,79 @@ Public Function KPR_Dates_AddMonths( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_AddMonths
+'                          KPR_Dates_AddMonths
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Adds nMonths to DateIn with deterministic end-of-month (EOM) handling:
-'     - Opt_KeepEOM = FALSE : clip day-of-month to the target month length
-'     - Opt_KeepEOM = TRUE  : if DateIn is EOM, return the target EOM
+'   Shifts a date by calendar months with clip or EOM-preserving semantics.
 '
 ' SIGNATURE
-'   KPR_Dates_AddMonths(DateIn, nMonths, [Opt_KeepEOM]) -> Variant
+'   KPR_Dates_AddMonths(DateIn, nMonths, [Opt_KeepEOM]) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
-'
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '   nMonths
-'     Number of calendar months to add. Negative values are allowed.
-'
-'   Opt_KeepEOM (optional, default FALSE)
-'     TRUE  => EOM in, EOM out
-'     FALSE => clip day-of-month when the target month is shorter
+'     Native integral numeric, domain the Long range.
+'   Opt_KeepEOM
+'     Optional. Omitted or Empty selects False. Native Boolean only.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
-'   #NUM!    result falls outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
 '
-'   nMonths is a Variant parsed strictly before conversion. Fractions and
-'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - PassHostGuard
+'   - Elem_AddMonths
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Dates.TryAddMonths
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
 '
 ' NOTES
-'   - Worked examples, clip mode (Opt_KeepEOM = FALSE):
-'         31-Jan-2026 + 1M  => 28-Feb-2026
-'         30-Apr-2026 + 1M  => 30-May-2026
-'   - Same inputs, preserve mode (Opt_KeepEOM = TRUE):
-'         31-Jan-2026 + 1M  => 28-Feb-2026
-'         30-Apr-2026 + 1M  => 31-May-2026
-'     The two modes differ only when the input is itself month-end.
-'   - This is the single month shifter in the module; AddYears and the pillar
-'     resolver both route through it.
-'   - Omitting Opt_KeepEOM and referencing a blank control cell both select the
-'     declared False default. No Boolean coercion is performed.
+'   - Clip mode keeps the day when the target month has it and otherwise uses that month's last day. With Opt_KeepEOM=True an EOM input maps to the target EOM; a non-EOM input still clips.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
-    Dim ResultDate      As Date      'Shifted date returned by the month core
-    Dim nMonthsL        As Long      'Strictly parsed nMonths
-    Dim KeepEOM         As Boolean   'Strictly parsed Opt_KeepEOM
+    Dim KeepEOM         As Boolean    'Resolved Opt_KeepEOM
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-'------------------------------------------------------------------------------
-' PARSE INPUT
-'------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric nMonths
-        If Not TryResolveLong(nMonths, nMonthsL, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or native Boolean Opt_KeepEOM
+    'Accept only an omitted, blank or native Opt_KeepEOM (call-level)
         If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' COMPUTE SHIFT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Delegate to the single month shifter; failure here is always range-related
-        If Not TryAddMonths(ParsedDate, nMonthsL, KeepEOM, ResultDate) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the shifted date
-        KPR_Dates_AddMonths = ResultDate
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_AddMonths = Elem_AddMonths(DateIn, nMonths, KeepEOM)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1357,15 +1665,14 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_AddYears( _
     ByVal DateIn As Variant, _
     ByVal nYears As Variant, _
@@ -1373,117 +1680,79 @@ Public Function KPR_Dates_AddYears( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_AddYears
+'                          KPR_Dates_AddYears
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Adds nYears to DateIn by converting years to months (12 * nYears) and
-'   applying the same EOM semantics as KPR_Dates_AddMonths.
+'   Shifts a date by calendar years through the single month shifter.
 '
 ' SIGNATURE
-'   KPR_Dates_AddYears(DateIn, nYears, [Opt_KeepEOM]) -> Variant
+'   KPR_Dates_AddYears(DateIn, nYears, [Opt_KeepEOM]) -> Variant (Date)
 '
 ' INPUTS
 '   DateIn
-'     Date candidate handled by the facade TryResolveDate policy.
-'
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '   nYears
-'     Number of calendar years to add. Negative values are allowed.
-'
-'   Opt_KeepEOM (optional, default FALSE)
-'     TRUE  => EOM in, EOM out
-'     FALSE => clip day-of-month when the target month is shorter
+'     Native integral numeric, domain the Long range.
+'   Opt_KeepEOM
+'     Optional. Omitted or Empty selects False. Native Boolean only.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  DateIn not parseable / not scalar, or unexpected runtime error
-'   #NUM!    DateIn is outside the supported window
-'   #NUM!    month delta or result falls outside the supported range
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
 '
-'   nYears is a Variant parsed strictly before conversion. Fractions and
-'   Boolean values return #VALUE!; values outside the Long range return #NUM!.
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - PassHostGuard
+'   - Elem_AddYears
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Dates.TryAddMonths
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum
 '
 ' NOTES
-'   - Delegating to the month core keeps every year-roll edge case identical to
-'     AddMonths. The one that matters:
-'         29-Feb-2024 + 1Y => 28-Feb-2025 in both EOM modes
-'   - The years -> months conversion is done in Double so a large nYears cannot
-'     overflow the Long month delta before it is gated.
+'   - Delegates to TryAddMonths so 29-Feb, short-month and EOM behaviour cannot diverge from AddMonths.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedDate      As Date      'Parsed date-only value (per TryResolveDate policy)
-    Dim MonthsD         As Double    'Year -> month conversion before Long gating
-    Dim ResultDate      As Date      'Shifted date returned by the month core
-    Dim nYearsL         As Long      'Strictly parsed nYears
-    Dim KeepEOM         As Boolean   'Strictly parsed Opt_KeepEOM
+    Dim KeepEOM         As Boolean    'Resolved Opt_KeepEOM
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-'------------------------------------------------------------------------------
-' PARSE INPUT
-'------------------------------------------------------------------------------
-    'Unwrap, parse and window-gate through the core boundaries
-        If Not TryResolveDate(DateIn, ParsedDate, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric nYears
-        If Not TryResolveLong(nYears, nYearsL, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or native Boolean Opt_KeepEOM
+    'Accept only an omitted, blank or native Opt_KeepEOM (call-level)
         If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' CONVERT YEARS TO MONTHS
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Convert in Double to avoid intermediate overflow
-        MonthsD = 12# * CDbl(nYearsL)
-
-    'Gate to Long range before coercion
-        If (MonthsD < -2147483648#) Or (MonthsD > 2147483647#) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' COMPUTE SHIFT
-'------------------------------------------------------------------------------
-    'Delegate to the single month shifter; failure here is always range-related
-        If Not TryAddMonths(ParsedDate, CLng(MonthsD), KeepEOM, ResultDate) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the shifted date
-        KPR_Dates_AddYears = ResultDate
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_AddYears = Elem_AddYears(DateIn, nYears, KeepEOM)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1495,19 +1764,18 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 '
 '------------------------------------------------------------------------------
 '
-'                        PUBLIC API - WEEKDAY LOCATORS
+'                        PUBLIC API - WEEKDAY LOCATORS                         
 '
 '------------------------------------------------------------------------------
 '
@@ -1516,196 +1784,88 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
     ByVal YearIn As Variant, _
     ByVal MonthIn As Variant, _
     ByVal WdIndex As Variant, _
-    ByVal N As Variant, _
+    ByVal n As Variant, _
     Optional ByVal Opt_WeekBaseMonday As Variant = True) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_NthWeekdayOfMonth
+'                          KPR_Dates_NthWeekdayOfMonth
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the N-th occurrence of a requested weekday within a given
-'   Year / Month.
+'   Returns the nth occurrence of a weekday in a month.
 '
 ' SIGNATURE
-'   KPR_Dates_NthWeekdayOfMonth(YearIn, MonthIn, WdIndex, N,
-'                               [Opt_WeekBaseMonday]) -> Variant
+'   KPR_Dates_NthWeekdayOfMonth(YearIn, MonthIn, WdIndex, n, [Opt_WeekBaseMonday]) -> Variant (Date)
 '
 ' INPUTS
 '   YearIn
-'     Calendar year within the module supported range.
-'
+'     Native integral numeric, domain 1900 through 9999.
 '   MonthIn
-'     Calendar month number in 1..12.
-'
+'     Native integral numeric, domain 1 through 12.
 '   WdIndex
-'     Weekday index in 1..7 under the selected Weekday() base:
-'       Opt_WeekBaseMonday = TRUE  => 1 = Mon .. 7 = Sun
-'       Opt_WeekBaseMonday = FALSE => 1 = Sun .. 7 = Sat
-'
-'   N
-'     Occurrence number in 1..5.
-'
-'   Opt_WeekBaseMonday (optional, default TRUE)
-'     TRUE  => vbMonday base
-'     FALSE => vbSunday base
+'     Native integral numeric, domain 1 through 7.
+'   n
+'     Native integral numeric, domain 1 through 5.
+'   Opt_WeekBaseMonday
+'     Optional. Omitted or Empty selects True. Native Boolean only.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  YearIn, MonthIn, WdIndex or N outside their accepted domains,
-'            or unexpected runtime error
-'   #NUM!    arguments are valid but the occurrence does not exist in that
-'            month (typically a requested 5th weekday), or the located date
-'            falls outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
 '
-'   YearIn, MonthIn, WdIndex and N are Variants parsed strictly before their
-'   function-specific domain checks. Fractions and Boolean values return
-'   #VALUE!; values outside the Long range return #NUM!.
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - PassHostGuard
+'   - Elem_NthWeekdayOfMonth
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum, KPR_Core_Err.ErrForCondition
-'   - VBA.DateSerial, VBA.Weekday
 '
 ' NOTES
-'   - The #VALUE! / #NUM! split is deliberate: "weekday 9" is a caller mistake,
-'     "no 5th Friday in February" is a legitimate question with no answer.
-'   - WdIndex must be passed consistently with Opt_WeekBaseMonday.
-'   - Capping N at 5 is sufficient: no calendar month holds six occurrences of
-'     the same weekday.
-'   - The occurrence is located on serials and tested against the month length
-'     BEFORE any date is constructed. Built as a Date first, a 5th occurrence
-'     in December 9999 would step into year 10000 and raise error 5, which the
-'     handler would report as #VALUE! rather than the #NUM! this case earns.
-'   - This function takes a year and a month rather than a date, so it never
-'     passes through TryResolveDate and never meets the shared window gate. It
-'     therefore gates its own result. A year-granularity check is not enough:
-'     the window floor is 1 March 1900, so January and February 1900 satisfy
-'     the year test and would otherwise return an out-of-window date.
+'   - A fifth occurrence that the month does not contain is OCCURRENCE_ABSENT; a valid locator before 1900-03-01 is RESULT_WINDOW.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim D0              As Date         'First calendar day of the target month
-    Dim D0Serial        As Double       'Serial of D0, anchor for the occurrence walk
-    Dim MonthLen        As Long         'Length in days of the target month
-    Dim Off             As Long         'Days from D0 to the first occurrence of WdIndexL (0..6)
-    Dim OutSerial       As Double       'Serial of the requested occurrence, before gating
-    Dim WkBase          As VbDayOfWeek  'Weekday() base selector (vbMonday or vbSunday)
-    Dim YearL           As Long      'Strictly parsed YearIn
-    Dim MonthL          As Long      'Strictly parsed MonthIn
-    Dim WdIndexL        As Long      'Strictly parsed WdIndex
-    Dim NL              As Long      'Strictly parsed N
-    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
-    Dim FailErr         As Variant      'Worksheet-facing error value returned on failure
+    Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Reject a fractional, out-of-range or non-numeric YearIn
-        If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric MonthIn
-        If Not TryResolveLong(MonthIn, MonthL, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric WdIndex
-        If Not TryResolveLong(WdIndex, WdIndexL, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric N
-        If Not TryResolveLong(N, NL, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' VALIDATE INPUTS
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Require a year inside the module supported window
-        If (YearL < Year(KPR_MIN_DATE)) Or (YearL > Year(KPR_MAX_DATE)) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_YEAR)
-            GoTo Fail
-        End If
-
-    'Require a valid calendar month
-        If (MonthL < 1) Or (MonthL > 12) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_MONTH)
-            GoTo Fail
-        End If
-
-    'Require a weekday index in 1..7 under the selected base
-        If (WdIndexL < 1) Or (WdIndexL > 7) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY)
-            GoTo Fail
-        End If
-
-    'Require an occurrence number in 1..5
-        If (NL < 1) Or (NL > 5) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_OCCURRENCE)
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' RESOLVE WEEKDAY BASE
-'------------------------------------------------------------------------------
-    'Resolve Weekday() base once
-        If WkMonday Then
-            WkBase = vbMonday
-        Else
-            WkBase = vbSunday
-        End If
-
-'------------------------------------------------------------------------------
-' COMPUTE REQUESTED OCCURRENCE
-'------------------------------------------------------------------------------
-    'Anchor at the first day of the requested month
-        D0 = DateSerial(YearL, MonthL, 1)
-        D0Serial = CDbl(D0)
-
-    'Length of the target month, read without constructing its month-end
-        MonthLen = DaysInMonth(YearL, MonthL)
-
-    'Forward offset (0..6) from the anchor to the first requested weekday
-        Off = (WdIndexL - Weekday(D0, WkBase) + 7) Mod 7
-
-    'Walk to the requested occurrence on serials, not on dates
-        OutSerial = D0Serial + CDbl(Off) + (7# * CDbl(NL - 1))
-
-    'Reject an occurrence that would spill past the end of the month
-        If OutSerial > (D0Serial + CDbl(MonthLen) - 1#) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-    'Reject a located date outside the supported window
-        If (OutSerial < CDbl(KPR_MIN_DATE)) Or (OutSerial > CDbl(KPR_MAX_DATE)) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the requested occurrence
-        KPR_Dates_NthWeekdayOfMonth = CDate(OutSerial)
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_NthWeekdayOfMonth = Elem_NthWeekdayOfMonth(YearIn, MonthIn, WdIndex, n, WkMonday)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1717,15 +1877,14 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 Public Function KPR_Dates_LastWeekdayOfMonth( _
     ByVal YearIn As Variant, _
     ByVal MonthIn As Variant, _
@@ -1734,162 +1893,81 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_LastWeekdayOfMonth
+'                          KPR_Dates_LastWeekdayOfMonth
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the last occurrence of a requested weekday within a given
-'   Year / Month.
+'   Returns the final occurrence of a weekday in a month.
 '
 ' SIGNATURE
-'   KPR_Dates_LastWeekdayOfMonth(YearIn, MonthIn, WdIndex,
-'                                [Opt_WeekBaseMonday]) -> Variant
+'   KPR_Dates_LastWeekdayOfMonth(YearIn, MonthIn, WdIndex, [Opt_WeekBaseMonday]) -> Variant (Date)
 '
 ' INPUTS
 '   YearIn
-'     Calendar year within the module supported range.
-'
+'     Native integral numeric, domain 1900 through 9999.
 '   MonthIn
-'     Calendar month number in 1..12.
-'
+'     Native integral numeric, domain 1 through 12.
 '   WdIndex
-'     Weekday index in 1..7 under the selected Weekday() base:
-'       Opt_WeekBaseMonday = TRUE  => 1 = Mon .. 7 = Sun
-'       Opt_WeekBaseMonday = FALSE => 1 = Sun .. 7 = Sat
-'
-'   Opt_WeekBaseMonday (optional, default TRUE)
-'     TRUE  => vbMonday base
-'     FALSE => vbSunday base
+'     Native integral numeric, domain 1 through 7.
+'   Opt_WeekBaseMonday
+'     Optional. Omitted or Empty selects True. Native Boolean only.
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  YearIn, MonthIn or WdIndex outside their accepted domains, or
-'            unexpected runtime error
-'   #NUM!    the located date falls outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an integer outside the Long range; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
 '
-'   YearIn, MonthIn and WdIndex are Variants parsed strictly before their
-'   function-specific domain checks. Fractions and Boolean values return
-'   #VALUE!; values outside the Long range return #NUM!.
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveLong (KPR_Core_Array, KPR_Core_Parse)
+'   - PassHostGuard
+'   - Elem_LastWeekdayOfMonth
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Dates.DaysInMonth
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrNum, KPR_Core_Err.ErrForCondition
-'   - VBA.DateSerial, VBA.Weekday
 '
 ' NOTES
-'   - A last occurrence always exists inside the month, so the only #NUM! path
-'     is the window gate.
-'   - WdIndex must be passed consistently with Opt_WeekBaseMonday.
-'   - The month-end anchor is built from DaysInMonth rather than from the day-0
-'     idiom DateSerial(y, m + 1, 0). That idiom raises error 5 for December
-'     9999, which is inside the supported window, and the handler would report
-'     it as #VALUE! rather than returning the correct date.
-'   - This function takes a year and a month rather than a date, so it never
-'     passes through TryResolveDate and never meets the shared window gate. It
-'     therefore gates its own result. A year-granularity check is not enough:
-'     the window floor is 1 March 1900, so January and February 1900 satisfy
-'     the year test and would otherwise return an out-of-window date.
+'   - None.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim EOM             As Date         'End-of-month date for the target Year / Month
-    Dim Diff            As Long         'Backward offset in days from EOM to the requested weekday (0..6)
-    Dim OutSerial       As Double       'Serial of the located date, before gating
-    Dim WkBase          As VbDayOfWeek  'Weekday() base selector (vbMonday or vbSunday)
-    Dim YearL           As Long      'Strictly parsed YearIn
-    Dim MonthL          As Long      'Strictly parsed MonthIn
-    Dim WdIndexL        As Long      'Strictly parsed WdIndex
-    Dim WkMonday        As Boolean   'Strictly parsed Opt_WeekBaseMonday
-    Dim FailErr         As Variant      'Worksheet-facing error value returned on failure
+    Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Reject a fractional, out-of-range or non-numeric YearIn
-        If Not TryResolveLong(YearIn, YearL, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric MonthIn
-        If Not TryResolveLong(MonthIn, MonthL, FailErr) Then GoTo Fail
-
-    'Reject a fractional, out-of-range or non-numeric WdIndex
-        If Not TryResolveLong(WdIndex, WdIndexL, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or native Boolean Opt_WeekBaseMonday
+    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' VALIDATE INPUTS
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Require a year inside the module supported window
-        If (YearL < Year(KPR_MIN_DATE)) Or (YearL > Year(KPR_MAX_DATE)) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_YEAR)
-            GoTo Fail
-        End If
-
-    'Require a valid calendar month
-        If (MonthL < 1) Or (MonthL > 12) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_MONTH)
-            GoTo Fail
-        End If
-
-    'Require a weekday index in 1..7 under the selected base
-        If (WdIndexL < 1) Or (WdIndexL > 7) Then
-            FailErr = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY)
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' RESOLVE WEEKDAY BASE
-'------------------------------------------------------------------------------
-    'Resolve Weekday() base once
-        If WkMonday Then
-            WkBase = vbMonday
-        Else
-            WkBase = vbSunday
-        End If
-
-'------------------------------------------------------------------------------
-' COMPUTE LAST OCCURRENCE
-'------------------------------------------------------------------------------
-    'Anchor at month-end, built inside the month rather than by rolling forward
-        EOM = DateSerial(YearL, MonthL, DaysInMonth(YearL, MonthL))
-
-    'Backward offset (0..6) from the anchor to the requested weekday
-        Diff = (Weekday(EOM, WkBase) - WdIndexL + 7) Mod 7
-
-    'Step back on serials; the result always stays inside the month
-        OutSerial = CDbl(EOM) - CDbl(Diff)
-
-    'Reject a located date outside the supported window
-        If (OutSerial < CDbl(KPR_MIN_DATE)) Or (OutSerial > CDbl(KPR_MAX_DATE)) Then
-            FailErr = ErrNum()
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the last requested weekday in the target month
-        KPR_Dates_LastWeekdayOfMonth = CDate(OutSerial)
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_LastWeekdayOfMonth = Elem_LastWeekdayOfMonth(YearIn, MonthIn, WdIndex, WkMonday)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1901,19 +1979,18 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
 '
 '------------------------------------------------------------------------------
 '
-'                        PUBLIC API - PILLAR FORMATTING
+'                        PUBLIC API - PILLAR FORMATTING                        
 '
 '------------------------------------------------------------------------------
 '
@@ -1925,95 +2002,79 @@ Public Function KPR_Dates_PillarFromDates( _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_PillarFromDates
+'                          KPR_Dates_PillarFromDates
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the yield-curve bucket label ("pillar") spanning StartDate to
-'   EndDate, using TRUE NEAREST rounding.
+'   Labels the interval between two dates as a canonical pillar token.
 '
 ' SIGNATURE
-'   KPR_Dates_PillarFromDates(StartDate, EndDate) -> Variant
+'   KPR_Dates_PillarFromDates(StartDate, EndDate, [Opt_Rounding]) -> Variant (String)
 '
 ' INPUTS
 '   StartDate
-'     Date candidate handled by the facade TryResolveDate policy.
-'
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '   EndDate
-'     Date candidate handled by the facade TryResolveDate policy.
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
+'   Opt_Rounding
+'     Optional. Omitted or Empty selects "NEAREST". Native text NEAREST, FLOOR or CEILING only.
 '
 ' RETURNS
 '   Variant
-'     String pillar token on success (e.g. "3W", "5M", "2Y4M", "-1W"),
-'     else a native Excel error value
+'     String on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  either date not parseable / not scalar, or unexpected runtime error
-'   #NUM!    either date falls outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
+'   - PassHostGuard
+'   - Elem_PillarFromDates
 '   - TryResolveRounding (KPR_Core_Array, KPR_Core_Parse)
-'   - KPR_Core_Dates.TryPillar_Format
-'   - KPR_Core_Err.ErrForCondition
-'   - KPR_Core_Err.ErrValue
 '
 ' NOTES
-'   - The label is a String by design; it is a category, not a quantity, and is
-'     meant to be grouped or matched rather than computed on.
-'   - EndDate before StartDate yields a "-" prefixed token.
-'   - The week family is capped at 3W, so no label of 4W or longer is emitted
-'     and the 3W to 1M boundary falls at 25 days. Labels are nearest tenor
-'     names, not members of a quoted pillar set: any integer month can appear,
-'     including months a desk would not quote.
+'   - Rounding modes, the candidate set and tie rules are specified in contract section 8.4.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedStart     As Date      'Parsed start date (per TryResolveDate policy)
-    Dim ParsedEnd       As Date      'Parsed end date   (per TryResolveDate policy)
-    Dim Mode            As KPR_PillarRounding 'Resolved rounding mode
-    Dim Token           As String    'Formatted pillar token
-    Dim Condition       As KPR_Condition 'Formatter failure condition
+    Dim Mode            As KPR_PillarRounding 'Resolved Opt_Rounding
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-'------------------------------------------------------------------------------
-' PARSE INPUTS
-'------------------------------------------------------------------------------
-    'Parse the start date under module policy
-        If Not TryResolveDate(StartDate, ParsedStart, FailErr) Then GoTo Fail
-
-    'Parse the end date under module policy
-        If Not TryResolveDate(EndDate, ParsedEnd, FailErr) Then GoTo Fail
-
-    'Accept only an omitted, blank or recognized rounding token (call-level)
+    'Accept only an omitted, blank or recognized Opt_Rounding token (call-level)
         If Not TryResolveRounding(Opt_Rounding, Mode, FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' ASSIGN RESULT
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Format the nearest-rounded pillar token
-        If Not TryPillar_Format(ParsedStart, ParsedEnd, Mode, Token, Condition) Then
-            FailErr = ErrForCondition(Condition)
-            GoTo Fail
-        End If
-        KPR_Dates_PillarFromDates = Token
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_PillarFromDates = Elem_PillarFromDates(StartDate, EndDate, Mode)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -2025,156 +2086,86 @@ Fail:
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
 
 End Function
-
-Public Function KPR_Dates_DatesFromPillar( _
+Public Function KPR_Dates_DateFromPillar( _
     ByVal StartDate As Variant, _
     ByVal Pillar As Variant) _
     As Variant
 '
 '==============================================================================
-' KPR_Dates_DatesFromPillar
+'                          KPR_Dates_DateFromPillar
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Returns the calendar date obtained by applying a pillar token to StartDate.
+'   Shifts a start date by a parsed pillar token.
 '
 ' SIGNATURE
-'   KPR_Dates_DatesFromPillar(StartDate, Pillar) -> Variant
+'   KPR_Dates_DateFromPillar(StartDate, Pillar) -> Variant (Date)
 '
 ' INPUTS
 '   StartDate
-'     Date candidate handled by the facade TryResolveDate policy.
-'
+'     Date, numeric serial, or ISO YYYY-MM-DD text; single-cell Range or 1x1 wrapper accepted.
 '   Pillar
-'     Tenor token, unwrapped by the same shape policy as StartDate. Accepted
-'     grammar:
-'       - optional leading sign: "+" or "-", applied to the WHOLE token
-'       - one or more [integer][unit] components, no spaces inside
-'       - units: Y, M, W, D (case insensitive), each at most once
-'       - whole-token aliases: "ON" / "O/N" => 1D, "TN" / "T/N" => 2D,
-'         never signed
-'
-'     Examples: "1W", "3M", "25Y", "2Y4M", "1Y6M2W", "-6D", "ON", "T/N"
+'     Pillar token text under the contract grammar (section 3.4).
 '
 ' RETURNS
 '   Variant
-'     Date on success, else a native Excel error value
+'     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  StartDate not parseable, Pillar not scalar text, or Pillar does
-'            not match the accepted grammar, or unexpected runtime error
-'   #NUM!    the pillar is well formed but shifts the date outside
-'            KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; a pillar token outside the accepted grammar
+'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #N/A     an identified 1904 worksheet caller, or an identified caller
+'            whose date system cannot be read
+'   Incoming native errors are returned unchanged.
+'
+' ORDER OF EVALUATION
+'   host guard -> optional controls -> element arguments in signature order.
+'   The guard is call-level; the element resolves its own value arguments.
 '
 ' DEPENDENCIES
-'   - TryResolveDate (KPR_Core_Array, KPR_Core_Parse, KPR_Core_Dates)
-'   - KPR_Core_Array.TryUnwrapScalar
-'   - TryResolvePillar (KPR_Core_Array, KPR_Core_Dates)
-'   - KPR_Core_Dates.TryAddMonths
-'   - KPR_Core_Err.ErrValue, KPR_Core_Err.ErrForCondition
+'   - PassHostGuard
+'   - Elem_DateFromPillar
 '
 ' NOTES
-'   - Y and M components are aggregated into one calendar-month shift, applied
-'     first with CLIP semantics (never preserve-EOM). W and D are then applied
-'     as an exact calendar-day delta. Order matters: "1M1D" from 31-Jan-2026 is
-'     28-Feb + 1D = 01-Mar-2026.
-'   - A repeated unit is rejected, not summed: "1Y2Y3M" fails rather than
-'     resolving to 3Y3M. A duplicated unit is a typo, and returning a plausible
-'     date for it would be worse than refusing.
-'   - The pillar argument goes through TryUnwrapScalar, so a single-cell Range
-'     or a 1x1 wrapper is accepted exactly as it is for StartDate. Rejecting
-'     wrappers here while accepting them there would give the two arguments
-'     different shape policies in one signature.
-'   - Parsing is strict. Nothing is silently stripped, so a malformed token can
-'     never be reinterpreted as a different valid pillar.
+'   - Months first with clip semantics, then exact days, matching the parser's grammar. Singular: it returns exactly one date. The plural baseline name was a defect.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
-    Dim ParsedStart     As Date      'Parsed StartDate (per TryResolveDate policy)
-    Dim WorkDate        As Date      'Intermediate date after the month shift
-    Dim ResultD         As Double    'Final serial after the day shift, before range gating
-
-    Dim TotalMonths     As Double    'Signed month delta parsed from the pillar
-    Dim TotalDays       As Double    'Signed day delta parsed from the pillar
-
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
 ' INITIALIZE
 '------------------------------------------------------------------------------
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
     'Default failure is #VALUE!
         FailErr = ErrValue()
 
+'------------------------------------------------------------------------------
+' CALL-LEVEL GUARDS
+'------------------------------------------------------------------------------
     'Refuse a 1904 worksheet host before any argument is touched (call-level)
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
 '------------------------------------------------------------------------------
-' PARSE INPUTS
+' ELEMENT
 '------------------------------------------------------------------------------
-    'Parse the start date under module policy
-        If Not TryResolveDate(StartDate, ParsedStart, FailErr) Then GoTo Fail
-
-    'Reduce the pillar argument under the same shape policy as StartDate
-
-    'Parse the pillar token into signed month / day deltas
-        If Not TryResolvePillar(Pillar, TotalMonths, TotalDays, FailErr) Then GoTo Fail
-
-'------------------------------------------------------------------------------
-' APPLY MONTH SHIFT
-'------------------------------------------------------------------------------
-    'Start from the parsed date
-        WorkDate = ParsedStart
-
-    'Apply the aggregated Y / M components with clip semantics
-        If TotalMonths <> 0# Then
-
-            'Gate the month delta to Long range before coercion
-                If (TotalMonths < -2147483648#) Or (TotalMonths > 2147483647#) Then
-                    FailErr = ErrForCondition(KPR_COND_PILLAR_AGGREGATE_RANGE)
-                    GoTo Fail
-                End If
-
-            'Delegate to the single month shifter (never preserve-EOM here)
-                If Not TryAddMonths(WorkDate, CLng(TotalMonths), False, WorkDate) Then
-                    FailErr = ErrForCondition(KPR_COND_RESULT_WINDOW)
-                    GoTo Fail
-                End If
-
-        End If
-
-'------------------------------------------------------------------------------
-' APPLY DAY SHIFT
-'------------------------------------------------------------------------------
-    'Apply the aggregated W / D components as an exact calendar-day delta
-        ResultD = CDbl(WorkDate) + TotalDays
-
-    'Gate the result to the supported date window
-        If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
-            FailErr = ErrForCondition(KPR_COND_RESULT_WINDOW)
-            GoTo Fail
-        End If
-
-'------------------------------------------------------------------------------
-' ASSIGN RESULT
-'------------------------------------------------------------------------------
-    'Return the resolved date
-        KPR_Dates_DatesFromPillar = CDate(ResultD)
+    'The scalar call is the 1x1 case of the element implementation
+        KPR_Dates_DateFromPillar = Elem_DateFromPillar(StartDate, Pillar)
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -2182,16 +2173,1584 @@ Public Function KPR_Dates_DatesFromPillar( _
 '------------------------------------------------------------------------------
 Fail:
     'Return the worksheet-facing error value
-        KPR_Dates_DatesFromPillar = FailErr
+        KPR_Dates_DateFromPillar = FailErr
         Exit Function
 
 '------------------------------------------------------------------------------
-' ERROR HANDLER
+' ERR_HANDLER
 '------------------------------------------------------------------------------
 Err_Handler:
-    'Unexpected runtime error => #VALUE!
+    'Containment: fail closed with #VALUE!; reaching here is a defect
         FailErr = ErrValue()
         Resume Fail
+
+End Function
+'
+'------------------------------------------------------------------------------
+'
+'                       PRIVATE ELEMENT IMPLEMENTATIONS                        
+'
+'------------------------------------------------------------------------------
+'
+
+
+Private Function Elem_DayOfWeek( _
+    ByVal DateIn As Variant, _
+    ByVal WkMonday As Boolean) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_DayOfWeek
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_DayOfWeek: resolves the raw value arguments,
+'   computes, and returns the Long or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - TRUE selects Monday-based numbering (ISO habit); FALSE selects Sunday-based.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim WkBase          As VbDayOfWeek 'Weekday base selected by the control
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_DayOfWeek = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If WkMonday Then WkBase = vbMonday Else WkBase = vbSunday
+        Elem_DayOfWeek = CLng(Weekday(D, WkBase))
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_DayOfWeek = ErrValue()
+
+End Function
+
+Private Function Elem_DaysInMonth( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_DaysInMonth
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_DaysInMonth: resolves the raw value arguments,
+'   computes, and returns the Long or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_DaysInMonth = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_DaysInMonth = DaysInMonth(Year(D), Month(D))
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_DaysInMonth = ErrValue()
+
+End Function
+
+Private Function Elem_DaysInYear( _
+    ByVal YearIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_DaysInYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_DaysInYear: resolves the raw value arguments,
+'   computes, and returns the Long or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Takes a calendar year, not a date. No date is constructed, so no window gate applies and year 1900 is fully in the domain.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Y               As Long     'Resolved YearIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve YearIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(YearIn, Y, ErrOut) Then Elem_DaysInYear = ErrOut: Exit Function
+    'Domain of YearIn is 1900 through 9999
+        If (Y < Year(KPR_MIN_DATE)) Or (Y > Year(KPR_MAX_DATE)) Then Elem_DaysInYear = ErrForCondition(KPR_COND_DOMAIN_YEAR): Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If IsLeapYear(Y) Then Elem_DaysInYear = 366& Else Elem_DaysInYear = 365&
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_DaysInYear = ErrValue()
+
+End Function
+
+Private Function Elem_BeginOfMonth( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_BeginOfMonth
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_BeginOfMonth: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_BeginOfMonth = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_BeginOfMonth = DateSerial(Year(D), Month(D), 1)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_BeginOfMonth = ErrValue()
+
+End Function
+
+Private Function Elem_EndOfMonth( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_EndOfMonth
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_EndOfMonth: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_EndOfMonth = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_EndOfMonth = EndOfMonth(D)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_EndOfMonth = ErrValue()
+
+End Function
+
+Private Function Elem_BeginOfQuarter( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_BeginOfQuarter
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_BeginOfQuarter: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - A Q1-1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim R               As Date      'Boundary from the calendar core
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_BeginOfQuarter = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        R = BeginOfQuarter(D)
+        If Not IsDateInWindow(R) Then Elem_BeginOfQuarter = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        Elem_BeginOfQuarter = R
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_BeginOfQuarter = ErrValue()
+
+End Function
+
+Private Function Elem_EndOfQuarter( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_EndOfQuarter
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_EndOfQuarter: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Always inside the window for an in-window input: the quarter end is never earlier than the input.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_EndOfQuarter = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_EndOfQuarter = EndOfQuarter(D)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_EndOfQuarter = ErrValue()
+
+End Function
+
+Private Function Elem_BeginOfYear( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_BeginOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_BeginOfYear: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Any 1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim R               As Date      'Boundary from the calendar core
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_BeginOfYear = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        R = BeginOfYear(D)
+        If Not IsDateInWindow(R) Then Elem_BeginOfYear = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        Elem_BeginOfYear = R
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_BeginOfYear = ErrValue()
+
+End Function
+
+Private Function Elem_EndOfYear( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_EndOfYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_EndOfYear: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_EndOfYear = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_EndOfYear = EndOfYear(D)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_EndOfYear = ErrValue()
+
+End Function
+
+Private Function Elem_IsMonthEnd( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_IsMonthEnd
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_IsMonthEnd: resolves the raw value arguments,
+'   computes, and returns the Boolean or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_IsMonthEnd = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_IsMonthEnd = (Day(D) = DaysInMonth(Year(D), Month(D)))
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_IsMonthEnd = ErrValue()
+
+End Function
+
+Private Function Elem_IsQuarterEnd( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_IsQuarterEnd
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_IsQuarterEnd: resolves the raw value arguments,
+'   computes, and returns the Boolean or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_IsQuarterEnd = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If (Month(D) Mod 3) <> 0 Then
+            Elem_IsQuarterEnd = False
+        Else
+            Elem_IsQuarterEnd = (Day(D) = DaysInMonth(Year(D), Month(D)))
+        End If
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_IsQuarterEnd = ErrValue()
+
+End Function
+
+Private Function Elem_IsYearEnd( _
+    ByVal DateIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_IsYearEnd
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_IsYearEnd: resolves the raw value arguments,
+'   computes, and returns the Boolean or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_IsYearEnd = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_IsYearEnd = ((Month(D) = 12) And (Day(D) = 31))
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_IsYearEnd = ErrValue()
+
+End Function
+
+Private Function Elem_IsLeapYear( _
+    ByVal YearIn As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_IsLeapYear
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_IsLeapYear: resolves the raw value arguments,
+'   computes, and returns the Boolean or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Takes a calendar year, not a date. IsLeapYear(1900) is False; no window gate applies.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Y               As Long     'Resolved YearIn
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve YearIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(YearIn, Y, ErrOut) Then Elem_IsLeapYear = ErrOut: Exit Function
+    'Domain of YearIn is 1900 through 9999
+        If (Y < Year(KPR_MIN_DATE)) Or (Y > Year(KPR_MAX_DATE)) Then Elem_IsLeapYear = ErrForCondition(KPR_COND_DOMAIN_YEAR): Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        Elem_IsLeapYear = IsLeapYear(Y)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_IsLeapYear = ErrValue()
+
+End Function
+
+Private Function Elem_AddDays( _
+    ByVal DateIn As Variant, _
+    ByVal nDays As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_AddDays
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_AddDays: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - The shift is computed in Double and gated before coercion back to Date, so an overflow can never reach CDate.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim N               As Long     'Resolved nDays
+    Dim ResultD         As Double    'Shifted serial, gated before conversion
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_AddDays = ErrOut: Exit Function
+    'Resolve nDays: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(nDays, N, ErrOut) Then Elem_AddDays = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        ResultD = CDbl(D) + CDbl(N)
+        If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
+            Elem_AddDays = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_AddDays = CDate(ResultD)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_AddDays = ErrValue()
+
+End Function
+
+Private Function Elem_AddWeeks( _
+    ByVal DateIn As Variant, _
+    ByVal nWeeks As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_AddWeeks
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_AddWeeks: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim N               As Long     'Resolved nWeeks
+    Dim ResultD         As Double    'Shifted serial, gated before conversion
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_AddWeeks = ErrOut: Exit Function
+    'Resolve nWeeks: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(nWeeks, N, ErrOut) Then Elem_AddWeeks = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        ResultD = CDbl(D) + (7# * CDbl(N))
+        If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
+            Elem_AddWeeks = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_AddWeeks = CDate(ResultD)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_AddWeeks = ErrValue()
+
+End Function
+
+Private Function Elem_AddMonths( _
+    ByVal DateIn As Variant, _
+    ByVal nMonths As Variant, _
+    ByVal KeepEOM As Boolean) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_AddMonths
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_AddMonths: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Clip mode keeps the day when the target month has it and otherwise uses that month's last day. With Opt_KeepEOM=True an EOM input maps to the target EOM; a non-EOM input still clips.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim N               As Long     'Resolved nMonths
+    Dim R               As Date      'Shifted date from the calendar core
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_AddMonths = ErrOut: Exit Function
+    'Resolve nMonths: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(nMonths, N, ErrOut) Then Elem_AddMonths = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If Not TryAddMonths(D, N, KeepEOM, R) Then
+            Elem_AddMonths = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_AddMonths = R
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_AddMonths = ErrValue()
+
+End Function
+
+Private Function Elem_AddYears( _
+    ByVal DateIn As Variant, _
+    ByVal nYears As Variant, _
+    ByVal KeepEOM As Boolean) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_AddYears
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_AddYears: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Delegates to TryAddMonths so 29-Feb, short-month and EOM behaviour cannot diverge from AddMonths.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim D               As Date     'Resolved DateIn
+    Dim N               As Long     'Resolved nYears
+    Dim MonthsD         As Double    'Year count as months, range-gated before CLng
+    Dim R               As Date      'Shifted date from the calendar core
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve DateIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(DateIn, D, ErrOut) Then Elem_AddYears = ErrOut: Exit Function
+    'Resolve nYears: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(nYears, N, ErrOut) Then Elem_AddYears = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        MonthsD = 12# * CDbl(N)
+        If (MonthsD < -2147483648#) Or (MonthsD > 2147483647#) Then
+            Elem_AddYears = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        If Not TryAddMonths(D, CLng(MonthsD), KeepEOM, R) Then
+            Elem_AddYears = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_AddYears = R
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_AddYears = ErrValue()
+
+End Function
+
+Private Function Elem_NthWeekdayOfMonth( _
+    ByVal YearIn As Variant, _
+    ByVal MonthIn As Variant, _
+    ByVal WdIndex As Variant, _
+    ByVal n As Variant, _
+    ByVal WkMonday As Boolean) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_NthWeekdayOfMonth
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_NthWeekdayOfMonth: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - A fifth occurrence that the month does not contain is OCCURRENCE_ABSENT; a valid locator before 1900-03-01 is RESULT_WINDOW.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Y               As Long     'Resolved YearIn
+    Dim M               As Long     'Resolved MonthIn
+    Dim W               As Long     'Resolved WdIndex
+    Dim K               As Long     'Resolved n
+    Dim WkBase          As VbDayOfWeek 'Weekday base selected by the control
+    Dim D0              As Date      'First day of the requested month
+    Dim D0Serial        As Double    'Its serial
+    Dim MonthLen        As Long      'Length of the requested month
+    Dim Off             As Long      'Days from D0 to the first matching weekday
+    Dim OutSerial       As Double    'Candidate serial, gated before conversion
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve YearIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(YearIn, Y, ErrOut) Then Elem_NthWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of YearIn is 1900 through 9999
+        If (Y < Year(KPR_MIN_DATE)) Or (Y > Year(KPR_MAX_DATE)) Then Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_YEAR): Exit Function
+    'Resolve MonthIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(MonthIn, M, ErrOut) Then Elem_NthWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of MonthIn is 1 through 12
+        If (M < 1) Or (M > 12) Then Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_MONTH): Exit Function
+    'Resolve WdIndex: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(WdIndex, W, ErrOut) Then Elem_NthWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of WdIndex is 1 through 7
+        If (W < 1) Or (W > 7) Then Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY): Exit Function
+    'Resolve n: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(n, K, ErrOut) Then Elem_NthWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of n is 1 through 5
+        If (K < 1) Or (K > 5) Then Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_OCCURRENCE): Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If WkMonday Then WkBase = vbMonday Else WkBase = vbSunday
+        D0 = DateSerial(Y, M, 1)
+        D0Serial = CDbl(D0)
+        MonthLen = DaysInMonth(Y, M)
+        Off = (W - Weekday(D0, WkBase) + 7) Mod 7
+        OutSerial = D0Serial + CDbl(Off) + (7# * CDbl(K - 1))
+        If OutSerial > (D0Serial + CDbl(MonthLen) - 1#) Then
+            Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_OCCURRENCE_ABSENT): Exit Function
+        End If
+        If (OutSerial < CDbl(KPR_MIN_DATE)) Or (OutSerial > CDbl(KPR_MAX_DATE)) Then
+            Elem_NthWeekdayOfMonth = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_NthWeekdayOfMonth = CDate(OutSerial)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_NthWeekdayOfMonth = ErrValue()
+
+End Function
+
+Private Function Elem_LastWeekdayOfMonth( _
+    ByVal YearIn As Variant, _
+    ByVal MonthIn As Variant, _
+    ByVal WdIndex As Variant, _
+    ByVal WkMonday As Boolean) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_LastWeekdayOfMonth
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_LastWeekdayOfMonth: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - None.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Y               As Long     'Resolved YearIn
+    Dim M               As Long     'Resolved MonthIn
+    Dim W               As Long     'Resolved WdIndex
+    Dim WkBase          As VbDayOfWeek 'Weekday base selected by the control
+    Dim EOM             As Date      'Last day of the requested month
+    Dim Diff            As Long      'Days back from EOM to the weekday
+    Dim OutSerial       As Double    'Candidate serial, gated before conversion
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve YearIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(YearIn, Y, ErrOut) Then Elem_LastWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of YearIn is 1900 through 9999
+        If (Y < Year(KPR_MIN_DATE)) Or (Y > Year(KPR_MAX_DATE)) Then Elem_LastWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_YEAR): Exit Function
+    'Resolve MonthIn: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(MonthIn, M, ErrOut) Then Elem_LastWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of MonthIn is 1 through 12
+        If (M < 1) Or (M > 12) Then Elem_LastWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_MONTH): Exit Function
+    'Resolve WdIndex: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveLong(WdIndex, W, ErrOut) Then Elem_LastWeekdayOfMonth = ErrOut: Exit Function
+    'Domain of WdIndex is 1 through 7
+        If (W < 1) Or (W > 7) Then Elem_LastWeekdayOfMonth = ErrForCondition(KPR_COND_DOMAIN_WEEKDAY): Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If WkMonday Then WkBase = vbMonday Else WkBase = vbSunday
+        EOM = DateSerial(Y, M, DaysInMonth(Y, M))
+        Diff = (Weekday(EOM, WkBase) - W + 7) Mod 7
+        OutSerial = CDbl(EOM) - CDbl(Diff)
+        If (OutSerial < CDbl(KPR_MIN_DATE)) Or (OutSerial > CDbl(KPR_MAX_DATE)) Then
+            Elem_LastWeekdayOfMonth = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_LastWeekdayOfMonth = CDate(OutSerial)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_LastWeekdayOfMonth = ErrValue()
+
+End Function
+
+Private Function Elem_PillarFromDates( _
+    ByVal StartDate As Variant, _
+    ByVal EndDate As Variant, _
+    ByVal Mode As KPR_PillarRounding) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_PillarFromDates
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_PillarFromDates: resolves the raw value arguments,
+'   computes, and returns the String or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Rounding modes, the candidate set and tie rules are specified in contract section 8.4.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim S               As Date     'Resolved StartDate
+    Dim E               As Date     'Resolved EndDate
+    Dim Token           As String    'Formatted pillar token
+    Dim Condition       As KPR_Condition 'Formatter failure condition
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve StartDate: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(StartDate, S, ErrOut) Then Elem_PillarFromDates = ErrOut: Exit Function
+    'Resolve EndDate: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(EndDate, E, ErrOut) Then Elem_PillarFromDates = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        If Not TryPillar_Format(S, E, Mode, Token, Condition) Then
+            Elem_PillarFromDates = ErrForCondition(Condition): Exit Function
+        End If
+        Elem_PillarFromDates = Token
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_PillarFromDates = ErrValue()
+
+End Function
+
+Private Function Elem_DateFromPillar( _
+    ByVal StartDate As Variant, _
+    ByVal Pillar As Variant) _
+    As Variant
+'
+'==============================================================================
+'                              Elem_DateFromPillar
+'------------------------------------------------------------------------------
+' PURPOSE
+'   One element of KPR_Dates_DateFromPillar: resolves the raw value arguments,
+'   computes, and returns the Date or the element's native error value.
+'
+' ELEMENT CONTRACT
+'   - Value arguments arrive raw (scalar, single-cell Range or 1x1 wrapper)
+'     and are resolved here in signature order; the first failing argument
+'     determines the result.
+'   - Controls arrive already resolved, because a control is call-level and
+'     is never re-resolved per element.
+'   - Never calls the host guard: the guard runs once per call, not per
+'     element, and #17 depends on that.
+'   - Never raises. Every failure returns a value the caller can place at the
+'     element's output position.
+'
+' ERROR POLICY
+'   Registered conditions only, mapped through KPR_Core_Err.ErrForCondition.
+'   The containment handler is a defect if reached.
+'
+' NOTES
+'   - Months first with clip semantics, then exact days, matching the parser's grammar. Singular: it returns exactly one date. The plural baseline name was a defect.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim S               As Date     'Resolved StartDate
+    Dim PMonths         As Double    'Parsed month delta of Pillar
+    Dim PDays           As Double    'Parsed day delta of Pillar
+    Dim WorkDate        As Date      'Date after the month delta
+    Dim ResultD         As Double    'Final serial, gated before conversion
+    Dim ErrOut          As Variant   'Element-level error value from a resolver
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    'Containment only: an element must never expose a runtime exception
+        On Error GoTo Err_Handler
+
+'------------------------------------------------------------------------------
+' RESOLVE
+'------------------------------------------------------------------------------
+    'Resolve StartDate: unwrap, propagate an incoming error, parse strictly
+        If Not TryResolveDate(StartDate, S, ErrOut) Then Elem_DateFromPillar = ErrOut: Exit Function
+    'Resolve Pillar: unwrap, propagate an incoming error, parse the grammar
+        If Not TryResolvePillar(Pillar, PMonths, PDays, ErrOut) Then Elem_DateFromPillar = ErrOut: Exit Function
+
+'------------------------------------------------------------------------------
+' COMPUTE
+'------------------------------------------------------------------------------
+        WorkDate = S
+        If PMonths <> 0# Then
+            If (PMonths < -2147483648#) Or (PMonths > 2147483647#) Then
+                Elem_DateFromPillar = ErrForCondition(KPR_COND_PILLAR_AGGREGATE_RANGE): Exit Function
+            End If
+            If Not TryAddMonths(WorkDate, CLng(PMonths), False, WorkDate) Then
+                Elem_DateFromPillar = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+            End If
+        End If
+        ResultD = CDbl(WorkDate) + PDays
+        If (ResultD < CDbl(KPR_MIN_DATE)) Or (ResultD > CDbl(KPR_MAX_DATE)) Then
+            Elem_DateFromPillar = ErrForCondition(KPR_COND_RESULT_WINDOW): Exit Function
+        End If
+        Elem_DateFromPillar = CDate(ResultD)
+        Exit Function
+
+'------------------------------------------------------------------------------
+' ERR_HANDLER
+'------------------------------------------------------------------------------
+Err_Handler:
+    'Containment: fail closed at this element; reaching here is a defect
+        Elem_DateFromPillar = ErrValue()
 
 End Function
 
@@ -2244,7 +3803,8 @@ Public Function KPR_Dates_HostDateSystem() As Variant
 '
 ' ERROR POLICY (USER FACING)
 '   #N/A     identified worksheet host whose date system cannot be read
-'   #VALUE!  unexpected runtime error (containment only; a defect if reached)
+'   The containment handler is not a documented condition; reaching it is a
+'   defect.
 '
 ' DEPENDENCIES
 '   - TryResolveHostDateSystem
@@ -2273,7 +3833,7 @@ Public Function KPR_Dates_HostDateSystem() As Variant
     'Re-evaluate on every ordinary recalculation; this must be the first statement
         Application.Volatile True
 
-    'Route unexpected runtime errors to handler
+    'Containment only: a raise reaching the handler is a defect, never an outcome
         On Error GoTo Err_Handler
 
 '------------------------------------------------------------------------------

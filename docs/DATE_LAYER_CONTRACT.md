@@ -490,6 +490,13 @@ All functions use the parsing, host, array, and error rules above.
 - `BeginOfYear` and `EndOfYear` return 1 January and 31 December of the
   containing year.
 - `IsMonthEnd`, `IsQuarterEnd`, and `IsYearEnd` test those same boundaries.
+
+A boundary is a result and is gated like one. `BeginOfYear` of any 1900 date
+and `BeginOfQuarter` of any date in the first quarter of 1900 name
+1900-01-01, which is outside the supported window, and return `#NUM!` under
+`RESULT_WINDOW`. The rejection is specific to that result: `EndOfQuarter` and
+`EndOfYear` of the same inputs return 1900-03-31 and 1900-12-31, and
+`BeginOfQuarter` of a second-quarter 1900 date returns 1900-04-01.
 - `IsLeapYear` applies the same Gregorian rule and also takes a calendar year.
 
 `DaysInYear` and `IsLeapYear` are the two year-taking functions. Their argument

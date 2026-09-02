@@ -25,6 +25,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                     and #N/A provenance
 '       pillar        rounding modes, the derived 3W / 1M boundary, the week
 '                     cap, grammar conditions and format/parse consistency
+'       surface       the five members added by #15, the YearIn conversions,
+'                     the singular pillar name and the window floor boundaries
 '
 '   Later issues add suites by writing one Private Sub and one Case line. The
 '   dispatcher is deliberately the only shared machinery.
@@ -79,7 +81,7 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '   exact object reference and never through ActiveWorkbook.
 '
 ' UPDATED
-'   2026-09-01
+'   2026-09-02
 '
 ' AUTHOR
 '   Daniele Penza
@@ -389,6 +391,7 @@ Private Function RunSuite( _
                 Run_MapperCases
                 Run_HostCases
                 Run_PillarCases
+                Run_SurfaceCases
 
         Case "date-type":       Run_DateTypeCases
         Case "date-text":       Run_DateTextCases
@@ -399,6 +402,7 @@ Private Function RunSuite( _
         Case "mapper":          Run_MapperCases
         Case "host":            Run_HostCases
         Case "pillar":          Run_PillarCases
+        Case "surface":         Run_SurfaceCases
 
         Case Else
             'Not in the registry
@@ -651,20 +655,20 @@ Private Sub Run_PillarCases()
         AssertPillarParse "grammar/alias", "on", "NONE"
 
     'The facade maps them, and an incoming error at the Pillar slot propagates
-        AssertErrorValue "grammar/facade duplicate", KPR_Dates_DatesFromPillar(S, "1M2M"), ERR_VALUE
-        AssertErrorValue "grammar/facade signed alias", KPR_Dates_DatesFromPillar(S, "-ON"), ERR_VALUE
-        AssertErrorValue "grammar/facade propagates", KPR_Dates_DatesFromPillar(S, CVErr(xlErrNA)), ERR_NA
+        AssertErrorValue "grammar/facade duplicate", KPR_Dates_DateFromPillar(S, "1M2M"), ERR_VALUE
+        AssertErrorValue "grammar/facade signed alias", KPR_Dates_DateFromPillar(S, "-ON"), ERR_VALUE
+        AssertErrorValue "grammar/facade propagates", KPR_Dates_DateFromPillar(S, CVErr(xlErrNA)), ERR_NA
 
 '------------------------------------------------------------------------------
 ' NON-INVARIANT ROUND TRIPS, STATED
 '------------------------------------------------------------------------------
     'A rounded token re-parses to its anchor, not to the original end date
         AssertDateResult "roundtrip/25d nearest lands on anchor", _
-                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 25)), S + 21
+                         KPR_Dates_DateFromPillar(S, KPR_Dates_PillarFromDates(S, S + 25)), S + 21
         AssertDateResult "roundtrip/26d nearest lands on anchor", _
-                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 26)), DateSerial(2026, 4, 15)
+                         KPR_Dates_DateFromPillar(S, KPR_Dates_PillarFromDates(S, S + 26)), DateSerial(2026, 4, 15)
         AssertDateResult "roundtrip/exact 2W lands on end", _
-                         KPR_Dates_DatesFromPillar(S, KPR_Dates_PillarFromDates(S, S + 14)), S + 14
+                         KPR_Dates_DateFromPillar(S, KPR_Dates_PillarFromDates(S, S + 14)), S + 14
 
 '------------------------------------------------------------------------------
 ' FORMAT / PARSE MUTUAL CONSISTENCY
@@ -679,7 +683,7 @@ Private Sub Run_PillarCases()
                 If VarType(Token) = vbError Then
                     Record "consistency/" & ModeName & " " & CStr(D) & "d", "emit failed"
                 Else
-                    Back = KPR_Dates_DatesFromPillar(S, Token)
+                    Back = KPR_Dates_DateFromPillar(S, Token)
                     If VarType(Back) = vbError Then
                         Record "consistency/" & ModeName & " " & CStr(D) & "d", "token " & Token & " does not parse"
                     Else
@@ -753,6 +757,150 @@ Private Sub AssertPillarParse( _
         TryPillar_Parse PillarIn, Months, Days, Cond
         If ConditionName(Cond) <> ExpectCondition Then
             Record Label, "expected " & ExpectCondition & " got " & ConditionName(Cond)
+        End If
+
+End Sub
+
+'
+'------------------------------------------------------------------------------
+'
+'                       SUITE - COMPLETED 22-NAME SURFACE
+'
+'------------------------------------------------------------------------------
+'
+
+Private Sub Run_SurfaceCases()
+'
+' The five members added by #15, the YearIn conversions of DaysInYear and
+' IsLeapYear, the singular DateFromPillar name, and the window-floor
+' boundaries where a correct calendar answer is outside the supported window.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const ERR_VALUE As Long = 2015      'Excel #VALUE! error number
+    Const ERR_NUM   As Long = 2036      'Excel #NUM! error number
+    Const ERR_NA    As Long = 2042      'Excel #N/A error number
+    Dim R           As Variant          'Facade result
+
+'------------------------------------------------------------------------------
+' ADDDAYS
+'------------------------------------------------------------------------------
+        AssertDateResult "adddays/positive", KPR_Dates_AddDays("2026-03-15", 10), DateSerial(2026, 3, 25)
+        AssertDateResult "adddays/negative", KPR_Dates_AddDays("2026-03-15", -15), DateSerial(2026, 2, 28)
+        AssertDateResult "adddays/zero", KPR_Dates_AddDays("2026-03-15", 0), DateSerial(2026, 3, 15)
+        AssertDateResult "adddays/leap crossing", KPR_Dates_AddDays("2024-02-28", 1), DateSerial(2024, 2, 29)
+        AssertDateResult "adddays/year crossing", KPR_Dates_AddDays("2026-12-31", 1), DateSerial(2027, 1, 1)
+        AssertErrorValue "adddays/past ceiling", KPR_Dates_AddDays("9999-12-31", 1), ERR_NUM
+        AssertErrorValue "adddays/below floor", KPR_Dates_AddDays("1900-03-01", -1), ERR_NUM
+        AssertErrorValue "adddays/fractional", KPR_Dates_AddDays("2026-03-15", 1.5), ERR_VALUE
+        AssertErrorValue "adddays/propagates", KPR_Dates_AddDays("2026-03-15", CVErr(xlErrNA)), ERR_NA
+        AssertDateResult "adddays/max shift in window", KPR_Dates_AddDays("1900-03-01", 2958404), DateSerial(9999, 12, 31)
+
+'------------------------------------------------------------------------------
+' QUARTER BOUNDARIES
+'------------------------------------------------------------------------------
+        AssertDateResult "quarter/begin Q1", KPR_Dates_BeginOfQuarter("2026-02-10"), DateSerial(2026, 1, 1)
+        AssertDateResult "quarter/begin Q2", KPR_Dates_BeginOfQuarter("2026-05-31"), DateSerial(2026, 4, 1)
+        AssertDateResult "quarter/begin Q3", KPR_Dates_BeginOfQuarter("2026-07-01"), DateSerial(2026, 7, 1)
+        AssertDateResult "quarter/begin Q4", KPR_Dates_BeginOfQuarter("2026-12-31"), DateSerial(2026, 10, 1)
+        AssertDateResult "quarter/end Q1 leap", KPR_Dates_EndOfQuarter("2024-01-15"), DateSerial(2024, 3, 31)
+        AssertDateResult "quarter/end Q2", KPR_Dates_EndOfQuarter("2026-04-01"), DateSerial(2026, 6, 30)
+        AssertDateResult "quarter/end Q3", KPR_Dates_EndOfQuarter("2026-09-30"), DateSerial(2026, 9, 30)
+        AssertDateResult "quarter/end Q4 year edge", KPR_Dates_EndOfQuarter("2026-10-01"), DateSerial(2026, 12, 31)
+        AssertDateResult "quarter/end at ceiling", KPR_Dates_EndOfQuarter("9999-11-11"), DateSerial(9999, 12, 31)
+
+'------------------------------------------------------------------------------
+' YEAR BOUNDARIES
+'------------------------------------------------------------------------------
+        AssertDateResult "year/begin", KPR_Dates_BeginOfYear("2026-07-04"), DateSerial(2026, 1, 1)
+        AssertDateResult "year/begin leap", KPR_Dates_BeginOfYear("2024-12-31"), DateSerial(2024, 1, 1)
+        AssertDateResult "year/end", KPR_Dates_EndOfYear("2026-01-01"), DateSerial(2026, 12, 31)
+        AssertDateResult "year/end at ceiling", KPR_Dates_EndOfYear("9999-01-01"), DateSerial(9999, 12, 31)
+        AssertDateResult "year/begin at floor year+1", KPR_Dates_BeginOfYear("1901-06-15"), DateSerial(1901, 1, 1)
+
+'------------------------------------------------------------------------------
+' WINDOW FLOOR: A CORRECT CALENDAR ANSWER OUTSIDE THE WINDOW IS #NUM!
+'------------------------------------------------------------------------------
+    'Both boundaries of Q1/1900 name 1900-01-01, which is outside the window
+        AssertErrorValue "floor/BeginOfYear 1900", KPR_Dates_BeginOfYear("1900-03-01"), ERR_NUM
+        AssertErrorValue "floor/BeginOfQuarter 1900", KPR_Dates_BeginOfQuarter("1900-03-01"), ERR_NUM
+        AssertErrorValue "floor/BeginOfYear 1900-12-31", KPR_Dates_BeginOfYear("1900-12-31"), ERR_NUM
+
+    'The rejection is result-specific: the quarter END of the same input is fine
+        AssertDateResult "floor/EndOfQuarter 1900-03-01", KPR_Dates_EndOfQuarter("1900-03-01"), DateSerial(1900, 3, 31)
+        AssertDateResult "floor/EndOfYear 1900", KPR_Dates_EndOfYear("1900-03-01"), DateSerial(1900, 12, 31)
+        AssertDateResult "floor/BeginOfQuarter Q2 1900", KPR_Dates_BeginOfQuarter("1900-04-01"), DateSerial(1900, 4, 1)
+
+'------------------------------------------------------------------------------
+' YEARIN: DAYSINYEAR AND ISLEAPYEAR TAKE A CALENDAR YEAR
+'------------------------------------------------------------------------------
+        AssertLongResult "yearin/IsLeapYear 2024", KPR_Dates_IsLeapYear(2024), True
+        AssertLongResult "yearin/IsLeapYear 2026", KPR_Dates_IsLeapYear(2026), False
+        AssertLongResult "yearin/IsLeapYear 1900 century", KPR_Dates_IsLeapYear(1900), False
+        AssertLongResult "yearin/IsLeapYear 2000 century", KPR_Dates_IsLeapYear(2000), True
+        AssertLongResult "yearin/DaysInYear 2024", KPR_Dates_DaysInYear(2024), 366
+        AssertLongResult "yearin/DaysInYear 1900", KPR_Dates_DaysInYear(1900), 365
+        AssertLongResult "yearin/DaysInYear 9999", KPR_Dates_DaysInYear(9999), 365
+
+    'A date is not a year: the old serial trap is now a type rejection
+        AssertErrorValue "yearin/ISO text rejected", KPR_Dates_IsLeapYear("2024-01-01"), ERR_VALUE
+        AssertErrorValue "yearin/date value rejected", KPR_Dates_DaysInYear(DateSerial(2024, 1, 1)), ERR_VALUE
+        AssertErrorValue "yearin/fraction rejected", KPR_Dates_IsLeapYear(2024.5), ERR_VALUE
+
+    'Domain is 1900 through 9999
+        AssertErrorValue "yearin/1899", KPR_Dates_IsLeapYear(1899), ERR_VALUE
+        AssertErrorValue "yearin/10000", KPR_Dates_DaysInYear(10000), ERR_VALUE
+        AssertErrorValue "yearin/propagates", KPR_Dates_IsLeapYear(CVErr(xlErrNA)), ERR_NA
+
+'------------------------------------------------------------------------------
+' SINGULAR DATEFROMPILLAR
+'------------------------------------------------------------------------------
+        AssertDateResult "rename/DateFromPillar 1M", KPR_Dates_DateFromPillar("2026-01-31", "1M"), DateSerial(2026, 2, 28)
+        AssertDateResult "rename/DateFromPillar -2W", KPR_Dates_DateFromPillar("2026-03-15", "-2W"), DateSerial(2026, 3, 1)
+
+'------------------------------------------------------------------------------
+' ELEMENT ORDER: FIRST FAILING ARGUMENT IN SIGNATURE ORDER
+'------------------------------------------------------------------------------
+    'Two bad arguments: the first one's error is the answer
+        AssertErrorValue "order/date before count", KPR_Dates_AddDays("bad", CVErr(xlErrNA)), ERR_VALUE
+        AssertErrorValue "order/count after good date", KPR_Dates_AddDays("2026-03-15", "bad"), ERR_VALUE
+
+'------------------------------------------------------------------------------
+' ARITHMETIC CLIPPING AND PRESERVATION (UNCHANGED, RE-PINNED AFTER THE SPLIT)
+'------------------------------------------------------------------------------
+        AssertDateResult "clip/AddMonths Jan31+1", KPR_Dates_AddMonths("2026-01-31", 1), DateSerial(2026, 2, 28)
+        AssertDateResult "clip/AddMonths Apr30+1 clip", KPR_Dates_AddMonths("2026-04-30", 1), DateSerial(2026, 5, 30)
+        AssertDateResult "clip/AddMonths Apr30+1 keepEOM", KPR_Dates_AddMonths("2026-04-30", 1, True), DateSerial(2026, 5, 31)
+        AssertDateResult "clip/AddYears Feb29+1", KPR_Dates_AddYears("2024-02-29", 1), DateSerial(2025, 2, 28)
+        AssertDateResult "clip/AddYears Feb29+4", KPR_Dates_AddYears("2024-02-29", 4), DateSerial(2028, 2, 29)
+        AssertErrorValue "clip/AddYears overflow", KPR_Dates_AddYears("2026-03-15", 8000), ERR_NUM
+        AssertDateResult "locator/5th Monday exists", KPR_Dates_NthWeekdayOfMonth(2026, 3, 1, 5), DateSerial(2026, 3, 30)
+        AssertErrorValue "locator/5th Friday absent", KPR_Dates_NthWeekdayOfMonth(2026, 3, 5, 5), ERR_NUM
+        AssertDateResult "locator/last Sunday", KPR_Dates_LastWeekdayOfMonth(2026, 3, 7), DateSerial(2026, 3, 29)
+
+End Sub
+
+Private Sub AssertLongResult( _
+    ByVal Label As String, _
+    ByVal Actual As Variant, _
+    ByVal Expect As Variant)
+'
+' Asserts a scalar Long or Boolean result by value.
+'
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    'Count every assertion
+        mChecks = mChecks + 1
+
+    'Compare only when the result is not an error
+        If VarType(Actual) = vbError Then
+            Record Label, "expected " & CStr(Expect) & ", got Excel error " & CStr(CLng(Actual))
+        ElseIf CStr(Actual) <> CStr(Expect) Then
+            Record Label, "expected " & CStr(Expect) & " got " & CStr(Actual)
         End If
 
 End Sub

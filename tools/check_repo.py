@@ -141,6 +141,10 @@ VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
             "IsLeapYear",
             "DaysInMonth",
             "EndOfMonth",
+            "BeginOfQuarter",
+            "EndOfQuarter",
+            "BeginOfYear",
+            "EndOfYear",
             "TryAddMonths",
             "TryPillar_Parse",
             "TryPillar_Format",
@@ -170,6 +174,38 @@ VBA_ARGUMENT_RESOLVERS = (
 # explicit workbook operations. Comments and string literals are ignored.
 VBA_WORKBOOK_FALLBACKS = ("ActiveWorkbook", "ThisWorkbook", "ActiveSheet")
 VBA_HOST_PATH_PROCEDURES = (VBA_HOST_CLASSIFIER, VBA_HOST_GUARD, VBA_HOST_DIAGNOSTIC)
+
+# The complete supported worksheet surface, frozen in contract section 2. This
+# is a temporary source-declaration control: the facade must declare exactly
+# these names, so a missing member, an extra KPR_Dates_* member, the legacy
+# plural DatesFromPillar and any _Spill twin all fail. Issue #26 replaces this
+# hard-coded inventory with the authoritative machine-readable manifest.
+VBA_FACADE_SURFACE: frozenset[str] = frozenset(
+    {
+        "KPR_Dates_DayOfWeek",
+        "KPR_Dates_DaysInMonth",
+        "KPR_Dates_DaysInYear",
+        "KPR_Dates_BeginOfMonth",
+        "KPR_Dates_EndOfMonth",
+        "KPR_Dates_BeginOfQuarter",
+        "KPR_Dates_EndOfQuarter",
+        "KPR_Dates_BeginOfYear",
+        "KPR_Dates_EndOfYear",
+        "KPR_Dates_IsMonthEnd",
+        "KPR_Dates_IsQuarterEnd",
+        "KPR_Dates_IsYearEnd",
+        "KPR_Dates_IsLeapYear",
+        "KPR_Dates_AddDays",
+        "KPR_Dates_AddWeeks",
+        "KPR_Dates_AddMonths",
+        "KPR_Dates_AddYears",
+        "KPR_Dates_NthWeekdayOfMonth",
+        "KPR_Dates_LastWeekdayOfMonth",
+        "KPR_Dates_PillarFromDates",
+        "KPR_Dates_DateFromPillar",
+        "KPR_Dates_HostDateSystem",
+    }
+)
 
 # DateSerial with a day argument of zero names the day before the first of the
 # given month. The idiom is compact but not total: it raises error 5 whenever
@@ -1306,11 +1342,33 @@ def check_vba_public_surface(repo: Repository) -> dict[str, object]:
                         number,
                     )
                 )
+    # Exact inventory: the declared facade surface must equal the frozen 22.
+    declared: dict[str, str] = {}
+    for path, text in _facade_sources(repo):
+        for line in text.splitlines():
+            match = declaration.match(line)
+            if match is not None:
+                declared.setdefault(match.group(1), path)
+    for name in sorted(VBA_FACADE_SURFACE - set(declared)):
+        failures.append(
+            finding("src/modules", f"Supported worksheet function {name} is not declared.")
+        )
+    for name in sorted(set(declared) - VBA_FACADE_SURFACE):
+        reason = (
+            "is the legacy plural name; the supported name is KPR_Dates_DateFromPillar"
+            if name == "KPR_Dates_DatesFromPillar"
+            else "is a _Spill twin, which the contract forbids"
+            if name.casefold().endswith("_spill")
+            else "is not one of the 22 supported names"
+        )
+        failures.append(
+            finding(declared[name], f"Public worksheet function {name} {reason}.")
+        )
     return rule_result(
         "vba-public-surface",
         "VBA public worksheet surface",
         failures,
-        f"All {found} public worksheet functions are declared in a facade module",
+        f"The facade declares exactly the {len(VBA_FACADE_SURFACE)} supported worksheet functions",
     )
 
 
@@ -1509,11 +1567,27 @@ def check_vba_host_guard(repo: Repository) -> dict[str, object]:
     """
     failures: list[dict[str, object]] = []
     checked = 0
+    guard_call = re.compile(rf"(?<![\w.])(?<!Function\s){VBA_HOST_GUARD}\s*\(")
     for path, text in _facade_sources(repo):
         for visibility, name, body in _vba_procedures(text):
-            if visibility != "public" or not name.casefold().startswith(VBA_PUBLIC_FUNCTION_PREFIX):
-                continue
             code = _strip_vba_comments(body)
+            # A private procedure must not run the guard: it would execute per
+            # element once #17 loops the Elem_* functions. Only genuine calls
+            # count; the guard's own declaration, its result assignment
+            # (PassHostGuard = ...) and comments are not calls.
+            if visibility == "private":
+                calls = [
+                    l for l in code.splitlines()
+                    if guard_call.search(_strip_vba_strings(l))
+                    and not re.match(rf"^\s*{VBA_HOST_GUARD}\s*=", l)
+                ]
+                if calls:
+                    failures.append(
+                        finding(path, f"{name} calls {VBA_HOST_GUARD}; the guard runs once per public call, never inside a private helper or element.")
+                    )
+                continue
+            if not name.casefold().startswith(VBA_PUBLIC_FUNCTION_PREFIX):
+                continue
             checked += 1
             if name == VBA_HOST_DIAGNOSTIC:
                 calls = len(re.findall(rf"\b{VBA_HOST_CLASSIFIER}\s*\(", code))
@@ -1808,31 +1882,37 @@ def _positive_fixture(root: Path) -> None:
         'Attribute VB_Name = "KPR_REGRESSION_TESTS"\nOption Explicit\n',
         newline="\r\n",
     )
-    write(
-        "src/modules/KPR_DATES_DAYS.bas",
-        'Attribute VB_Name = "KPR_DATES_DAYS"\nOption Explicit\n'
-        "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Variant\n"
-        "    Dim FailErr As Variant\n"
-        "    If Not PassHostGuard(FailErr) Then Exit Function\n"
-        "    If Not TryResolveDate(DateIn, 0, FailErr) Then Exit Function\n"
-        "End Function\n"
-        "Public Function KPR_Dates_HostDateSystem() As Variant\n"
-        "    Dim DateSystem As Long\n"
-        "    Application.Volatile True\n"
-        "    If TryResolveHostDateSystem(DateSystem, 0) Then KPR_Dates_HostDateSystem = DateSystem\n"
-        "End Function\n"
-        "Private Function TryResolveHostDateSystem(ByRef DateSystem As Long, ByRef Condition As Long) As Boolean\n"
-        "    DateSystem = 1900\n"
-        "    TryResolveHostDateSystem = True\n"
-        "End Function\n"
-        "Private Function PassHostGuard(ByRef ErrOut As Variant) As Boolean\n"
-        "    PassHostGuard = True\n"
-        "End Function\n"
-        "Private Function TryResolveDate(ByVal DateIn As Variant, ByRef ParsedDate As Date, ByRef ErrOut As Variant) As Boolean\n"
-        "    TryResolveDate = True\n"
-        "End Function\n",
-        newline="\r\n",
-    )
+    facade_lines = ['Attribute VB_Name = "KPR_DATES_DAYS"', "Option Explicit"]
+    for name in sorted(VBA_FACADE_SURFACE):
+        if name == VBA_HOST_DIAGNOSTIC:
+            facade_lines += [
+                f"Public Function {name}() As Variant",
+                "    Dim DateSystem As Long",
+                "    Application.Volatile True",
+                f"    If TryResolveHostDateSystem(DateSystem, 0) Then {name} = DateSystem",
+                "End Function",
+            ]
+        else:
+            facade_lines += [
+                f"Public Function {name}(ByVal DateIn As Variant) As Variant",
+                "    Dim FailErr As Variant",
+                "    If Not PassHostGuard(FailErr) Then Exit Function",
+                "    If Not TryResolveDate(DateIn, 0, FailErr) Then Exit Function",
+                "End Function",
+            ]
+    facade_lines += [
+        "Private Function TryResolveHostDateSystem(ByRef DateSystem As Long, ByRef Condition As Long) As Boolean",
+        "    DateSystem = 1900",
+        "    TryResolveHostDateSystem = True",
+        "End Function",
+        "Private Function PassHostGuard(ByRef ErrOut As Variant) As Boolean",
+        "    PassHostGuard = True",
+        "End Function",
+        "Private Function TryResolveDate(ByVal DateIn As Variant, ByRef ParsedDate As Date, ByRef ErrOut As Variant) As Boolean",
+        "    TryResolveDate = True",
+        "End Function",
+    ]
+    write("src/modules/KPR_DATES_DAYS.bas", "\n".join(facade_lines) + "\n", newline="\r\n")
     _initialize_fixture(root)
 
 
@@ -1947,6 +2027,59 @@ def run_self_tests(root: Path) -> None:
             newline="\r\n",
         )
 
+    def _facade(case: Path) -> Path:
+        return case / "src/modules/KPR_DATES_DAYS.bas"
+
+    def _rewrite_facade(case: Path, old: str, new: str, count: int = 1) -> None:
+        facade = _facade(case)
+        facade.write_text(
+            facade.read_text(encoding="utf-8").replace(old, new, count),
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def missing_surface_member(case: Path) -> None:
+        _rewrite_facade(case, "Public Function KPR_Dates_AddDays(", "Public Function KPR_Dates_Adddays_Renamed(")
+
+    def extra_surface_member(case: Path) -> None:
+        facade = _facade(case)
+        facade.write_text(
+            facade.read_text(encoding="utf-8")
+            + "Public Function KPR_Dates_Extra(ByVal DateIn As Variant) As Variant\n"
+            + "    Dim FailErr As Variant\n"
+            + "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def legacy_plural_name(case: Path) -> None:
+        _rewrite_facade(case, "Public Function KPR_Dates_DateFromPillar(", "Public Function KPR_Dates_DatesFromPillar(")
+
+    def spill_twin(case: Path) -> None:
+        facade = _facade(case)
+        facade.write_text(
+            facade.read_text(encoding="utf-8")
+            + "Public Function KPR_Dates_AddDays_Spill(ByVal DateIn As Variant) As Variant\n"
+            + "    Dim FailErr As Variant\n"
+            + "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def guard_in_private_helper(case: Path) -> None:
+        facade = _facade(case)
+        facade.write_text(
+            facade.read_text(encoding="utf-8")
+            + "Private Function Elem_Probe(ByVal DateIn As Variant) As Variant\n"
+            + "    Dim FailErr As Variant\n"
+            + "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
     def missing_host_guard(case: Path) -> None:
         facade = case / "src/modules/KPR_DATES_DAYS.bas"
         facade.write_text(
@@ -2050,8 +2183,8 @@ def run_self_tests(root: Path) -> None:
         rewrite_module(
             case,
             lambda text: text.replace(
-                "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Variant",
-                "Public Function KPR_Dates_DayOfWeek(ByVal DateIn As Variant) As Long",
+                "Public Function KPR_Dates_AddDays(ByVal DateIn As Variant) As Variant",
+                "Public Function KPR_Dates_AddDays(ByVal DateIn As Variant) As Long",
                 1,
             ),
         )
@@ -2085,6 +2218,11 @@ def run_self_tests(root: Path) -> None:
         ("reverse calendar dependency", "vba-module-dependencies", reverse_dates_dependency),
         ("locale-sensitive parsing", "vba-locale-parsing", locale_parsing),
         ("drifted window constant", "vba-window-constants", drifted_window_constant),
+        ("missing surface member", "vba-public-surface", missing_surface_member),
+        ("extra surface member", "vba-public-surface", extra_surface_member),
+        ("legacy plural pillar name", "vba-public-surface", legacy_plural_name),
+        ("_Spill twin", "vba-public-surface", spill_twin),
+        ("guard inside a private helper", "vba-host-guard", guard_in_private_helper),
         ("missing host guard", "vba-host-guard", missing_host_guard),
         ("guard after resolver", "vba-host-guard", guard_after_resolver),
         ("stray volatile call", "vba-volatile-scope", stray_volatile),
