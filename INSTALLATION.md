@@ -16,10 +16,16 @@
 > KPR does not yet publish a supported workbook, add-in, or source-installation
 > package. Do not treat files on `main` as a released installation.
 
-This guide has been intentionally reset for the new KPR project. Requirements,
-source-import steps, add-in installation, validation, upgrades, troubleshooting,
-and removal instructions will be documented when the first installable release
-candidate exists.
+Supported requirements, source/add-in installation, validation, upgrades,
+troubleshooting, and removal instructions will be completed when the first
+installable release candidate exists.
+
+Contributors who need to import development source for focused testing should
+follow [the VBE export/import procedure](docs/VBE_EXPORT.md) and the exact module
+inventory in the [v0.0.2 implementation plan](docs/IMPLEMENTATION_PLAN.md). That
+procedure is development guidance only: it does not turn `main` into a supported
+installation or replace the exact-candidate certification required by issue
+[#29](https://github.com/danielep71/KPR/issues/29).
 
 Follow [README.md](README.md) for current project status and
 [GitHub Releases](https://github.com/danielep71/KPR/releases) for future packages.

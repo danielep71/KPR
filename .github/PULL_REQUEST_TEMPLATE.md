@@ -241,6 +241,9 @@ Focused/manual result:
 > [!WARNING]
 > Record only validation that was actually run. An operational GitHub workflow,
 > a screenshot, or a successful compile is not numerical-reference evidence.
+> Intermediate changes do not need generic clean-workbook, disabled-Compile, or
+> Function Wizard screenshots; the final exact-source import and compile belong
+> to the release-certification issue.
 
 ### Numerical evidence
 

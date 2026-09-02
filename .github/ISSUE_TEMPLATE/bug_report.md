@@ -3,6 +3,7 @@ name: 🐞 Bug report
 about: Report a reproducible KPR financial, numerical, Excel/VBA, compatibility, or packaging defect
 title: "[Bug]: "
 labels: bug
+assignees: danielep71
 ---
 
 <!--

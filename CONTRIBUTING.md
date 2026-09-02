@@ -94,7 +94,7 @@ directly in a focused pull request.
 | Before submitting | Minimum expectation |
 |---|---|
 | 🧭 **Contract** | Define inputs, outputs, conventions, domain, errors, and compatibility impact. |
-| 🛠️ **Compile** | Import the exported source and run `Debug > Compile VBAProject`. |
+| 🛠️ **Compile** | For VBA changes, record the relevant compile result when run; #29 owns the final exact-source candidate compile. |
 | 🧪 **Test** | Run relevant regressions, edge cases, invariants, and independent comparisons. |
 | 🎯 **Tolerances** | State absolute/relative rules and justify them from the contract. |
 | 🖥️ **Environment** | Record Excel, Windows, Office bitness, locale, and date system where relevant. |
@@ -131,9 +131,10 @@ KPR uses exported, reviewable source files as its development record.
 |---|---|---|
 | `src/` | Exported VBA modules, classes, forms, and Ribbon source | Authoritative source |
 | `test/` | Regression tests, numerical contracts, and validation support | Authoritative evidence code |
-| `demo/` | Example and demonstration source | Reviewable examples |
-| `dist/` | Release-artifact guidance and approved distributable outputs | Distribution boundary |
-| `assets/`, `images/` | Documentation and repository media | Supporting material |
+| `docs/` | Normative contracts, implementation plans, and source-format guidance | Authoritative documentation |
+| `tools/` | Deterministic repository, fixture, packaging, and evidence tooling | Reviewable automation |
+| `demo/` | Example and demonstration source when introduced by its owning issue | Reviewable examples |
+| `assets/` | Documentation and repository media | Supporting material |
 
 Every tracked VBA file conforms to the repository's Visual Basic Editor export
 format and carries an `Attribute VB_Name` header that matches its file name.
@@ -142,9 +143,10 @@ Follow
 one back into Excel.
 
 Keep form `.frm` and `.frx` companions together. Do not treat a binary workbook
-as a substitute for exported source. Generated workbooks or add-ins should be
-committed only when they are deliberate distribution or test artifacts and
-their relationship to source is documented.
+as a substitute for exported source. Generated `.xlsm`, `.xlam`, `.xlsx`, and
+other Office binaries are not committed; certified artifacts may be attached to
+a release or issue while their relationship to the exact source remains
+documented externally.
 
 > [!CAUTION]
 > Never normalize `.frx` files as text. Never use a binary workbook as the only
@@ -372,8 +374,10 @@ Version the supported behavior, not only the VBA signature.
 2. Keep the change focused on one coherent purpose.
 3. Preserve unrelated code and formatting.
 4. Export all changed VBA components in reviewable form.
-5. Compile the imported VBA project with `Debug > Compile VBAProject`.
-6. Run the relevant regression tests and numerical comparisons.
+5. Run the deterministic repository checks and the focused tests relevant to
+   the change.
+6. For VBA changes, record any compile or Excel execution actually performed;
+   do not manufacture clean-workbook provenance or screenshot evidence.
 7. Review the diff for accidental binary, generated, confidential, or
    environment-specific content.
 8. Submit a pull request that links the relevant issue.
@@ -388,16 +392,20 @@ separately.
 
 ## 🧪 Validation baseline
 
-Until a task-specific automated harness is documented, the minimum validation
-for a code change is:
+Validation is proportional to the change and to the owning issue:
 
-- import the exported components into a clean test workbook or add-in;
-- compile the complete VBA project;
-- run every available relevant test;
-- exercise the changed public path and its principal failure paths;
+- run the deterministic repository gate and its focused negative self-tests;
+- run the relevant regression suites and principal failure paths;
 - compare numerical output with independent evidence where applicable;
-- confirm behavior in a fresh Excel process; and
-- record the environment, reference, tolerance, and results.
+- record only Excel execution, compilation, environments, references,
+  tolerances, and results that were actually observed; and
+- state explicitly what remains unverified.
+
+Intermediate implementation issues do not require a clean-workbook provenance
+statement, a disabled-Compile screenshot, or an Insert Function / Function
+Wizard screenshot. A concise compile or focused Excel result may be recorded
+when useful. Issue #29 is the sole gate that requires the complete candidate to
+be imported, compiled, executed, and round-tripped from its exact recorded SHA.
 
 Changes involving platform declarations, Excel host behavior, date systems, or
 locale-sensitive inputs should be tested on each affected configuration. If a
@@ -449,7 +457,7 @@ What remains unverified?
 [ ] Caller-owned Excel state preserved
 [ ] Error and non-convergence behavior tested
 [ ] 32-bit / 64-bit impact assessed where relevant
-[ ] Debug > Compile VBAProject passed
+[ ] Relevant VBA compile result recorded if performed; final candidate compile remains #29
 [ ] Relevant automated and manual results recorded
 [ ] Performance evidence included for performance claims
 [ ] Documentation and CHANGELOG updated

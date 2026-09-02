@@ -3,7 +3,7 @@
 Every tracked VBA file in this repository must conform to the repository's
 Visual Basic Editor export format rather than being a hand-written
 approximation of one. This page is the procedure contributors must follow so
-that exported source, the repository static gate and a future Windows import
+that exported source, the repository static gate and Windows VBE import/export
 agree with each other.
 
 This page describes a text format and a manual procedure. It makes no claim that

@@ -1,7 +1,7 @@
 # KPR v0.0.2 date-layer behavioural contract
 
-Status: normative target contract for v0.0.2 implementation, registration,
-regression tests, demo material, and user documentation.
+Status: normative v0.0.2 contract for implementation, registration, regression
+tests, demo material, and user documentation.
 
 This document freezes observable behaviour. It and
 [the implementation plan](IMPLEMENTATION_PLAN.md) are complementary and
@@ -15,10 +15,13 @@ If descriptive material elsewhere conflicts with this document, this document
 governs v0.0.2 behaviour. A contract change requires an explicit, reviewed
 behavioural decision rather than an incidental implementation change.
 
-The pre-v0.0.2 `KPR_Dates_Days.bas` baseline does not yet conform to this
-contract. In particular, this document does not assert that the current VBA
-source imports, compiles, or passes regressions in Excel. Those claims require
-exact-source Windows Excel evidence under issue #29.
+The calculation work through issue #17 implements this contract. Static checks
+and the focused Excel results recorded on the closed implementation issues
+support those issue-level conclusions. That evidence is deliberately narrower
+than release certification: it does not make the current `main` branch a
+supported release or certify the final candidate's complete import,
+compilation, regression, UI, demo, and source round trip. Those exact-source
+claims remain owned by issue #29.
 
 ## 1. Scope and terminology
 

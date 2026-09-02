@@ -1,6 +1,10 @@
 # v0.0.2 implementation plan
 
-Status: approved for issue-driven implementation. No production implementation or release certification has started.
+Status: implementation in progress. Issues #9–#17 are closed; the normative
+contract, layered date cores, 22-name facade, strict parsing, caller/date-system
+policy, pillar behavior, array engine, and scalar/array wrappers are implemented.
+Registration and independent fixtures (#18–#19) are the next unblocked work.
+Candidate assembly and exact-source release certification have not started.
 
 - Milestone: [v0.0.2](https://github.com/danielep71/KPR/milestone/2)
 - Planning baseline: `main` at `54d64ab3624aa051b19f9677aa49a3782cd26c60`
@@ -50,9 +54,13 @@ The `KPR_Cal_*` namespace is reserved now. v0.0.2 creates no calendar placeholde
 | Pillar grammar | A unit appears at most once per token; a whole-token alias never carries a sign. |
 | Namespace | `KPR_Cal_*` is reserved for calendars. No calendar options are appended to pure date functions. |
 
-## Supported API target
+## Supported date API
 
-The following signatures are the target contract. All worksheet-reachable inputs and optional controls are `Variant` so native errors, blanks, ranges and arrays can be classified deliberately. Every public result is `Variant` so a native Excel error can be returned.
+The following signatures are both the target contract and the declarations now
+implemented in `KPR_DATES_DAYS.bas`. All worksheet-reachable inputs and optional
+controls are `Variant` so native errors, blanks, ranges and arrays can be
+classified deliberately. Every public result is `Variant` so a native Excel
+error can be returned.
 
 | # | Target signature | Successful scalar result |
 | ---: | --- | --- |
@@ -83,7 +91,7 @@ The following signatures are the target contract. All worksheet-reachable inputs
 than a date. That signature was revised after #9 by explicit review; the
 contract records the decision and its rationale.
 
-The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument and calls `Application.Volatile True` so ordinary recalculation refreshes the diagnostic. The other date functions remain non-volatile. `KPR_Dates_DateFromPillar` replaces the current plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
+The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument and calls `Application.Volatile True` so ordinary recalculation refreshes the diagnostic. The other date functions remain non-volatile. `KPR_Dates_DateFromPillar` replaces the pre-v0.0.2 plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
 
 ### Value and shape rules
 
@@ -124,7 +132,11 @@ The one public surface does not make scalar support depend on spill support. Sca
 - Rounded pillar conversion is deliberately not a general round-trip invariant.
 - Accepted-grammar rules are part of the pillar policy: a unit appears at most once per token, and a whole-token alias never carries a sign.
 
-## Production architecture
+## Target production architecture
+
+The first five calculation modules shown below are implemented. `KPR_Register`,
+the two UI modules, RibbonX, and the injection tool remain owned by #18 and
+#24–#25.
 
 ```text
 src/modules/
@@ -164,7 +176,7 @@ matching for export fidelity, compare VBA component names case-insensitively
 for project-wide uniqueness, and enforce public-function ownership by module
 role case-insensitively.
 
-## Registration and Excel UI
+## Registration and Excel UI target
 
 - `Application.MacroOptions` uses one category only: `KPR Dates`.
 - One manifest covers exactly the 22 supported names, function descriptions and argument descriptions.
@@ -174,7 +186,7 @@ role case-insensitively.
 - CommandBars use stable KPR ownership tags, remove stale KPR controls before rebuilding, and tolerate repeated teardown.
 - Release UI exposes registration and demo actions. Regression actions, if present, are development-only.
 
-## Regression architecture
+## Regression architecture target
 
 ```text
 test/modules/
@@ -215,7 +227,7 @@ Coverage includes accepted and rejected inputs, serial limits and serial 60, lea
 
 Schemas and templates are tracked under `test/evidence/`. Actual runs are written under ignored `test-results/` and attached to the final certification issue and pre-release. Evidence identifies the exact tested SHA; it is not committed back into that same candidate and therefore does not create an evidence/SHA recursion.
 
-## Demo strategy
+## Demo strategy target
 
 `demo/modules/KPR_Demo_Dates.bas` deterministically builds a new demonstration workbook in the current controlled Excel application and saves only to an explicit output path. The builder is authoritative source. Generated `.xlsx`, `.xlsm`, `.xlam` and other Office binaries are never committed; a certified demo or add-in may be attached later as a release asset.
 
@@ -1449,18 +1461,22 @@ Commit the complete v0.0.2 release-candidate documentation and metadata before t
 - Document the `1900-03-01 .. 9999-12-31` window, strict ISO parsing, optional-argument rule, 100,000-element cap and three native-error categories.
 - Document the worksheet-Range date-system guard and the direct-VBA 1900 caller contract without any active-workbook fallback.
 - State explicitly that calendars are v0.0.3 scope and business-day arithmetic/roll conventions are v0.0.4 scope.
-- Correct the v0.0.1 changelog wording that describes a "scalar date and business-day source baseline"; v0.0.1 was repository setup only.
+- Preserve the corrected v0.0.1 history: it was repository setup only, not a scalar date or business-day functional baseline.
 - Reconcile `CHANGELOG.md` with all post-v0.0.1 changes and prepare the v0.0.2 entry.
 - Set `VERSION` to `0.0.2` only as part of the complete candidate.
 - Document how to regenerate fixtures/demo and run certification.
 - Keep generated Office binaries and final run output untracked.
 
+## Already landed
+
+A whole-repository Markdown audit corrected the current README, installation, contribution, security, contract and plan status; reconciled the tracked architecture with the implemented 22-name surface; and corrected the v0.0.1 history. #28 still owns the final candidate-wide documentation and metadata pass after its dependencies land.
+
 ## Acceptance criteria
 
 - [ ] Documentation and manifests describe exactly the implemented 22-name surface.
-- [ ] No page documents a spill twin or unsupported legacy multi-cell behavior.
-- [ ] No page claims calendar or business-day support in v0.0.2.
-- [ ] The v0.0.1 historical description is accurate without rewriting or moving its tag.
+- [x] No page documents a spill twin or unsupported legacy multi-cell behavior.
+- [x] No page claims calendar or business-day support in v0.0.2.
+- [x] The v0.0.1 historical description is accurate without rewriting or moving its tag.
 - [ ] `VERSION`, changelog and candidate scope agree.
 - [ ] All repository and Markdown checks pass at the candidate commit.
 - [ ] The candidate SHA is recorded for #29.

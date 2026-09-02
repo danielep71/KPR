@@ -57,12 +57,13 @@ KPR has not yet published its first supported release.
 | Version | Security status |
 |---|---|
 | `main` | Pre-release development; reports reviewed on a best-effort basis |
-| Tagged releases | None published yet |
+| `v0.0.1` | Repository-setup pre-release only; reports reviewed on a best-effort basis, with no supported functional API or binary |
+| Supported functional releases | None published yet |
 | Unofficial forks or repackaged binaries | Not supported by this project |
 
-Once releases begin, security support will normally apply to the latest tagged
-release. Older-release support, if any, will be stated explicitly here rather
-than inferred.
+Once supported functional releases begin, security support will normally apply
+to the latest such tagged release. Older-release support, if any, will be stated
+explicitly here rather than inferred from the existence of a repository tag.
 
 > [!WARNING]
 > Code on `main` may be incomplete, unvalidated, or incompatible without notice.

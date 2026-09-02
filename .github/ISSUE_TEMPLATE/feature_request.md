@@ -3,6 +3,7 @@ name: ✨ Feature or model proposal
 about: Propose a KPR financial model, analytical capability, convention, API, validation, or deployment improvement
 title: "[Feature]: "
 labels: enhancement
+assignees: danielep71
 ---
 
 <!--

@@ -73,10 +73,10 @@ KPR aims to sit between two unsatisfactory extremes:
 | A black-box pricing stack that is difficult to inspect from Excel | Transparent algorithms, attributable references, and reproducible tests |
 
 > [!IMPORTANT]
-> KPR is in early pre-release development. Its KPR-native source baseline has
-> begun, but it has no stable public API, supported installation package, or
-> production release yet. The scope described below is a development direction,
-> not a claim that every capability is already implemented.
+> KPR is in pre-release development. `main` contains the implemented v0.0.2
+> date-layer candidate, but it has no supported installation package or
+> production release yet. The wider scope described below is a development
+> direction, not a claim that every capability is already implemented.
 
 ---
 
@@ -99,9 +99,11 @@ KPR aims to sit between two unsatisfactory extremes:
 
 ## 🚧 Project status
 
-KPR is **pre-release**. The `v0.0.1` repository-setup pre-release certifies the
-governance, automation, and KPR-native source baseline; the first supported
-analytical surface has not yet been frozen.
+KPR is **pre-release**. The `v0.0.1` tag records repository setup only. The
+v0.0.2 date-layer contract is frozen and its 22-name calculation surface is
+implemented on `main`; registration, complete generated fixtures and evidence,
+UI integration, demo assembly, and exact-candidate certification are still in
+progress.
 
 ### Status legend
 
@@ -109,7 +111,7 @@ analytical surface has not yet been frozen.
 ✅ Established     present and usable as repository policy
 🚧 In progress     actively being defined or migrated
 🧭 Target          planned direction; not yet a supported contract
-—  Not published  no supported artifact or public surface exists yet
+—  Not published  no supported functional release artifact or API exists yet
 ```
 
 ### Current baseline
@@ -117,16 +119,35 @@ analytical surface has not yet been frozen.
 | Area | Status | Boundary |
 |---|---:|---|
 | Repository identity and governance | ✅ | KPR-native README, conduct, contribution, security, and changelog baselines |
-| Stable public API | — | No API is frozen or supported yet |
-| KPR analytical source | 🚧 | Source structure and first foundation modules are not yet release-certified |
+| Date-layer contract | ✅ | The normative v0.0.2 behavior and exact 22-name surface are frozen in [`docs/DATE_LAYER_CONTRACT.md`](docs/DATE_LAYER_CONTRACT.md) |
+| Supported release API | — | The implemented date surface is still an untagged candidate, not a supported functional release |
+| KPR analytical source | 🚧 | Gregorian primitives, strict parsing, host/date-system policy, pillar conversion, and scalar/array wrappers are implemented but not release-certified |
 | Numerical reference sets | 🧭 | Evidence format and provenance will be defined with each analytical surface |
-| Regression harness | 🧭 | No KPR-wide certified regression result is published yet |
+| Regression harness | 🚧 | Focused scalar, host, pillar, surface, shape, and parity suites exist; complete generated fixtures and release evidence remain open work |
 | Installable workbook or add-in | — | No official package is available |
 | Tagged release | ✅ | [`v0.0.1`](https://github.com/danielep71/KPR/releases/tag/v0.0.1) certifies repository setup only; no functional production release exists |
 
 > [!WARNING]
 > Files on `main` are development material. Do not describe them as a supported
 > KPR release or use them as the sole basis for a material financial decision.
+
+### Current v0.0.2 development surface
+
+- `KPR_DATES_DAYS.bas` exposes exactly 22 `KPR_Dates_*` functions.
+- The 21 value-taking functions share one scalar/array-capable surface;
+  `KPR_Dates_HostDateSystem()` remains scalar-only.
+- Text dates accept ISO `YYYY-MM-DD` only, and the supported date window is
+  `1900-03-01 .. 9999-12-31`.
+- Multi-cell behavior is claimed only for dynamic-array Excel; no legacy CSE
+  claim is made.
+- Focused Windows Excel results for the implemented array surface are recorded
+  on issue [#17](https://github.com/danielep71/KPR/issues/17). They support that
+  issue's closure but do not replace the final exact-source certification owned
+  by issue [#29](https://github.com/danielep71/KPR/issues/29).
+
+See the [date-layer contract](docs/DATE_LAYER_CONTRACT.md) for behavior and the
+[implementation plan](docs/IMPLEMENTATION_PLAN.md) for remaining scope and
+sequencing.
 
 ---
 
@@ -236,8 +257,11 @@ A VBA member being technically `Public` does not automatically make it supported
 consumer API. Excel UDF resolution, RibbonX, `Application.Run`, callbacks, tests,
 or packaging may require public visibility for infrastructure members.
 
-The eventual supported API will be documented explicitly. Everything else must
-be treated as internal and changeable until stated otherwise.
+The v0.0.2 candidate calculation API is documented explicitly in the
+[date-layer contract](docs/DATE_LAYER_CONTRACT.md). Everything outside that
+22-name surface is infrastructure or internal implementation unless separately
+classified. No candidate API becomes a supported release merely by existing on
+`main`.
 
 ---
 
@@ -325,9 +349,20 @@ KPR/
 │  └─ PULL_REQUEST_TEMPLATE.md
 ├─ assets/
 │  └─ social-preview.png      archive-safe README and social-preview source
+├─ docs/
+│  ├─ DATE_LAYER_CONTRACT.md  normative v0.0.2 behavior
+│  ├─ IMPLEMENTATION_PLAN.md  scope, sequencing, and milestone register
+│  └─ VBE_EXPORT.md           VBE export/import format
 ├─ src/
 │  └─ modules/
-│     └─ KPR_Dates_Days.bas   first KPR-native foundation module
+│     ├─ KPR_Core_Err.bas     condition and native-error policy
+│     ├─ KPR_Core_Parse.bas   strict scalar parsing and host classification
+│     ├─ KPR_Core_Dates.bas   pure Gregorian and pillar calculations
+│     ├─ KPR_Core_Array.bas   shape, broadcasting, and materialization services
+│     └─ KPR_DATES_DAYS.bas   22-name worksheet-facing date facade
+├─ test/
+│  └─ modules/
+│     └─ KPR_REGRESSION_TESTS.bas
 ├─ tools/
 │  └─ check_repo.py           static gate and self-test harness
 ├─ VERSION                     machine-readable current version
@@ -343,10 +378,11 @@ KPR/
 └─ LICENSE                      MIT License
 ```
 
-The tracked tree is now KPR-native. `KPR_Dates_Days.bas` is development source,
-not a release-certified API. Repository tooling is active; future test, demo,
-evidence, and packaging directories will be added only when their corresponding
-contracts are defined.
+The tracked tree is KPR-native. `KPR_DATES_DAYS.bas` and its four cores are
+development source, not a release-certified package. The current regression
+module is focused development infrastructure; generated fixtures, final
+evidence, demo, registration, and UI files will be added only by their owning
+milestone issues.
 
 ---
 
@@ -381,8 +417,9 @@ No supported KPR installation package exists yet.
 > Do not install or redistribute development files from `main` as an official
 > KPR workbook or add-in.
 
-The [Installation Guide](INSTALLATION.md) has been reset and will be completed
-when the first release candidate defines:
+The [Installation Guide](INSTALLATION.md) currently provides contributor-only
+source-import guidance and will be completed when the first installable release
+candidate defines:
 
 - supported Excel and Windows versions;
 - source-import and/or add-in deployment;
@@ -428,14 +465,14 @@ architectural work, open an issue before implementation.
 
 The intended sequence is dependency-led:
 
-1. certify the KPR repository baseline and dates contract;
-2. establish calendars, conventions, and schedule contracts;
-3. establish rate mathematics and numerical primitives;
-4. add cash-flow and curve representations;
-5. add instruments only with independent references and contract tests;
-6. build a reproducible demo and distribution artifact; and
-7. publish the first functional tagged release with installation and validation
-   evidence.
+1. complete and certify v0.0.2 date primitives and their Excel integration;
+2. add calendars, weekend masks, holiday sets, and composition in v0.0.3;
+3. add business-day arithmetic and roll conventions in v0.0.4;
+4. establish rate mathematics and numerical primitives;
+5. add cash-flow and curve representations;
+6. add instruments only with independent references and contract tests; and
+7. publish functional releases with reproducible demos, installation guidance,
+   and exact-source validation evidence.
 
 This sequence may change as design work and evidence reveal better boundaries.
 
@@ -448,8 +485,8 @@ notes in [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
 
 [`v0.0.1`](https://github.com/danielep71/KPR/releases/tag/v0.0.1) is published
 as a repository-setup pre-release. It certifies governance, automation, and the
-source baseline; it is not a functional or production-ready release and does
-not provide a supported installation package. See
+repository baseline; it is not a functional or production-ready release and
+does not provide a supported installation package. See
 [CHANGELOG.md](CHANGELOG.md).
 
 ---

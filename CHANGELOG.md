@@ -25,7 +25,8 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   resolution, a 100,000-element capacity gate decided from dimensions before
   any content is read, row-major element access, output allocation, and
   control unwrapping that reports `CONTROL_NOT_SCALAR` without reading a
-  multi-element control. No public behaviour changes; #17 wires the facade.
+  multi-element control. The 21 value-taking facade wrappers use these services
+  while retaining their shared element implementations.
 - A static purity rule forbidding Excel state, host classification,
   function-pointer dispatch and date intrinsics in the engine.
 
@@ -34,7 +35,7 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   boundaries provided by `KPR_Core_Dates`.
 - A private element implementation behind every value-taking public
   function, so the scalar call is the 1x1 case of the same code the array
-  engine will loop. Elements resolve their own value arguments in signature
+  engine loops. Elements resolve their own value arguments in signature
   order and never run the host guard.
 - An exact-inventory static rule: the facade must declare precisely the 22
   supported names, so a missing member, an extra `KPR_Dates_*` name, the
@@ -92,6 +93,12 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Changed
 
+- Reconciled the README, installation, contribution, security, contract, and
+  implementation-plan status with the implemented v0.0.2 date surface while
+  preserving #29 as the only final exact-source certification gate.
+- Corrected the v0.0.1 history to describe repository setup only, not a
+  functional date or business-day baseline.
+
 - A multi-cell optional control now reports `CONTROL_NOT_SCALAR` rather than
   the generic shape rejection, from its dimensions alone.
 
@@ -104,7 +111,7 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   error as a `#VALUE!` condition; the containment handlers are a defect if
   reached, not a documented outcome.
 
-- An incoming Excel error at the `Pillar` argument of `DatesFromPillar` now
+- An incoming Excel error at the `Pillar` argument of `DateFromPillar` now
   propagates verbatim instead of being rejected as a non-text payload.
 - Pillar text and rounding tokens are normalized by ASCII-only case folding
   and trimming rather than `UCase$`/`Trim$`, so the result is identical under
@@ -161,8 +168,8 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
-- A KPR-native scalar date and business-day source baseline with native Excel
-  error returns.
+- A KPR-native repository identity and source-first project structure, without
+  a supported analytical or business-day API.
 - Premium KPR governance, contribution, installation, security, pull-request,
   bug-report, and feature-request documentation.
 - A canonical 23-label manifest with a self-healing GitHub label workflow.
