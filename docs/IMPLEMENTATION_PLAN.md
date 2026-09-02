@@ -1,10 +1,30 @@
-# v0.0.2 implementation plan
+<div align="center">
 
-Status: implementation in progress. Issues #9–#17 are closed; the normative
-contract, layered date cores, 22-name facade, strict parsing, caller/date-system
-policy, pillar behavior, array engine, and scalar/array wrappers are implemented.
-Registration and independent fixtures (#18–#19) are the next unblocked work.
-Candidate assembly and exact-source release certification have not started.
+# 🗺️ v0.0.2 Implementation Plan
+
+### Delivery map for KPR's first functional date-primitive layer
+
+**Frozen decisions · Layered architecture · Deterministic regression · Exact-source certification**
+
+<br>
+
+![Milestone](https://img.shields.io/badge/Milestone-v0.0.2-217346?style=for-the-badge)
+![Status](https://img.shields.io/badge/Status-Implementation_In_Progress-d97706?style=for-the-badge)
+![Issues](https://img.shields.io/badge/Issue_Register-%239--%2329-0969da?style=for-the-badge)
+![Surface](https://img.shields.io/badge/Public_Surface-22_Functions-6f42c1?style=for-the-badge)
+![Certification](https://img.shields.io/badge/Release_Gate-Windows_Excel-2ea44f?style=for-the-badge&logo=microsoft-excel&logoColor=white)
+
+</div>
+
+---
+
+> [!NOTE]
+> **Status:** implementation in progress. Issues #9–#17 are closed; the
+> normative contract, layered date cores, 22-name facade, strict parsing,
+> caller/date-system policy, pillar behavior, array engine, and scalar/array
+> wrappers are implemented. Registration and independent fixtures (#18–#19)
+> are the next unblocked work. Candidate assembly and exact-source release
+> certification have not started.
 
 - Milestone: [v0.0.2](https://github.com/danielep71/KPR/milestone/2)
 - Planning baseline: `main` at `54d64ab3624aa051b19f9677aa49a3782cd26c60`
@@ -12,7 +32,7 @@ Candidate assembly and exact-source release certification have not started.
 - Published protected baseline: `v0.0.1` at `abf38786eb48b3db1edced8ae26c756d9c7f5328`
 - Version before candidate assembly: `0.0.1`
 
-## Authority
+## 🧭 Authority
 
 This plan and [the date-layer behavioural contract](DATE_LAYER_CONTRACT.md) are
 complementary and non-overlapping in authority:
@@ -21,13 +41,17 @@ complementary and non-overlapping in authority:
 - the contract governs observable behaviour; and
 - where both state a behavioural rule, the contract governs.
 
-## Goal
+## 🎯 Goal
 
 Deliver the first functional KPR date layer as a source-first pre-release: pure Gregorian date primitives, strict parsing, one scalar/array-capable public surface, registration and Excel UI infrastructure, deterministic tests, a reproducible demo builder, and exact-source Windows Excel certification.
 
-The milestone is not complete merely because hosted static checks pass. It may be tagged and published only after the exact candidate source has been imported, compiled and executed successfully in Windows Excel and the evidence has been attached.
+> [!IMPORTANT]
+> The milestone is not complete merely because hosted static checks pass. It
+> may be tagged and published only after the exact candidate source has been
+> imported, compiled and executed successfully in Windows Excel and the
+> evidence has been attached.
 
-## Milestone sequence and boundaries
+## 🪜 Milestone sequence and boundaries
 
 | Milestone | Scope |
 | --- | --- |
@@ -37,7 +61,7 @@ The milestone is not complete merely because hosted static checks pass. It may b
 
 The `KPR_Cal_*` namespace is reserved now. v0.0.2 creates no calendar placeholder modules, includes no weekend masks or holiday arguments, and performs no business-day calculations.
 
-## Frozen design decisions
+## 🔒 Frozen design decisions
 
 | Area | v0.0.2 decision |
 | --- | --- |
@@ -54,7 +78,7 @@ The `KPR_Cal_*` namespace is reserved now. v0.0.2 creates no calendar placeholde
 | Pillar grammar | A unit appears at most once per token; a whole-token alias never carries a sign. |
 | Namespace | `KPR_Cal_*` is reserved for calendars. No calendar options are appended to pure date functions. |
 
-## Supported date API
+## 🧩 Supported date API
 
 The following signatures are both the target contract and the declarations now
 implemented in `KPR_DATES_DAYS.bas`. All worksheet-reachable inputs and optional
@@ -93,7 +117,7 @@ contract records the decision and its rationale.
 
 The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` remains scalar because it has no value argument and calls `Application.Volatile True` so ordinary recalculation refreshes the diagnostic. The other date functions remain non-volatile. `KPR_Dates_DateFromPillar` replaces the pre-v0.0.2 plural `KPR_Dates_DatesFromPillar`; this pre-release retains no compatibility alias.
 
-### Value and shape rules
+### 📐 Value and shape rules
 
 - Value arguments may be scalar, a `1×1` wrapper, a Range or a one-/two-dimensional in-memory array.
 - A scalar or `1×1` expands to the target shape. Multiple non-scalar value arguments must have exactly the same row and column dimensions.
@@ -103,7 +127,7 @@ The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` re
 - Element validation and incoming errors are isolated per element. A target-shape mismatch, invalid non-scalar `Opt_` argument, excessive target size or unavailable worksheet host is a call-level result.
 - Blank required values and `Empty` are contract-invalid. `Null`, Boolean and disallowed object inputs are rejected. Numeric-looking strings are never reinterpreted as serials.
 
-### Caller and date-system rules
+### 🖥️ Caller and date-system rules
 
 `Application.Caller` is used only to distinguish the contexts that actually carry serial-date ambiguity:
 
@@ -116,11 +140,11 @@ The first 21 functions are scalar/array-capable. `KPR_Dates_HostDateSystem()` re
 
 A library-produced host-configuration `#N/A` and a propagated incoming `#N/A` are the same Excel error value. Provenance cannot be recovered from that value alone. For an identifiable worksheet caller, volatile `HostDateSystem()` supplies the context: `1904` identifies host refusal, while `1900` leaves propagation or another documented input condition as the source.
 
-### Dynamic-array policy
+### 🧮 Dynamic-array policy
 
 The one public surface does not make scalar support depend on spill support. Scalar calls are tested on every Excel version for which scalar compatibility is claimed. Multi-cell calls are tested and claimed only on dynamic-array Excel. v0.0.2 makes no Ctrl+Shift+Enter compatibility claim, performs no version detection, and does not manufacture `#SPILL!`.
 
-### Pillar policy
+### 🧱 Pillar policy
 
 - Absolute intervals shorter than seven days remain exact day pillars.
 - Whole-week and calendar-month anchors are computed from the start date.
@@ -132,7 +156,7 @@ The one public surface does not make scalar support depend on spill support. Sca
 - Rounded pillar conversion is deliberately not a general round-trip invariant.
 - Accepted-grammar rules are part of the pillar policy: a unit appears at most once per token, and a whole-token alias never carries a sign.
 
-## Target production architecture
+## 🏗️ Target production architecture
 
 The first five calculation modules shown below are implemented. `KPR_Register`,
 the two UI modules, RibbonX, and the injection tool remain owned by #18 and
@@ -176,7 +200,7 @@ matching for export fidelity, compare VBA component names case-insensitively
 for project-wide uniqueness, and enforce public-function ownership by module
 role case-insensitively.
 
-## Registration and Excel UI target
+## 🧰 Registration and Excel UI target
 
 - `Application.MacroOptions` uses one category only: `KPR Dates`.
 - One manifest covers exactly the 22 supported names, function descriptions and argument descriptions.
@@ -186,7 +210,7 @@ role case-insensitively.
 - CommandBars use stable KPR ownership tags, remove stale KPR controls before rebuilding, and tolerate repeated teardown.
 - Release UI exposes registration and demo actions. Regression actions, if present, are development-only.
 
-## Regression architecture target
+## 🧪 Regression architecture target
 
 ```text
 test/modules/
@@ -227,13 +251,13 @@ Coverage includes accepted and rejected inputs, serial limits and serial 60, lea
 
 Schemas and templates are tracked under `test/evidence/`. Actual runs are written under ignored `test-results/` and attached to the final certification issue and pre-release. Evidence identifies the exact tested SHA; it is not committed back into that same candidate and therefore does not create an evidence/SHA recursion.
 
-## Demo strategy target
+## 🎬 Demo strategy target
 
 `demo/modules/KPR_Demo_Dates.bas` deterministically builds a new demonstration workbook in the current controlled Excel application and saves only to an explicit output path. The builder is authoritative source. Generated `.xlsx`, `.xlsm`, `.xlam` and other Office binaries are never committed; a certified demo or add-in may be attached later as a release asset.
 
 The demo uses the single public function surface for both scalar and array examples. It shows supported behavior, native errors and array shapes without claiming calendar support, business-day support, production readiness, legacy CSE use or any untested Excel version.
 
-## Planned plan/register controls
+## 🔄 Planned plan/register controls
 
 Issue #27 will add `docs/IMPLEMENTATION_PLAN.md` to the required-file inventory and will implement `tools/sync_milestone_register.py`. Neither control exists in the current static gate.
 
@@ -246,7 +270,7 @@ The implementation deliberately separates deterministic tree validation from mut
 - The separate workflow will remain outside the deterministic required-status gate. A fresh `CURRENT` result will nevertheless be required at candidate assembly and immediately before tagging.
 - Neither control will claim Excel import, compilation or execution.
 
-## Delivery phases
+## 🚚 Delivery phases
 
 | Phase | Outcome | Issues |
 | --- | --- | --- |
@@ -260,7 +284,7 @@ The implementation deliberately separates deterministic tree validation from mut
 
 Parallel work is allowed only where the issue dependency list permits it. The `blocked` label remains on a dependent issue until its prerequisites are satisfied.
 
-## Proportionate issue verification
+## ✅ Proportionate issue verification
 
 Issues #9 through #28 close from source-controlled evidence: the implemented
 diff, acceptance-criterion reconciliation, deterministic static checks and the
@@ -283,7 +307,7 @@ import, compile, regression and UI outcomes. Source round-trip comparison,
 static API/manifest checks and machine-readable regression output provide the
 evidence; routine compile and function-list screenshots are not required.
 
-## Exit gate
+## 🚦 Exit gate
 
 - The 21 v0.0.2 issues are complete, or issue #29 is the sole remaining issue while exact-source evidence is assembled.
 - The 22-name supported surface, MacroOptions manifest, documentation and static inventory agree exactly; no duplicate spill API or calendar placeholder exists.
@@ -305,7 +329,7 @@ evidence; routine compile and function-list screenshots are not required.
 - Evidence is attached to issue #29 and the pre-release, identifying the exact tested SHA and Excel/Windows environment.
 - Only after every gate passes may the protected `v0.0.2` tag and GitHub pre-release be created from the certified SHA.
 
-## Milestone issue register
+## 📋 Milestone issue register
 
 This terminal register is the canonical output format for the drift-controlled renderer specified in issue #27. It is intentionally complete: every issue includes its current title, state, assignee, labels, URL and full body. Because the register must remain the end of this document, issue #29 is the final issue content.
 
