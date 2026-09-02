@@ -248,6 +248,29 @@ The implementation deliberately separates deterministic tree validation from mut
 
 Parallel work is allowed only where the issue dependency list permits it. The `blocked` label remains on a dependent issue until its prerequisites are satisfied.
 
+## Proportionate issue verification
+
+Issues #9 through #28 close from source-controlled evidence: the implemented
+diff, acceptance-criterion reconciliation, deterministic static checks and the
+relevant focused tests. When an intermediate change is exercised in Excel, a
+concise result is sufficient. Intermediate issue closure does not require:
+
+- a statement or screenshot proving that modules came from a named SHA and
+  were imported into a newly created workbook;
+- a screenshot of a disabled or greyed `Debug > Compile VBAProject` command;
+  or
+- an Insert Function / Function Wizard screenshot listing the public surface.
+
+Screenshots are requested only when visual Excel behavior is itself the subject
+of the issue, such as a Ribbon or CommandBars rendering defect. They are not
+generic proof of source identity, successful compilation or API completeness.
+
+Issue #29 remains the single exact-source Windows certification gate. Its
+structured record identifies the candidate SHA and environment and records the
+import, compile, regression and UI outcomes. Source round-trip comparison,
+static API/manifest checks and machine-readable regression output provide the
+evidence; routine compile and function-list screenshots are not required.
+
 ## Exit gate
 
 - The 21 v0.0.2 issues are complete, or issue #29 is the sole remaining issue while exact-source evidence is assembled.
@@ -570,7 +593,10 @@ Only this diagnostic is deliberately volatile; the date calculations remain non-
 
 - A pure `host` suite in `KPR_REGRESSION_TESTS` asserts the direct-VBA path and `#N/A` provenance and joins the worksheet-callable dispatcher.
 - A separate macro-only runner, `KPR_Tests_RunHost`, exercises the real worksheet-`Range` caller path. It creates a scratch workbook and holds its exact object reference, uses source-workbook-qualified formulas with the name escaped, tests 1900 and then toggles the same workbook to 1904 under ordinary calculation, verifies `HostDateSystem` reports `1900`, `1904` and `1900` again, verifies value functions proceed under 1900 and return call-level `#N/A` under 1904, keeps separate labels for host-produced and propagated `#N/A`, closes only the exact scratch workbook with `SaveChanges:=False`, and guarantees cleanup on every exit path. It is deliberately not reachable from `KPR_Tests_RunAll`, which is worksheet-callable and cannot legally add or close a workbook. Formulas use ISO text so the runner tests caller classification, not serial interpretation.
-- The runner does not replace manual evidence: the Immediate-window probe is recorded in Windows Excel by hand, and #13 does not close until the exact final SHA has been imported, compiled and the focused probes executed.
+- The focused runner and concise reported Excel result are sufficient for #13.
+  Intermediate closure does not require a clean-project provenance statement,
+  compile-menu screenshot or other screenshot-based attestation. Exact-source
+  final-candidate certification remains #29.
 
 ## Error taxonomy and provenance
 
@@ -587,7 +613,11 @@ The contract deliberately does not define an `INTERNAL_UNEXPECTED` condition ide
 
 ## Validation boundary
 
-#13 closes on the date-system implementation plus focused exact-source Windows Excel evidence for the scalar caller paths available at that commit. #17 and #21 own array integration and full regression coverage; #29 owns final-candidate certification and the unsupported-context probe matrix.
+#13 closes on the date-system implementation, deterministic static checks and
+the focused scalar caller-path tests. A concise Excel result may supplement
+those checks without screenshot or import-provenance requirements. #17 and #21
+own array integration and full regression coverage; #29 owns exact-source
+final-candidate certification and the unsupported-context probe matrix.
 
 ## Acceptance criteria
 
@@ -709,6 +739,13 @@ These landed changes reduce #15's remaining work but do not complete the final 2
 ## Static transition control
 
 Until #26 replaces the hard-coded inventory with the public-API manifest, the static gate must require the exact 22-name facade set and reject the legacy plural pillar name, any additional `KPR_Dates_*` worksheet function and every `_Spill` twin. This is a temporary source-declaration assertion, not early implementation of #26's classification manifest.
+
+## Verification boundary
+
+Close #15 from the pushed source diff, the static gate and the focused surface
+suite. A concise Excel compile/regression result may be recorded when available;
+no clean-workbook provenance statement, disabled-Compile screenshot or Function
+Wizard screenshot is required. Final exact-source certification remains #29.
 
 ## Acceptance criteria
 
@@ -1427,6 +1464,13 @@ Certify the exact v0.0.2 candidate in real Windows Excel and publish only if eve
 - Export the imported VBA source again and compare the normalized round trip.
 - Record Excel/Windows environment, exact SHA, caller contexts, case totals and failures using the committed evidence schema.
 - Keep run records under ignored `test-results/` and attach them to this issue and the GitHub pre-release.
+
+Evidence is structured rather than screenshot-driven. Recording the exact
+candidate SHA and the import/compile/test outcomes is required, but a screenshot
+of a disabled `Debug > Compile VBAProject` command or an Insert Function /
+Function Wizard list is not. The normalized source round trip, static
+API/manifest checks and regression artifacts are the authoritative evidence.
+Screenshots are retained only when a visual UI behavior is itself under test.
 
 ## Caller-context probe and not-covered statement
 
