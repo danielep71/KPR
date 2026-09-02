@@ -857,14 +857,14 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 
 ## Implementation status
 
-Implementation landed on `main` in `a750cd5a935529b807c43631e92cd9f1b15ee8b3`. The 21 value-taking wrappers now use the staged array path, `TryClassifyShape` preserves the contract's call-level ordering, controls resolve through `TryUnwrapControl`, and the focused parity and dynamic-array runners are present. Static validation proves the structural criteria; closure still requires the focused Excel executions below.
+Implementation landed on `main` in `a750cd5a935529b807c43631e92cd9f1b15ee8b3`. The 21 value-taking wrappers use the staged array path, `TryClassifyShape` preserves the contract's call-level ordering, controls resolve through `TryUnwrapControl`, and the focused parity and dynamic-array runners are present.
 
-Required focused result before closure:
+Focused results used for closure:
 
-- `KPR_Tests_Run`: zero failures on the complete dispatched suites; and
+- `KPR_Tests_Run`: 557 checks and zero failures; and
 - `KPR_Tests_RunArray`: dynamic-array API `SUPPORTED`, seven checks and zero failures.
 
-A host without the dynamic-array API reports `NOT_AVAILABLE` and cannot close this issue, because v0.0.2's multi-cell claim is deliberately limited to dynamic-array Excel.
+A host without the dynamic-array API reports `NOT_AVAILABLE` and would not satisfy this issue, because v0.0.2's multi-cell claim is deliberately limited to dynamic-array Excel.
 
 ## Implementation contract
 
