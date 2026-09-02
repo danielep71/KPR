@@ -12,10 +12,12 @@ Attribute VB_Name = "KPR_Core_Err"
 ' WHY THIS EXISTS
 '   The pre-split baseline constructed CVErr(xlErrValue) and CVErr(xlErrNum)
 '   inline at forty call sites. That made the error surface impossible to audit
-'   and impossible to change coherently. Centralizing construction is the first
-'   step; the behavioural error policy itself is owned by issue #13.
+'   and impossible to change coherently. Centralized construction plus one
+'   condition-to-error mapper makes the complete error policy auditable here.
 '
 ' SCOPE
+'   - KPR_Condition   stable condition vocabulary from contract section 7
+'   - ErrForCondition condition-to-native-error mapping
 '   - ErrValue   #VALUE!
 '   - ErrNum     #NUM!
 '   - ErrNA      #N/A
@@ -36,8 +38,9 @@ Attribute VB_Name = "KPR_Core_Err"
 '   surface it touches.
 '
 ' NOTES
-'   - ErrNA is provided but not yet called. Host-configuration #N/A arrives
-'     with KPR_Dates_HostDateSystem in issue #13.
+'   - ErrNA is used for HOST_DATE1904 and HOST_UNRESOLVED. It is constructed
+'     here just like #VALUE! and #NUM!, so the library-originated error surface
+'     remains centralized.
 '   - Incoming errors are detected at the public/element boundary and returned
 '     verbatim without passing through this module. ErrForCondition deliberately
 '     refuses propagation identifiers so a discarded incoming value cannot be
@@ -269,7 +272,8 @@ Public Function ErrForCondition( _
 '
 ' RETURNS
 '   Variant
-'     CVErr(xlErrValue) or CVErr(xlErrNum), per section 7 of the contract.
+'     CVErr(xlErrValue), CVErr(xlErrNum) or CVErr(xlErrNA), per section 7 of
+'     the contract.
 '
 ' ERROR POLICY
 '   Raises KPR_ERR_UNMAPPED_CONDITION for KPR_COND_NONE, for the propagation
@@ -289,7 +293,7 @@ Public Function ErrForCondition( _
 '     through this mapper: it is returned verbatim at the boundary.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 

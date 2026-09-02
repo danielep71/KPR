@@ -3,19 +3,19 @@ Attribute VB_Name = "KPR_Core_Array"
 ' MODULE: KPR_Core_Array
 '------------------------------------------------------------------------------
 ' PURPOSE
-'   Internal boundary for input shape: classifying an argument's shape and
-'   unwrapping a single-valued wrapper down to the scalar it carries.
+'   Internal boundary for input shape: classification, scalar/control
+'   unwrapping, capacity gating, materialization, exact-shape broadcasting and
+'   output allocation.
 '
 ' WHY THIS EXISTS
 '   The pre-split baseline mixed three concerns inside Parse_Date: unwrapping
 '   shape, converting a scalar to a Date, and gating the supported window.
 '   Shape lives here, value conversion lives in KPR_Core_Parse, and the window
-'   belongs to the calendar domain in KPR_Core_Dates. Separating them is what
-'   allows the array engine in issue #16 to traverse shapes without duplicating
-'   value parsing.
+'   belongs to the date domain in KPR_Core_Dates. Their separation lets the
+'   facade traverse shapes without duplicating value parsing.
 '
 ' SCOPE
-'   Shape services for the single public surface (issue #16):
+'   Shape services for the worksheet-facing date facade:
 '
 '   - Array_Rank          true array rank, 0 through 60
 '   - TryUnwrapScalar     single-cell Range and 1x1 array unwrapping (scalar path)
@@ -33,14 +33,13 @@ Attribute VB_Name = "KPR_Core_Array"
 '   unwrapping ONLY. It contains no date algorithm, never classifies the host,
 '   and performs no function-pointer dispatch: VBA has no clean way to call an
 '   element implementation from here, so the per-element loop lives in the
-'   facade (#17) and calls these services. #16 changes no public behaviour.
+'   facade and calls these services.
 '
 ' ORDER OF OPERATIONS THE FACADE MUST KEEP
 '   1. PassHostGuard first. A Range in a 1904 workbook must be refused BEFORE
 '      it is materialized: once Value2 has been read, its serials are in hand
 '      and nothing downstream can tell they meant something else. The engine
-'      never sees the guard by design, so this ordering is the facade's duty
-'      and #17 depends on it.
+'      never sees the guard by design, so this ordering is the facade's duty.
 '   2. TryClassifyShape EVERY value argument, so an unsupported shape anywhere
 '      in the argument list is reported before anything else.
 '   3. Resolve Opt_ controls with TryUnwrapControl, which never reads the
@@ -293,12 +292,12 @@ Public Function TryUnwrapScalar( _
 '   - The wrapped-object rejection is a guard rather than a migrated rule. The
 '     baseline had no equivalent, because its own Let copy meant an object
 '     element was dereferenced before anything could test it.
-'   - Rejecting a multi-element input is the baseline's scalar-only contract,
-'     migrated unchanged. Issue #16 replaces rejection with traversal; this
-'     routine keeps its meaning and becomes the 1x1 case of that engine.
+'   - This helper is deliberately scalar-only. Multi-element value arguments
+'     are handled by TryMaterialize plus facade traversal; element resolvers
+'     use this routine as the defensive 1x1 boundary.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
@@ -607,7 +606,7 @@ Public Function TryMaterialize( _
 '     after the gate. An element that is itself an array makes the input
 '     jagged: SHAPE_UNSUPPORTED.
 '   - Empty, Null and error elements are preserved at their positions. The
-'     engine does not interpret them; #17 parses per element.
+'     engine does not interpret them; the facade parses each element.
 '   - A multi-area Range, a zero-element array, a rank above 2, and any
 '     non-Range object are SHAPE_UNSUPPORTED.
 '

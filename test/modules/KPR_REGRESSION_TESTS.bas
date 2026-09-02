@@ -4,11 +4,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '------------------------------------------------------------------------------
 ' PURPOSE
 '   Deterministic regression suites for the KPR date layer, launched from one
-'   entry point.
-'
-'   This revision covers the scalar input contract implemented in
-'   KPR_Core_Parse: every accepted and rejected scalar input class named in
-'   sections 3.1, 3.2, 3.3 and 7 of the date-layer contract.
+'   dispatcher, plus separate macro-only runners for host, Range-shape and
+'   dynamic-array behavior.
 '
 ' SUITE REGISTRY
 '   KPR_Tests_RunAll dispatches to the suites below. Passing a suite name runs
@@ -25,15 +22,15 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                     and #N/A provenance
 '       pillar        rounding modes, the derived 3W / 1M boundary, the week
 '                     cap, grammar conditions and format/parse consistency
-'       surface       the five members added by #15, the YearIn conversions,
+'       surface       the completed 22-name surface, YearIn conversions,
 '                     the singular pillar name and the window floor boundaries
-'       shape         the #16 array engine services on in-memory inputs:
+'       shape         array-engine services on in-memory inputs:
 '                     classification, 1xN, broadcasting, capacity, elements
-'       parity        #17: every value argument of every value-taking function
-'                     vectorized, element-for-element against the scalar call
+'       parity        every value argument of every value-taking function,
+'                     vectorized element-for-element against the scalar call
 '
-'   Later issues add suites by writing one Private Sub and one Case line. The
-'   dispatcher is deliberately the only shared machinery.
+'   A suite is added by writing one Private Sub and one Case line. The
+'   dispatcher remains the only shared routing machinery.
 '
 ' SCOPE
 '   - Condition classification is asserted directly against KPR_Core_Parse, so a
@@ -55,7 +52,7 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '       KPR_Tests_RunAll()            returns a two-column array for a worksheet
 '                                     or for programmatic use
 '
-'   And one stateful entry point that is deliberately NOT reachable from the
+'   Three stateful entry points are deliberately NOT reachable from the
 '   dispatcher above:
 '
 '       KPR_Tests_RunHost             creates a scratch workbook, exercises the
@@ -82,8 +79,10 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '   Immediate window and cannot appear in the macro list. Use KPR_Tests_Run
 '   there. On a worksheet, enter =KPR_Tests_RunAll() and let it spill.
 '
-'   Output is Debug.Print only. No MsgBox, no worksheet selection, no
-'   ActiveWorkbook, no UI of any kind.
+'   Reports use Debug.Print only and never MsgBox. The pure runners touch no
+'   workbook state. Each stateful runner creates and closes its own scratch
+'   workbook without selecting or activating worksheets and without consulting
+'   ActiveWorkbook.
 '
 ' CONDITION IDENTIFIERS
 '   Assertions carry the semantic identifier string from the contract registry,
@@ -93,10 +92,9 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 ' ALLOWED DEPENDENCIES
 '   KPR_Core_Parse, KPR_Core_Dates, KPR_Core_Array and KPR_Core_Err, called
 '   directly to assert exact classification, and KPR_DATES_DAYS for boundary
-'   behaviour. No other core is
-'   reachable from here. The stateful host runner additionally uses
-'   Excel.Workbooks.Add and the scratch workbook it creates, always through the
-'   exact object reference and never through ActiveWorkbook.
+'   behaviour. No other core is reachable from here. The stateful runners also
+'   use Excel.Workbooks.Add and the scratch workbooks they create, always
+'   through exact object references and never through ActiveWorkbook.
 '
 ' UPDATED
 '   2026-09-02
@@ -793,9 +791,9 @@ End Sub
 
 Private Sub Run_SurfaceCases()
 '
-' The five members added by #15, the YearIn conversions of DaysInYear and
-' IsLeapYear, the singular DateFromPillar name, and the window-floor
-' boundaries where a correct calendar answer is outside the supported window.
+' The complete surface additions, the YearIn conversions of DaysInYear and
+' IsLeapYear, the singular DateFromPillar name, and the window-floor boundaries
+' where a correct calendar answer is outside the supported window.
 '
 
 '------------------------------------------------------------------------------
@@ -937,8 +935,8 @@ End Sub
 
 Private Sub Run_ShapeCases()
 '
-' The #16 engine on in-memory inputs. Public behaviour is unchanged by #16, so
-' every case here calls the services directly. Range inputs and caller-state
+' Array-engine services on in-memory inputs, tested directly so condition and
+' shape classification remain observable. Range inputs and caller-state
 ' restoration need a worksheet and live in KPR_Tests_RunShape.
 '
 
@@ -1212,7 +1210,7 @@ End Sub
 '
 '------------------------------------------------------------------------------
 '
-'                       SUITE - SCALAR / ARRAY PARITY (#17)
+'                       SUITE - SCALAR / ARRAY PARITY
 '
 '------------------------------------------------------------------------------
 '
@@ -1546,8 +1544,9 @@ Public Sub KPR_Tests_RunHost()
 '   - Host-produced and propagated #N/A remain separately labelled cases.
 '
 ' WHAT IT DOES NOT PROVE
-'   The Immediate-window probe and the non-Range host contexts are recorded in
-'   Windows Excel by hand; see #13 and #29.
+'   This runner does not automate the Immediate-window probe or non-Range host
+'   contexts. Their exact-source Windows Excel evidence belongs to the
+'   certification record tracked by #29.
 '
 ' STATE
 '   - Creates one workbook through Workbooks.Add and holds the exact object.
@@ -2626,11 +2625,10 @@ Private Sub Run_BoundaryCases()
 '------------------------------------------------------------------------------
 ' SHAPE
 '------------------------------------------------------------------------------
-    'A non-scalar payload is traversed since #17, not rejected. Serials 1 and 2
-    'are below the supported window, so each position carries its own #NUM!;
-    'the call itself succeeds. The parity suite owns the general rule, and this
-    'case pins the boundary suite's own history: it asserted #VALUE! while the
-    'facade was scalar-only.
+    'A multi-element value payload is traversed, not rejected. Serials 1 and 2
+    'are below the supported window, so each position carries its own #NUM! while
+    'the call itself succeeds. The parity suite owns the general traversal rule;
+    'this case pins the boundary suite's per-element window behavior.
         ArrayOut = KPR_Dates_DayOfWeek(Array(1, 2))
         mChecks = mChecks + 1
         If Not IsArray(ArrayOut) Then

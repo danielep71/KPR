@@ -12,7 +12,7 @@ Attribute VB_Name = "KPR_Core_Parse"
 '   lives, so callers never re-implement fragile type logic and no unhandled
 '   runtime error can reach the worksheet.
 '
-' SCOPE (THIS REVISION)
+' SCOPE
 '   - TryParseDateScalar   scalar -> normalized, in-window VBA Date
 '   - TryParseLongScalar   scalar -> exact VBA Long
 '   - TryParseBoolControl  scalar optional control -> Boolean/default

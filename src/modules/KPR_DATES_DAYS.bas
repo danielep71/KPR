@@ -68,7 +68,7 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   It owns dispatch and worksheet-facing error mapping, and delegates every
 '   computation:
 '
-'       KPR_Core_Array   shape: single-cell Range and 1x1 unwrapping
+'       KPR_Core_Array   shape: classification, materialization and broadcasting
 '       KPR_Core_Parse   value: scalar -> date-only VBA Date
 '       KPR_Core_Dates   calendar: window, arithmetic, boundaries, pillars
 '       KPR_Core_Err     construction of native Excel error values
@@ -117,8 +117,8 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '       host guard -> optional controls -> element arguments in signature order
 '
 '   The scalar call is the 1x1 case of the element. A multi-element call loops
-'   the same Elem_* function over the resolved shape through the #16 engine
-'   services; nothing about an element differs between the two, and no element
+'   the same Elem_* function over the resolved shape through KPR_Core_Array;
+'   nothing about an element differs between the two, and no element
 '   ever calls the guard, which the static gate enforces.
 '
 ' SHAPE CONTRACT
@@ -168,9 +168,10 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '   No public function returns a message string.
 '
 '       #VALUE!  the input cannot be interpreted
-'                (unparseable date, non-scalar input, malformed pillar, month
-'                 outside 1..12, weekday outside 1..7, occurrence outside 1..5,
-'                 a control of the wrong type or an unknown token)
+'                (unparseable date, unsupported or mismatched shape, malformed
+'                 pillar, month outside 1..12, weekday outside 1..7,
+'                 occurrence outside 1..5, a non-scalar control, or a control
+'                 of the wrong type or with an unknown token)
 '
 '       #NUM!    the input is well formed but the answer does not exist or
 '                falls outside the supported date window
@@ -3255,7 +3256,7 @@ Public Function KPR_Dates_DateFromPillar( _
 '   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
-'   - Months first with clip semantics, then exact days, matching the parser's grammar. Singular: it returns exactly one date. The plural baseline name was a defect.
+'   - Months first with clip semantics, then exact days, matching the parser's grammar. The name is singular because the function returns exactly one date per element.
 '
 ' UPDATED
 '   2026-09-02
@@ -3377,8 +3378,8 @@ Private Function Elem_DayOfWeek( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3446,8 +3447,8 @@ Private Function Elem_DaysInMonth( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3513,8 +3514,8 @@ Private Function Elem_DaysInYear( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3582,8 +3583,8 @@ Private Function Elem_BeginOfMonth( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3649,8 +3650,8 @@ Private Function Elem_EndOfMonth( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3716,8 +3717,8 @@ Private Function Elem_BeginOfQuarter( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3786,8 +3787,8 @@ Private Function Elem_EndOfQuarter( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3853,8 +3854,8 @@ Private Function Elem_BeginOfYear( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3923,8 +3924,8 @@ Private Function Elem_EndOfYear( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -3990,8 +3991,8 @@ Private Function Elem_IsMonthEnd( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4057,8 +4058,8 @@ Private Function Elem_IsQuarterEnd( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4128,8 +4129,8 @@ Private Function Elem_IsYearEnd( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4195,8 +4196,8 @@ Private Function Elem_IsLeapYear( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4265,8 +4266,8 @@ Private Function Elem_AddDays( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4341,8 +4342,8 @@ Private Function Elem_AddWeeks( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4418,8 +4419,8 @@ Private Function Elem_AddMonths( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4494,8 +4495,8 @@ Private Function Elem_AddYears( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4577,8 +4578,8 @@ Private Function Elem_NthWeekdayOfMonth( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4682,8 +4683,8 @@ Private Function Elem_LastWeekdayOfMonth( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4774,8 +4775,8 @@ Private Function Elem_PillarFromDates( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4850,8 +4851,8 @@ Private Function Elem_DateFromPillar( _
 '     determines the result.
 '   - Controls arrive already resolved, because a control is call-level and
 '     is never re-resolved per element.
-'   - Never calls the host guard: the guard runs once per call, not per
-'     element, and #17 depends on that.
+'   - Never calls the host guard: the guard runs once per public call, before
+'     materialization, so scalar and array calls share one host decision.
 '   - Never raises. Every failure returns a value the caller can place at the
 '     element's output position.
 '
@@ -4860,7 +4861,7 @@ Private Function Elem_DateFromPillar( _
 '   The containment handler is a defect if reached.
 '
 ' NOTES
-'   - Months first with clip semantics, then exact days, matching the parser's grammar. Singular: it returns exactly one date. The plural baseline name was a defect.
+'   - Months first with clip semantics, then exact days, matching the parser's grammar. The name is singular because the function returns exactly one date per element.
 '
 ' UPDATED
 '   2026-09-02
@@ -5522,10 +5523,10 @@ Private Function TryResolveHostDateSystem( _
 '   - The two reads are deliberately not cached across calls. A cache that
 '     outlived a date-system toggle would reintroduce the 1,462-day shift this
 '     routine exists to prevent. The cost is one Caller read and one property
-'     read per public call; #17 collapses that to once per array call.
+'     read per public call, regardless of the number of elements in that call.
 '
 ' UPDATED
-'   2026-09-01
+'   2026-09-02
 '==============================================================================
 '
 

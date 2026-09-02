@@ -58,7 +58,7 @@ Attribute VB_Name = "KPR_Core_Dates"
 '   isolation on the host. Deriving month length arithmetically removes the
 '   boundary crossing rather than guarding it.
 '
-' PILLAR POLICY (THIS REVISION)
+' PILLAR POLICY
 '   TryPillar_Format implements the three rounding modes over one uniform
 '   candidate set, and TryPillar_Parse reports every grammar rejection under
 '   its own condition identifier. Both are specified in contract section 8.4
@@ -148,15 +148,15 @@ Public Function IsDateInWindow( _
 '   to.
 '
 ' NOTES
-'   - The migrated surface maps a window failure to #VALUE!, which is baseline
-'     behaviour. The contract classifies it as DATE_WINDOW and requires #NUM!;
-'     that change is owned by issues #12 and #13.
+'   - Input parsing reports DATE_WINDOW and result construction reports
+'     RESULT_WINDOW; both map to #NUM! at the facade. This predicate remains
+'     policy-free so callers can select the correct condition for their path.
 '   - A value carrying a time component is compared as a serial, so 9999-12-31
 '     with a non-zero time reports FALSE. Callers holding a raw parse result
 '     should floor it before gating if that is not intended.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
@@ -656,7 +656,7 @@ Public Function TryPillar_Parse( _
 '   Parses a pillar token into a signed month delta and a signed day delta.
 '
 ' SIGNATURE
-'   TryPillar_Parse(PillarIn, TotalMonths, TotalDays) -> Boolean
+'   TryPillar_Parse(PillarIn, TotalMonths, TotalDays, Condition) -> Boolean
 '
 ' INPUTS
 '   PillarIn
@@ -697,7 +697,7 @@ Public Function TryPillar_Parse( _
 '   - Clears Err before returning FALSE, so no stale error state survives.
 '
 ' DEPENDENCIES
-'   None.
+'   - KPR_Core_Err condition vocabulary
 '
 ' NOTES
 '   - No characters are stripped from the body, so "1 M" and "1/M" fail rather
@@ -709,8 +709,8 @@ Public Function TryPillar_Parse( _
 '   - A leading sign on an alias is rejected. The aliases name fixed points at
 '     the short end, not quantities, so "-ON" has no meaning to negate.
 '   - A repeated unit is a typo, not a sum. Accepting "1M1M" as two months
-'     would return a plausible number for input the caller did not intend.
-'     This matches the contract; the change is owned by issue #15.
+'     would return a plausible number for input the caller did not intend;
+'     contract section 3.4 therefore rejects duplicate units.
 '   - Quantities are not bounded here. A token such as "999999999999M" parses
 '     and the magnitude is left for the shift layer to reject, which it does
 '     at its month-index gate.
@@ -725,7 +725,7 @@ Public Function TryPillar_Parse( _
 '     identically in arithmetic; only a formatter would notice.
 '
 ' UPDATED
-'   2026-08-31
+'   2026-09-02
 '==============================================================================
 '
 
