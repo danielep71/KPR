@@ -705,7 +705,7 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 <details>
 <summary><strong>#15 — Complete the 22-function date primitive surface</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `enhancement`, `behavior-change`, `code`, `P2`, `tests`
 - Milestone: `v0.0.2`
@@ -717,16 +717,16 @@ Commit `3845077` rejects duplicate units and signed aliases, limits emitted near
 
 Deliver the complete element-correct 22-name public date surface in `KPR_DATES_DAYS.bas`, ready for the array loop added by #17.
 
-## Current starting point and remaining surface work
+## Starting point and delivered surface work
 
-The facade currently contains 17 public names. `HostDateSystem` already landed under #13 and remains scalar. #15 must:
+At issue start, the facade contained 17 public names. `HostDateSystem` had already landed under #13 and remains scalar. #15:
 
-- add the five missing functions: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear` and `EndOfYear`;
-- change `DaysInYear` and `IsLeapYear` to their exact strict `YearIn` signatures and semantics;
-- rename plural `DatesFromPillar` to singular `DateFromPillar` without retaining an alias; and
-- reconcile every facade declaration and comment with the completed #12–#14 parsing, host and pillar policies.
+- added the five missing functions: `AddDays`, `BeginOfQuarter`, `EndOfQuarter`, `BeginOfYear` and `EndOfYear`;
+- changed `DaysInYear` and `IsLeapYear` to their exact strict `YearIn` signatures and semantics;
+- renamed plural `DatesFromPillar` to singular `DateFromPillar` without retaining an alias; and
+- reconciled every facade declaration and comment with the completed #12–#14 parsing, host and pillar policies.
 
-#15 completes scalar/element behavior only. It does not implement #16's shape engine or #17's public array traversal.
+#15 completed scalar/element behavior only. It did not implement #16's shape engine or #17's public array traversal.
 
 ## Already-landed baseline hardening
 
@@ -734,31 +734,32 @@ The facade currently contains 17 public names. `HostDateSystem` already landed u
 - Commit `cd9f609` added static checks for required core members, `Variant` facade return types and the day-zero ban.
 - #12–#14 have since delivered strict scalar parsing, the date-system guard, `HostDateSystem`, pillar grammar and all three rounding modes.
 
-These landed changes reduce #15's remaining work but do not complete the final 22-name surface.
+These landed changes reduced #15's remaining work but did not complete the final
+22-name surface by themselves.
 
 ## Static transition control
 
-Until #26 replaces the hard-coded inventory with the public-API manifest, the static gate must require the exact 22-name facade set and reject the legacy plural pillar name, any additional `KPR_Dates_*` worksheet function and every `_Spill` twin. This is a temporary source-declaration assertion, not early implementation of #26's classification manifest.
+Until #26 replaces the hard-coded inventory with the public-API manifest, the static gate requires the exact 22-name facade set and rejects the legacy plural pillar name, any additional `KPR_Dates_*` worksheet function and every `_Spill` twin. This is a temporary source-declaration assertion, not early implementation of #26's classification manifest.
 
 ## Verification boundary
 
-Close #15 from the pushed source diff, the static gate and the focused surface
-suite. A concise Excel compile/regression result may be recorded when available;
+Closure is based on the pushed source diff, the static gate and the focused
+surface suite. A concise Excel compile/regression result may be recorded;
 no clean-workbook provenance statement, disabled-Compile screenshot or Function
 Wizard screenshot is required. Final exact-source certification remains #29.
 
 ## Acceptance criteria
 
-- [ ] All 22 functions use the exact signatures in #9 and return `Variant` where native errors are possible.
-- [ ] All 22 supported functions are implemented only in `KPR_DATES_DAYS.bas`; core modules contain no supported public facade function.
-- [ ] Month, quarter and year boundaries are correct across leap years and year transitions.
-- [ ] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
-- [ ] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
-- [ ] Pillar functions and their facade documentation use the policy from #14 and expose only the singular `DateFromPillar` name.
-- [ ] Every value-taking function has one element implementation usable by scalar and array calls.
-- [ ] `HostDateSystem` implements the caller policy from #13 and remains scalar.
-- [ ] No `_Spill` name, calendar, holiday, weekend-mask, business-day or roll-convention function is introduced.
-- [ ] Static checks require exactly the 22 contract names and reject plural `DatesFromPillar`, any extra `KPR_Dates_*` member and every `_Spill` twin; focused negative self-tests exercise those failures.
+- [x] All 22 functions use the exact signatures in #9 and return `Variant` where native errors are possible.
+- [x] All 22 supported functions are implemented only in `KPR_DATES_DAYS.bas`; core modules contain no supported public facade function.
+- [x] Month, quarter and year boundaries are correct across leap years and year transitions.
+- [x] `AddDays`, `AddWeeks`, `AddMonths` and `AddYears` implement the documented clipping/preservation and overflow rules.
+- [x] Weekday bases and nth/last weekday locators reject unsupported arguments intentionally.
+- [x] Pillar functions and their facade documentation use the policy from #14 and expose only the singular `DateFromPillar` name.
+- [x] Every value-taking function has one element implementation usable by scalar and array calls.
+- [x] `HostDateSystem` implements the caller policy from #13 and remains scalar.
+- [x] No `_Spill` name, calendar, holiday, weekend-mask, business-day or roll-convention function is introduced.
+- [x] Static checks require exactly the 22 contract names and reject plural `DatesFromPillar`, any extra `KPR_Dates_*` member and every `_Spill` twin; focused negative self-tests exercise those failures.
 
 ## Dependencies
 
@@ -867,7 +868,7 @@ Make the single 22-name `KPR_Dates_*` surface handle both scalar and multi-cell 
 
 ## Dependencies
 
-- [ ] #15
+- [x] #15
 - [ ] #16
 
 </details>
@@ -1000,7 +1001,7 @@ The temporary focused `KPR_Tests_Run` entry point is retired or made private whe
 
 ## Evidence contract
 
-Write a machine-readable summary, a case-level TSV and environment metadata covering the exact source SHA, Excel version/build/bitness, Windows version, locale, workbook date system, caller context, suite/case totals, failures and elapsed time. Keep schemas/templates under `test/evidence/`; write actual runs to ignored `test-results/` for attachment to the final certification issue and pre-release.
+Write a machine-readable summary, a case-level TSV and environment metadata covering the exact source SHA, Excel version/build/bitness, Windows version, locale, workbook date system, caller context, suite/case totals, failures and elapsed time. The committed schema/template must also express every #29 certification outcome without inventing a second record at release time: source import, VBA compilation, regression and cross-oracle execution, MacroOptions, RibbonX, CommandBars, demo generation and normalized source round trip. Each outcome records status and failure detail or an explicit not-applicable reason. Keep schemas/templates under `test/evidence/`; write actual runs to ignored `test-results/` for attachment to the final certification issue and pre-release. Screenshots are not required for source identity, compilation or API completeness.
 
 ## Acceptance criteria
 
@@ -1012,6 +1013,7 @@ Write a machine-readable summary, a case-level TSV and environment metadata cove
 - [ ] Calculation mode, events, screen updating, alerts, status bar, active workbook/sheet and selection are restored after success and failure.
 - [ ] No automated path displays a `MsgBox` or leaves files/workbooks open.
 - [ ] Evidence validates against the committed schema and records the supplied exact source SHA.
+- [ ] The schema/template covers every structured #29 import, compile, regression, UI, demo and source-round-trip outcome without a separate ad hoc release record.
 - [ ] No duplicate runner/assertion/suite module is created; the focused suites and final dispatcher remain in `KPR_REGRESSION_TESTS.bas`.
 
 ## Dependencies
