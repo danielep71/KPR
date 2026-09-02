@@ -129,6 +129,7 @@ VBA_REQUIRED_MEMBERS: dict[str, frozenset[str]] = {
             "Array_Rank",
             "TryUnwrapScalar",
             "TryUnwrapControl",
+            "TryClassifyShape",
             "CheckCapacity",
             "TryMaterialize",
             "AccumulateShape",
@@ -177,6 +178,10 @@ VBA_ARGUMENT_RESOLVERS = (
     "TryResolveBool",
     "TryResolveRounding",
     "TryResolvePillar",
+    # #17 stages: the guard must precede classification and materialization too
+    "TryClassifyShape",
+    "TryUnwrapControl",
+    "TryMaterialize",
 )
 
 # Date-system authority belongs to the caller's own workbook and nothing else.
@@ -1716,11 +1721,34 @@ def check_vba_workbook_fallback(repo: Repository) -> dict[str, object]:
                         failures.append(
                             finding(path, f"{name} references {token}; the caller's workbook is the only date-system authority.")
                         )
+    # Application.Caller is read by exactly one production procedure, the
+    # classifier. Scope is src/ only: test infrastructure and #29's probes may
+    # legitimately inspect the caller.
+    caller = re.compile(r"\bApplication\s*\.\s*Caller\b", re.IGNORECASE)
+    readers: list[tuple[str, str]] = []
+    for path, text in _vba_sources(repo):
+        if not path.startswith("src/"):
+            continue
+        for visibility, name, body in _vba_procedures(text):
+            code = "\n".join(
+                _strip_vba_strings(l).split("'")[0]
+                for l in body.splitlines()
+                if not l.lstrip().startswith("'")
+            )
+            if caller.search(code):
+                readers.append((path, name))
+    for path, name in readers:
+        if name != VBA_HOST_CLASSIFIER:
+            failures.append(
+                finding(path, f"{name} reads Application.Caller; only {VBA_HOST_CLASSIFIER} may classify the host.")
+            )
+    if not any(name == VBA_HOST_CLASSIFIER for _, name in readers):
+        failures.append(finding("src/modules", f"{VBA_HOST_CLASSIFIER} does not read Application.Caller."))
     return rule_result(
         "vba-no-workbook-fallback",
         "VBA no active-workbook fallback",
         failures,
-        f"All {checked} host-resolution procedures avoid ActiveWorkbook, ThisWorkbook and ActiveSheet",
+        f"All {checked} host-resolution procedures avoid active objects; Application.Caller is read only by {VBA_HOST_CLASSIFIER}",
     )
 
 
@@ -1966,6 +1994,10 @@ def _positive_fixture(root: Path) -> None:
             ]
     facade_lines += [
         "Private Function TryResolveHostDateSystem(ByRef DateSystem As Long, ByRef Condition As Long) As Boolean",
+        "    Dim CallerObject As Object",
+        "    On Error Resume Next",
+        "    Set CallerObject = Application.Caller",
+        "    On Error GoTo 0",
         "    DateSystem = 1900",
         "    TryResolveHostDateSystem = True",
         "End Function",
@@ -2167,6 +2199,36 @@ def run_self_tests(root: Path) -> None:
     def engine_does_date_math(case: Path) -> None:
         _engine_probe(case, "Probe = Year(R.Value2)")
 
+    def caller_in_element(case: Path) -> None:
+        facade = _facade(case)
+        facade.write_text(
+            facade.read_text(encoding="utf-8")
+            + "Private Function Elem_Probe(ByVal DateIn As Variant) As Variant\n"
+            + "    Elem_Probe = TypeName(Application.Caller)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def caller_in_core(case: Path) -> None:
+        core = case / "src/modules/KPR_Core_Parse.bas"
+        core.write_text(
+            core.read_text(encoding="utf-8")
+            + "Public Function Probe() As Variant\n"
+            + "    Probe = TypeName(Application.Caller)\n"
+            + "End Function\n",
+            encoding="utf-8",
+            newline="\r\n",
+        )
+
+    def guard_after_classification(case: Path) -> None:
+        facade = _facade(case)
+        text = facade.read_text(encoding="utf-8")
+        guard = "    If Not PassHostGuard(FailErr) Then Exit Function\n"
+        classify = "    If Not TryClassifyShape(DateIn, 0, 0, 0, 0) Then Exit Function\n"
+        facade.write_text(text.replace(guard, classify + guard, 1) + "Private Function TryClassifyShape(ByVal V As Variant, ByRef K As Long, ByRef R As Long, ByRef C As Long, ByRef Cond As Long) As Boolean\n    TryClassifyShape = True\nEnd Function\n",
+                          encoding="utf-8", newline="\r\n")
+
     def missing_host_guard(case: Path) -> None:
         facade = case / "src/modules/KPR_DATES_DAYS.bas"
         facade.write_text(
@@ -2314,6 +2376,9 @@ def run_self_tests(root: Path) -> None:
         ("legacy plural pillar name", "vba-public-surface", legacy_plural_name),
         ("_Spill twin", "vba-public-surface", spill_twin),
         ("guard inside a private helper", "vba-host-guard", guard_in_private_helper),
+        ("Application.Caller in an element", "vba-no-workbook-fallback", caller_in_element),
+        ("Application.Caller in a core", "vba-no-workbook-fallback", caller_in_core),
+        ("guard after classification", "vba-host-guard", guard_after_classification),
         ("missing host guard", "vba-host-guard", missing_host_guard),
         ("guard after resolver", "vba-host-guard", guard_after_resolver),
         ("stray volatile call", "vba-volatile-scope", stray_volatile),

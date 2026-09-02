@@ -357,6 +357,12 @@ The public boundary applies these stages once per call:
 4. enforce the output-element cap; and
 5. traverse and evaluate elements.
 
+Stage 2 classifies every value argument from its type and dimensions alone and
+reads no content. One shape rejection necessarily follows stage 4: an array
+whose elements are themselves arrays cannot be detected without inspecting
+elements, and inspection is forbidden before the cap, so a jagged input is
+reported as `SHAPE_UNSUPPORTED` during materialization rather than at stage 2.
+
 Consequently:
 
 - a 1904 or unreadable identifiable worksheet host returns call-level `#N/A`

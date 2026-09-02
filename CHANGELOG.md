@@ -9,6 +9,17 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
 
 ### Added
 
+- Multi-cell evaluation on the single 22-name surface. Every value-taking
+  function now accepts a scalar, a single-cell Range or 1x1 wrapper, or a
+  multi-element Range or array at each value position, expands scalars,
+  requires exact shape agreement between non-scalar arguments, and returns a
+  1-based 2-D array of the resolved shape evaluated row-major, with each
+  element resolved independently. An all-scalar call still returns a scalar.
+  Multi-cell results are claimed on dynamic-array Excel only.
+- `TryClassifyShape`, a classification-only preflight, so every wrapper
+  applies the contract's call-level stages in order: host guard, classify
+  every argument, controls and broadcast, cap, materialize, traverse.
+
 - The array engine services in `KPR_Core_Array`: classification and
   one-read materialization of Ranges and VBA arrays, exact-shape broadcast
   resolution, a 100,000-element capacity gate decided from dimensions before
@@ -80,6 +91,9 @@ and [Semantic Versioning](https://semver.org/) from its first published release.
   Excel error value cannot express.
 
 ### Changed
+
+- A multi-cell optional control now reports `CONTROL_NOT_SCALAR` rather than
+  the generic shape rejection, from its dimensions alone.
 
 - `KPR_Dates_DaysInYear` and `KPR_Dates_IsLeapYear` take `YearIn`, a
   calendar year, as the contract specifies; a date is now rejected rather

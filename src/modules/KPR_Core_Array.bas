@@ -21,8 +21,9 @@ Attribute VB_Name = "KPR_Core_Array"
 '   - TryUnwrapScalar     single-cell Range and 1x1 array unwrapping (scalar path)
 '   - TryUnwrapControl    the same for Opt_ controls, reporting CONTROL_NOT_SCALAR
 '                         for a valid multi-element shape without reading it
+'   - TryClassifyShape    classify one argument from type and dimensions alone
 '   - CheckCapacity       Rows x Cols <= 100,000, computed in Double
-'   - TryMaterialize      classify one argument, gate capacity, then snapshot it
+'   - TryMaterialize      classify, gate capacity, then snapshot one argument
 '                         into a scalar or a 1-based 2-D payload
 '   - AccumulateShape     fold one argument's shape into the output shape
 '   - ElementAt           the element at a position; total over a valid descriptor
@@ -40,14 +41,22 @@ Attribute VB_Name = "KPR_Core_Array"
 '      and nothing downstream can tell they meant something else. The engine
 '      never sees the guard by design, so this ordering is the facade's duty
 '      and #17 depends on it.
-'   2. Resolve Opt_ controls with TryUnwrapControl, which never reads the
-'      contents of a multi-element control.
-'   3. TryMaterialize each value argument. Capacity is decided from the
-'      dimensions alone, before Value2 is read, before a normalized array is
-'      allocated and before any element is copied or inspected.
-'   4. AccumulateShape across the arguments, then TryAllocateOutput.
-'   5. Traverse row-major: R = 1 To Rows, C = 1 To Cols. Traversal is
+'   2. TryClassifyShape EVERY value argument, so an unsupported shape anywhere
+'      in the argument list is reported before anything else.
+'   3. Resolve Opt_ controls with TryUnwrapControl, which never reads the
+'      contents of a multi-element control, and AccumulateShape across the
+'      classified arguments (SHAPE_MISMATCH).
+'   4. CheckCapacity once, on the resolved output shape. Only now may content
+'      be read.
+'   5. TryMaterialize each value argument (its internal gate is a defence that
+'      cannot fire differently, since every array matched the gated shape),
+'      then TryAllocateOutput.
+'   6. Traverse row-major: R = 1 To Rows, C = 1 To Cols. Traversal is
 '      deterministic and touches no Excel state.
+'
+'   This is contract section 5.2's order. A jagged array is the one shape
+'   rejection reported after the capacity gate, because detecting it requires
+'   inspecting elements.
 '
 ' SHAPE VOCABULARY
 '   KPR_SHAPE_SCALAR   a scalar, a single-cell Range or a 1x1 array; expands to
@@ -427,6 +436,134 @@ Public Function CheckCapacity( _
         Condition = KPR_COND_NONE
         CheckCapacity = True
     End If
+
+End Function
+
+Public Function TryClassifyShape( _
+    ByVal ValueIn As Variant, _
+    ByRef Kind As KPR_ArgShape, _
+    ByRef Rows As Long, _
+    ByRef Cols As Long, _
+    ByRef Condition As KPR_Condition) _
+    As Boolean
+'
+'==============================================================================
+'                               TryClassifyShape
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Classifies one value argument from its type and dimensions ALONE: no
+'   capacity gate, no Value2 read, no allocation, no element inspection.
+'
+' WHY THIS EXISTS
+'   Contract section 5.2 orders the call-level stages: shape classification of
+'   every argument, then control validation and broadcast resolution, then the
+'   capacity gate, then traversal. A service that classified and gated in one
+'   step could report CAPACITY_EXCEEDED for the first argument before a later
+'   argument's SHAPE_UNSUPPORTED or a SHAPE_MISMATCH had been seen. This
+'   preflight lets the facade classify everything first and gate once, on the
+'   resolved output shape.
+'
+' OUTPUTS
+'   Kind      (ByRef)  KPR_SHAPE_SCALAR or KPR_SHAPE_ARRAY
+'   Rows/Cols (ByRef)  the argument's dimensions; 1 x 1 for a scalar
+'   Condition (ByRef)  always assigned
+'
+' BEHAVIOR
+'   - A Variant holding a Range is never Let-assigned before its type is tested.
+'   - A single-area Range reports its Rows and Columns counts. A one-cell Range
+'     is a scalar. Value2 is NOT read.
+'   - A rank-1 array is 1 x N; a rank-2 array reports its bounds; a one-element
+'     array is a scalar. No element is read.
+'   - A multi-area Range, a zero-element array, a rank above 2 and any
+'     non-Range object are SHAPE_UNSUPPORTED.
+'   - A jagged array cannot be detected here, because detecting it requires
+'     inspecting elements and that is forbidden before the capacity gate. It is
+'     detected by TryMaterialize and reported as SHAPE_UNSUPPORTED then. The
+'     contract records this as the one shape rejection that follows capacity.
+'
+' ERROR POLICY
+'   - Does not raise. Every failure path returns FALSE with a condition.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Rng         As Range        'Bound Range when ValueIn is a Range object
+    Dim Rank        As Long         'Array rank
+    Dim LB1         As Long         'Lower bound, dimension 1
+    Dim UB1         As Long         'Upper bound, dimension 1
+    Dim LB2         As Long         'Lower bound, dimension 2
+    Dim UB2         As Long         'Upper bound, dimension 2
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    On Error GoTo Unsupported
+    TryClassifyShape = False
+    Condition = KPR_COND_SHAPE_UNSUPPORTED
+
+'------------------------------------------------------------------------------
+' RANGE
+'------------------------------------------------------------------------------
+    If IsObject(ValueIn) Then
+        If Not TypeOf ValueIn Is Range Then GoTo Unsupported
+        Set Rng = ValueIn
+        If Rng.Areas.Count <> 1 Then GoTo Unsupported
+        Rows = Rng.Rows.Count
+        Cols = Rng.Columns.Count
+        If (Rows = 1) And (Cols = 1) Then Kind = KPR_SHAPE_SCALAR Else Kind = KPR_SHAPE_ARRAY
+        Condition = KPR_COND_NONE
+        TryClassifyShape = True
+        Exit Function
+    End If
+
+'------------------------------------------------------------------------------
+' VBA ARRAY
+'------------------------------------------------------------------------------
+    If IsArray(ValueIn) Then
+        Rank = Array_Rank(ValueIn)
+        Select Case Rank
+            Case 1
+                LB1 = LBound(ValueIn): UB1 = UBound(ValueIn)
+                If UB1 < LB1 Then GoTo Unsupported
+                Rows = 1
+                Cols = UB1 - LB1 + 1
+            Case 2
+                LB1 = LBound(ValueIn, 1): UB1 = UBound(ValueIn, 1)
+                LB2 = LBound(ValueIn, 2): UB2 = UBound(ValueIn, 2)
+                If (UB1 < LB1) Or (UB2 < LB2) Then GoTo Unsupported
+                Rows = UB1 - LB1 + 1
+                Cols = UB2 - LB2 + 1
+            Case Else
+                GoTo Unsupported
+        End Select
+        If (Rows = 1) And (Cols = 1) Then Kind = KPR_SHAPE_SCALAR Else Kind = KPR_SHAPE_ARRAY
+        Condition = KPR_COND_NONE
+        TryClassifyShape = True
+        Exit Function
+    End If
+
+'------------------------------------------------------------------------------
+' SCALAR
+'------------------------------------------------------------------------------
+    Kind = KPR_SHAPE_SCALAR
+    Rows = 1
+    Cols = 1
+    Condition = KPR_COND_NONE
+    TryClassifyShape = True
+    Exit Function
+
+'------------------------------------------------------------------------------
+' UNSUPPORTED
+'------------------------------------------------------------------------------
+Unsupported:
+    Err.Clear
+    Condition = KPR_COND_SHAPE_UNSUPPORTED
+    TryClassifyShape = False
 
 End Function
 

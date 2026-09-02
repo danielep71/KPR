@@ -29,6 +29,8 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                     the singular pillar name and the window floor boundaries
 '       shape         the #16 array engine services on in-memory inputs:
 '                     classification, 1xN, broadcasting, capacity, elements
+'       parity        #17: every value argument of every value-taking function
+'                     vectorized, element-for-element against the scalar call
 '
 '   Later issues add suites by writing one Private Sub and one Case line. The
 '   dispatcher is deliberately the only shared machinery.
@@ -68,6 +70,13 @@ Attribute VB_Name = "KPR_REGRESSION_TESTS"
 '                                     errors, UsedRange independence, and
 '                                     caller-state restoration. Macro-only for
 '                                     the same reason.
+'       KPR_Tests_RunArray            enters a multi-cell formula through the
+'                                     late-bound dynamic-array API and checks
+'                                     the spill, then repeats it in a 1904
+'                                     workbook and checks the single call-level
+'                                     #N/A. Reports SUPPORTED or NOT_AVAILABLE
+'                                     for the spill API; unavailable is a
+'                                     failure, not a pass.
 '
 '   KPR_Tests_RunAll returns an array, so it cannot be inspected with ? in the
 '   Immediate window and cannot appear in the macro list. Use KPR_Tests_Run
@@ -402,6 +411,7 @@ Private Function RunSuite( _
                 Run_PillarCases
                 Run_SurfaceCases
                 Run_ShapeCases
+                Run_ParityCases
 
         Case "date-type":       Run_DateTypeCases
         Case "date-text":       Run_DateTextCases
@@ -414,6 +424,7 @@ Private Function RunSuite( _
         Case "pillar":          Run_PillarCases
         Case "surface":         Run_SurfaceCases
         Case "shape":           Run_ShapeCases
+        Case "parity":          Run_ParityCases
 
         Case Else
             'Not in the registry
@@ -1201,6 +1212,311 @@ End Sub
 '
 '------------------------------------------------------------------------------
 '
+'                       SUITE - SCALAR / ARRAY PARITY (#17)
+'
+'------------------------------------------------------------------------------
+'
+
+Private Sub Run_ParityCases()
+'
+' For every value-taking function, every value argument is supplied as a 1x3
+' array holding a valid element, a blank and an incoming error, and each
+' output position is compared with the scalar call on the same elements. Where
+' a function has several value arguments they all vectorize at once with
+' DISTINCT arrays, so argument ordering and ElementAt wiring are exercised,
+' not just the first slot.
+'
+' Then the shape rules through the facade: 1x1 wrapper returns a scalar,
+' column and rectangle keep their shape, a mismatch and a multi-cell control
+' are call-level errors, 100,001 elements is #NUM!, and two different incoming
+' errors at one position resolve to the first argument's error.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const ERR_VALUE As Long = 2015      'Excel #VALUE! error number
+    Const ERR_NUM   As Long = 2036      'Excel #NUM! error number
+    Const ERR_NA    As Long = 2042      'Excel #N/A error number
+    Const ERR_DIV0  As Long = 2007      'Excel #DIV/0! error number
+    Dim Dates1      As Variant          'First date-argument array
+    Dim Dates2      As Variant          'Second, distinct date-argument array
+    Dim Ints1       As Variant          'First integer-argument array
+    Dim Ints2       As Variant          'Second, distinct integer-argument array
+    Dim Pillars     As Variant          'Pillar-token array
+    Dim Years       As Variant          'YearIn array
+    Dim Months      As Variant          'MonthIn array
+    Dim Wds         As Variant          'WdIndex array
+    Dim Ns          As Variant          'Occurrence array
+    Dim Col         As Variant          '3x1 column input
+    Dim Rect        As Variant          '2x2 rectangle input
+    Dim Big         As Variant          '1x100001 input
+    Dim R           As Variant          'Facade result
+    Dim I           As Long             'Cursor
+
+'------------------------------------------------------------------------------
+' INPUT ARRAYS: valid, blank, error - each distinct across arguments
+'------------------------------------------------------------------------------
+    Dates1 = Array("2026-03-15", Empty, CVErr(xlErrNA))
+    Dates2 = Array("2026-04-09", Empty, CVErr(xlErrDiv0))
+    Ints1 = Array(3, Empty, CVErr(xlErrNA))
+    Ints2 = Array(-2, Empty, CVErr(xlErrDiv0))
+    Pillars = Array("2W", Empty, CVErr(xlErrNA))
+    Years = Array(2024, Empty, CVErr(xlErrNA))
+    Months = Array(3, Empty, CVErr(xlErrDiv0))
+    Wds = Array(1, Empty, CVErr(xlErrNum))
+    Ns = Array(2, Empty, CVErr(xlErrRef))
+
+'------------------------------------------------------------------------------
+' ONE-ARGUMENT FUNCTIONS
+'------------------------------------------------------------------------------
+    For Each R In Array("DayOfWeek", "DaysInMonth", "BeginOfMonth", "EndOfMonth", "BeginOfQuarter", _
+                        "EndOfQuarter", "BeginOfYear", "EndOfYear", "IsMonthEnd", "IsQuarterEnd", "IsYearEnd")
+        AssertParity CStr(R), CStr(R), Dates1, Empty, Empty, Empty
+    Next R
+    AssertParity "DaysInYear", "DaysInYear", Years, Empty, Empty, Empty
+    AssertParity "IsLeapYear", "IsLeapYear", Years, Empty, Empty, Empty
+
+'------------------------------------------------------------------------------
+' TWO-ARGUMENT FUNCTIONS: BOTH ARGUMENTS VECTORIZED WITH DISTINCT ARRAYS
+'------------------------------------------------------------------------------
+    AssertParity "AddDays", "AddDays", Dates1, Ints2, Empty, Empty
+    AssertParity "AddWeeks", "AddWeeks", Dates1, Ints2, Empty, Empty
+    AssertParity "AddMonths", "AddMonths", Dates1, Ints1, Empty, Empty
+    AssertParity "AddYears", "AddYears", Dates1, Ints2, Empty, Empty
+    AssertParity "PillarFromDates", "PillarFromDates", Dates1, Dates2, Empty, Empty
+    AssertParity "DateFromPillar", "DateFromPillar", Dates1, Pillars, Empty, Empty
+
+'------------------------------------------------------------------------------
+' LOCATORS: THREE AND FOUR VALUE ARGUMENTS
+'------------------------------------------------------------------------------
+    AssertParity "LastWeekdayOfMonth", "LastWeekdayOfMonth", Years, Months, Wds, Empty
+    AssertParity "NthWeekdayOfMonth", "NthWeekdayOfMonth", Years, Months, Wds, Ns
+
+'------------------------------------------------------------------------------
+' ARGUMENT ORDER: DIFFERENT ERRORS AT ONE POSITION, FIRST ARGUMENT WINS
+'------------------------------------------------------------------------------
+    R = KPR_Dates_AddDays(Array("2026-03-15", CVErr(xlErrNA)), Array(1, CVErr(xlErrDiv0)))
+    AssertErrorValue "order/first argument NA beats second DIV0", R(1, 2), ERR_NA
+    R = KPR_Dates_AddDays(Array("2026-03-15", CVErr(xlErrDiv0)), Array(1, CVErr(xlErrNA)))
+    AssertErrorValue "order/first argument DIV0 beats second NA", R(1, 2), ERR_DIV0
+    R = KPR_Dates_NthWeekdayOfMonth(Array(2026, 2026), Array(3, CVErr(xlErrRef)), Array(1, CVErr(xlErrNA)), Array(1, 1))
+    AssertErrorValue "order/second argument REF beats third NA", R(1, 2), 2023
+
+'------------------------------------------------------------------------------
+' SHAPE RULES THROUGH THE FACADE
+'------------------------------------------------------------------------------
+    'A 1x1 wrapper returns a scalar, not a 1x1 array
+        mChecks = mChecks + 1
+        R = KPR_Dates_EndOfMonth(Array("2026-03-15"))
+        If IsArray(R) Then Record "facade/1x1 wrapper", "returned an array for a one-element input"
+
+    'A 3x1 column keeps its shape; a 2x2 rectangle keeps its shape
+        ReDim Col(1 To 3, 1 To 1)
+        Col(1, 1) = "2026-01-31": Col(2, 1) = "2026-02-28": Col(3, 1) = "2026-03-31"
+        R = KPR_Dates_BeginOfMonth(Col)
+        AssertOutShape "facade/3x1 column", R, 3, 1
+        AssertDateResult "facade/3x1 column value", R(3, 1), DateSerial(2026, 3, 1)
+        ReDim Rect(1 To 2, 1 To 2)
+        Rect(1, 1) = "2024-02-10": Rect(1, 2) = "2025-02-10": Rect(2, 1) = "2026-02-10": Rect(2, 2) = "2028-02-10"
+        R = KPR_Dates_DaysInMonth(Rect)
+        AssertOutShape "facade/2x2 rectangle", R, 2, 2
+        mChecks = mChecks + 1
+        If R(1, 1) <> 29 Or R(2, 2) <> 29 Or R(1, 2) <> 28 Then Record "facade/2x2 values", "positions do not match their inputs"
+
+    'Scalar expands against an array; two matching arrays broadcast
+        R = KPR_Dates_AddDays(Col, 1)
+        AssertOutShape "facade/scalar expands", R, 3, 1
+        R = KPR_Dates_AddDays(Col, Array(1, 2, 3))
+        AssertErrorValue "facade/3x1 vs 1x3 mismatch", R, ERR_VALUE
+
+    'A multi-cell control is call-level #VALUE!
+        AssertErrorValue "facade/multi-cell control", KPR_Dates_DayOfWeek("2026-03-15", Array(True, False)), ERR_VALUE
+
+    'Unsupported shapes are call-level #VALUE!
+        AssertErrorValue "facade/jagged", KPR_Dates_EndOfMonth(Array("2026-03-15", Array("x"))), ERR_VALUE
+        AssertErrorValue "facade/empty array", KPR_Dates_EndOfMonth(Array()), ERR_VALUE
+
+    'Exactly 100,000 elements is accepted; 100,001 is call-level #NUM!
+        ReDim Big(1 To 100000)
+        For I = 1 To 100000: Big(I) = 46096: Next I
+        R = KPR_Dates_IsMonthEnd(Big)
+        AssertOutShape "facade/100000 accepted", R, 1, 100000
+        ReDim Big(1 To 100001)
+        AssertErrorValue "facade/100001 refused", KPR_Dates_IsMonthEnd(Big), ERR_NUM
+
+    'Capacity is decided before content: 100,001 unparseable elements are
+    'still #NUM!, not #VALUE!
+        AssertErrorValue "facade/capacity before content", KPR_Dates_IsMonthEnd(Big), ERR_NUM
+
+    'HostDateSystem is unchanged and scalar
+        mChecks = mChecks + 1
+        If IsArray(KPR_Dates_HostDateSystem()) Then Record "facade/HostDateSystem scalar", "returned an array"
+
+End Sub
+
+Private Sub AssertParity( _
+    ByVal Label As String, _
+    ByVal FnName As String, _
+    ByVal A1 As Variant, _
+    ByVal A2 As Variant, _
+    ByVal A3 As Variant, _
+    ByVal A4 As Variant)
+'
+' Calls the named function with the 1x3 arrays, then with each element scalar
+' by scalar, and requires identical results (value or error) at every position.
+' An unsupplied argument slot is Empty and is not passed.
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Dim Vec         As Variant      'Vectorized result
+    Dim Sc          As Variant      'Scalar result for one position
+    Dim I           As Long         'Position cursor
+    Dim E1          As Variant      'Element of A1
+    Dim E2          As Variant      'Element of A2
+    Dim E3          As Variant      'Element of A3
+    Dim E4          As Variant      'Element of A4
+
+'------------------------------------------------------------------------------
+' VECTORIZED CALL
+'------------------------------------------------------------------------------
+    mChecks = mChecks + 1
+    Vec = Invoke(FnName, A1, A2, A3, A4)
+    If Not IsArray(Vec) Then
+        Record "parity/" & Label, "vectorized call did not return an array: " & DescribeValue(Vec)
+        Exit Sub
+    End If
+    If UBound(Vec, 1) <> 1 Or UBound(Vec, 2) <> 3 Then
+        Record "parity/" & Label, "expected a 1x3 result"
+        Exit Sub
+    End If
+
+'------------------------------------------------------------------------------
+' ELEMENT BY ELEMENT
+'------------------------------------------------------------------------------
+    For I = 0 To 2
+        E1 = A1(I)
+        If IsArray(A2) Then E2 = A2(I) Else E2 = Empty
+        If IsArray(A3) Then E3 = A3(I) Else E3 = Empty
+        If IsArray(A4) Then E4 = A4(I) Else E4 = Empty
+        Sc = Invoke(FnName, E1, IIf(IsArray(A2), E2, Empty), IIf(IsArray(A3), E3, Empty), IIf(IsArray(A4), E4, Empty))
+        mChecks = mChecks + 1
+        If Not SameValue(Vec(1, I + 1), Sc) Then
+            Record "parity/" & Label & " [" & CStr(I + 1) & "]", "array gave " & DescribeValue(Vec(1, I + 1)) & _
+                   ", scalar gave " & DescribeValue(Sc)
+        End If
+    Next I
+
+End Sub
+
+Private Function Invoke( _
+    ByVal FnName As String, _
+    ByVal A1 As Variant, _
+    ByVal A2 As Variant, _
+    ByVal A3 As Variant, _
+    ByVal A4 As Variant) _
+    As Variant
+'
+' Test-side dispatch by name. This is the one place a name-to-call table is
+' acceptable: it is test infrastructure, not production dispatch.
+'
+
+'------------------------------------------------------------------------------
+' DISPATCH
+'------------------------------------------------------------------------------
+    Select Case FnName
+        Case "DayOfWeek":          Invoke = KPR_Dates_DayOfWeek(A1)
+        Case "DaysInMonth":        Invoke = KPR_Dates_DaysInMonth(A1)
+        Case "DaysInYear":         Invoke = KPR_Dates_DaysInYear(A1)
+        Case "BeginOfMonth":       Invoke = KPR_Dates_BeginOfMonth(A1)
+        Case "EndOfMonth":         Invoke = KPR_Dates_EndOfMonth(A1)
+        Case "BeginOfQuarter":     Invoke = KPR_Dates_BeginOfQuarter(A1)
+        Case "EndOfQuarter":       Invoke = KPR_Dates_EndOfQuarter(A1)
+        Case "BeginOfYear":        Invoke = KPR_Dates_BeginOfYear(A1)
+        Case "EndOfYear":          Invoke = KPR_Dates_EndOfYear(A1)
+        Case "IsMonthEnd":         Invoke = KPR_Dates_IsMonthEnd(A1)
+        Case "IsQuarterEnd":       Invoke = KPR_Dates_IsQuarterEnd(A1)
+        Case "IsYearEnd":          Invoke = KPR_Dates_IsYearEnd(A1)
+        Case "IsLeapYear":         Invoke = KPR_Dates_IsLeapYear(A1)
+        Case "AddDays":            Invoke = KPR_Dates_AddDays(A1, A2)
+        Case "AddWeeks":           Invoke = KPR_Dates_AddWeeks(A1, A2)
+        Case "AddMonths":          Invoke = KPR_Dates_AddMonths(A1, A2)
+        Case "AddYears":           Invoke = KPR_Dates_AddYears(A1, A2)
+        Case "NthWeekdayOfMonth":  Invoke = KPR_Dates_NthWeekdayOfMonth(A1, A2, A3, A4)
+        Case "LastWeekdayOfMonth": Invoke = KPR_Dates_LastWeekdayOfMonth(A1, A2, A3)
+        Case "PillarFromDates":    Invoke = KPR_Dates_PillarFromDates(A1, A2)
+        Case "DateFromPillar":     Invoke = KPR_Dates_DateFromPillar(A1, A2)
+        Case Else:                 Invoke = CVErr(xlErrName)
+    End Select
+
+End Function
+
+Private Function SameValue( _
+    ByVal A As Variant, _
+    ByVal B As Variant) _
+    As Boolean
+'
+' Equality that treats two errors as equal when they are the same error.
+'
+
+'------------------------------------------------------------------------------
+' COMPARE
+'------------------------------------------------------------------------------
+    If VarType(A) = vbError Or VarType(B) = vbError Then
+        SameValue = (VarType(A) = vbError) And (VarType(B) = vbError)
+        If SameValue Then SameValue = (CLng(A) = CLng(B))
+    Else
+        SameValue = (CStr(A) = CStr(B))
+    End If
+
+End Function
+
+Private Function DescribeValue( _
+    ByVal V As Variant) _
+    As String
+'
+' Renders a value or error for a failure message.
+'
+
+'------------------------------------------------------------------------------
+' RENDER
+'------------------------------------------------------------------------------
+    If VarType(V) = vbError Then
+        DescribeValue = "error " & CStr(CLng(V))
+    ElseIf IsArray(V) Then
+        DescribeValue = "array"
+    Else
+        DescribeValue = CStr(V)
+    End If
+
+End Function
+
+Private Sub AssertOutShape( _
+    ByVal Label As String, _
+    ByVal R As Variant, _
+    ByVal ExpectRows As Long, _
+    ByVal ExpectCols As Long)
+'
+' Asserts that a facade result is a 1-based 2-D array of the expected shape.
+'
+
+'------------------------------------------------------------------------------
+' EVALUATE
+'------------------------------------------------------------------------------
+    mChecks = mChecks + 1
+    If Not IsArray(R) Then
+        Record Label, "expected an array, got " & DescribeValue(R)
+    ElseIf LBound(R, 1) <> 1 Or LBound(R, 2) <> 1 Or UBound(R, 1) <> ExpectRows Or UBound(R, 2) <> ExpectCols Then
+        Record Label, "expected 1-based " & CStr(ExpectRows) & "x" & CStr(ExpectCols)
+    End If
+
+End Sub
+
+'
+'------------------------------------------------------------------------------
+'
 '                    STATEFUL HOST RUNNER (MACRO ONLY, NOT DISPATCHED)
 '
 '------------------------------------------------------------------------------
@@ -1554,6 +1870,157 @@ Cleanup:
         Record "shape/runner state", "expected " & CStr(EXPECT_CHECKS) & " assertions but counted " & CStr(mChecks)
     End If
     Debug.Print "KPR shape regression  checks: " & CStr(mChecks) & "  failures: " & CStr(mFailures.Count)
+    For I = 1 To mFailures.Count
+        Debug.Print "  FAIL  " & CStr(mFailures(I)(0)) & " : " & CStr(mFailures(I)(1))
+    Next I
+
+End Sub
+
+'
+'------------------------------------------------------------------------------
+'
+'                    STATEFUL ARRAY RUNNER (MACRO ONLY, NOT DISPATCHED)
+'
+'------------------------------------------------------------------------------
+'
+
+Public Sub KPR_Tests_RunArray()
+'
+'==============================================================================
+'                               KPR_Tests_RunArray
+'------------------------------------------------------------------------------
+' PURPOSE
+'   Enters a multi-cell formula on a worksheet and checks that it spills, then
+'   repeats it in the same workbook toggled to 1904 and checks the single
+'   call-level #N/A. This is the compatibility policy made testable:
+'   multi-cell support is claimed on dynamic-array Excel only.
+'
+' LATE BINDING
+'   Formula2 and SpillingToRange are dynamic-array members. A direct reference
+'   would stop this module compiling on an Excel without them, and On Error
+'   cannot rescue a compile-time failure. Both are reached through CallByName,
+'   and the runner first probes whether the API exists. It reports SUPPORTED or
+'   NOT_AVAILABLE; NOT_AVAILABLE is recorded as a failure, because an
+'   unprovable claim is not a passing test.
+'
+' STATE
+'   Same discipline as the other runners: exact object references, manual
+'   calculation, restoration on every exit path, SaveChanges:=False.
+'
+' UPDATED
+'   2026-09-02
+'==============================================================================
+'
+
+'------------------------------------------------------------------------------
+' DECLARE
+'------------------------------------------------------------------------------
+    Const EXPECT_CHECKS As Long = 7     'Fixed assertion count on a supporting host
+    Const ERR_VALUE     As Long = 2015  'Excel #VALUE! error number
+    Const ERR_NA        As Long = 2042  'Excel #N/A error number
+    Dim Scratch         As Workbook     'The scratch workbook, held by reference
+    Dim Sheet           As Worksheet    'Its first sheet
+    Dim Source          As String       'Source workbook name, quoted for formulas
+    Dim PriorCalc       As XlCalculation 'Caller's calculation mode
+    Dim CalcChanged     As Boolean      'TRUE once PriorCalc was captured
+    Dim Anchor          As Range        'Cell the formula is entered in
+    Dim Spill           As Range        'The spilled range, late-bound
+    Dim ApiState        As String       'SUPPORTED or NOT_AVAILABLE
+    Dim I               As Long         'Row cursor
+
+'------------------------------------------------------------------------------
+' INITIALIZE
+'------------------------------------------------------------------------------
+    Set mFailures = New Collection
+    mChecks = 0
+    Source = "'" & Replace(ThisWorkbook.Name, "'", "''") & "'!"
+    On Error GoTo Cleanup
+    PriorCalc = Application.Calculation
+    CalcChanged = True
+    Application.Calculation = xlCalculationManual
+    Set Scratch = Application.Workbooks.Add
+    Set Sheet = Scratch.Worksheets(1)
+    Scratch.Date1904 = False
+
+    'Three inputs: a date, a blank, a date
+        Sheet.Range("A1").Value2 = "2026-03-15"
+        Sheet.Range("A3").Value2 = "2026-04-09"
+        Set Anchor = Sheet.Range("C1")
+
+'------------------------------------------------------------------------------
+' CAPABILITY PROBE
+'------------------------------------------------------------------------------
+    'Does this host expose the dynamic-array API at all?
+        ApiState = "NOT_AVAILABLE"
+        On Error Resume Next
+        CallByName Anchor, "Formula2", VbLet, "=" & Source & "KPR_Dates_EndOfMonth(A1:A3)"
+        If Err.Number = 0 Then ApiState = "SUPPORTED"
+        Err.Clear
+        On Error GoTo Cleanup
+        Debug.Print "KPR array regression  dynamic-array API: " & ApiState
+        If ApiState <> "SUPPORTED" Then
+            Record "array/api", "Formula2 is not available on this host; the multi-cell claim cannot be tested here"
+            GoTo Cleanup
+        End If
+        Application.Calculate
+
+'------------------------------------------------------------------------------
+' 1900: THE FORMULA SPILLS TO THREE CELLS, WITH THE BLANK AS #VALUE! ALONE
+'------------------------------------------------------------------------------
+        Set Spill = Nothing
+        On Error Resume Next
+        Set Spill = CallByName(Anchor, "SpillingToRange", VbGet)
+        Err.Clear
+        On Error GoTo Cleanup
+        mChecks = mChecks + 1
+        If Spill Is Nothing Then
+            Record "array/1900 spill", "no spilled range reported"
+        ElseIf Spill.Rows.Count <> 3 Or Spill.Columns.Count <> 1 Then
+            Record "array/1900 spill", "expected a 3x1 spill, got " & CStr(Spill.Rows.Count) & "x" & CStr(Spill.Columns.Count)
+        End If
+        AssertDateResult "array/1900 row 1", Sheet.Range("C1").Value, DateSerial(2026, 3, 31)
+        AssertErrorValue "array/1900 blank row 2", Sheet.Range("C2").Value, ERR_VALUE
+        AssertDateResult "array/1900 row 3 survives its neighbour", Sheet.Range("C3").Value, DateSerial(2026, 4, 30)
+
+'------------------------------------------------------------------------------
+' 1904: ONE CALL-LEVEL #N/A, NO SPILL, RANGE NEVER READ
+'------------------------------------------------------------------------------
+        Scratch.Date1904 = True
+        CallByName Anchor, "Formula2", VbLet, "=" & Source & "KPR_Dates_EndOfMonth(A1:A3)"
+        Application.Calculate
+        AssertErrorValue "array/1904 call-level NA", Sheet.Range("C1").Value, ERR_NA
+        Set Spill = Nothing
+        On Error Resume Next
+        Set Spill = CallByName(Anchor, "SpillingToRange", VbGet)
+        Err.Clear
+        On Error GoTo Cleanup
+        mChecks = mChecks + 1
+        If Not Spill Is Nothing Then
+            If Spill.Rows.Count > 1 Then Record "array/1904 no spill", "a refused call spilled " & CStr(Spill.Rows.Count) & " rows"
+        End If
+        mChecks = mChecks + 1
+        If Not IsEmpty(Sheet.Range("C2").Value) Then Record "array/1904 neighbours untouched", "C2 holds a value after a refused call"
+
+'------------------------------------------------------------------------------
+' CLEANUP
+'------------------------------------------------------------------------------
+Cleanup:
+    If Err.Number <> 0 Then
+        Record "array/runner", "unexpected runtime error " & CStr(Err.Number) & ": " & Err.Description
+        Err.Clear
+    End If
+    On Error Resume Next
+    If Not Scratch Is Nothing Then Scratch.Close SaveChanges:=False
+    If CalcChanged Then Application.Calculation = PriorCalc
+    On Error GoTo 0
+
+'------------------------------------------------------------------------------
+' REPORT
+'------------------------------------------------------------------------------
+    If ApiState = "SUPPORTED" And mChecks <> EXPECT_CHECKS Then
+        Record "array/runner state", "expected " & CStr(EXPECT_CHECKS) & " assertions but counted " & CStr(mChecks)
+    End If
+    Debug.Print "KPR array regression  checks: " & CStr(mChecks) & "  failures: " & CStr(mFailures.Count)
     For I = 1 To mFailures.Count
         Debug.Print "  FAIL  " & CStr(mFailures(I)(0)) & " : " & CStr(mFailures(I)(1))
     Next I
@@ -2103,6 +2570,7 @@ Private Sub Run_BoundaryCases()
     Const ERR_VALUE As Long = 2015      'Excel #VALUE! error number
     Const ERR_NUM   As Long = 2036      'Excel #NUM! error number
     Const ERR_NA    As Long = 2042      'Excel #N/A error number
+    Dim ArrayOut    As Variant          'Traversed result of a multi-element call
 
 '------------------------------------------------------------------------------
 ' ERROR MAPPING
@@ -2158,8 +2626,20 @@ Private Sub Run_BoundaryCases()
 '------------------------------------------------------------------------------
 ' SHAPE
 '------------------------------------------------------------------------------
-    'A non-scalar payload is rejected at the shape boundary
-        AssertErrorValue "facade/array input", KPR_Dates_DayOfWeek(Array(1, 2)), ERR_VALUE
+    'A non-scalar payload is traversed since #17, not rejected. Serials 1 and 2
+    'are below the supported window, so each position carries its own #NUM!;
+    'the call itself succeeds. The parity suite owns the general rule, and this
+    'case pins the boundary suite's own history: it asserted #VALUE! while the
+    'facade was scalar-only.
+        ArrayOut = KPR_Dates_DayOfWeek(Array(1, 2))
+        mChecks = mChecks + 1
+        If Not IsArray(ArrayOut) Then
+            Record "facade/array input", "expected a traversed array result"
+        ElseIf UBound(ArrayOut, 1) <> 1 Or UBound(ArrayOut, 2) <> 2 Then
+            Record "facade/array input", "expected a 1x2 result"
+        End If
+        AssertErrorValue "facade/array input element 1", ArrayOut(1, 1), ERR_NUM
+        AssertErrorValue "facade/array input element 2", ArrayOut(1, 2), ERR_NUM
 
 End Sub
 

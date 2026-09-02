@@ -116,22 +116,39 @@ Attribute VB_Name = "KPR_DATES_DAYS"
 '
 '       host guard -> optional controls -> element arguments in signature order
 '
-'   The scalar call is the 1x1 case of the element. Issue #17 replaces the
-'   single call with a shape-aware loop over the same Elem_* functions; nothing
-'   about an element changes when that happens, and no element ever calls the
-'   guard, which the static gate enforces.
+'   The scalar call is the 1x1 case of the element. A multi-element call loops
+'   the same Elem_* function over the resolved shape through the #16 engine
+'   services; nothing about an element differs between the two, and no element
+'   ever calls the guard, which the static gate enforces.
 '
-' SHAPE CONTRACT (THIS REVISION)
-'   - All public functions are SCALAR ONLY.
-'   - A single-cell Range and a 1x1 wrapper are accepted and unwrapped, so VBA
-'     callers and legacy single-cell references keep working. This applies to
-'     every Variant argument, the pillar token included.
-'   - Multi-cell / multi-element inputs are rejected as #VALUE!, and a control
-'     larger than 1x1 reports a shape rejection rather than the contract's
-'     distinct CONTROL_NOT_SCALAR condition until #16 lands.
-'   - Array traversal is deliberately deferred to issue #16 and wired in by
-'     #17, which loops the existing Elem_* functions and must keep the host
-'     guard once per call rather than once per element.
+' SHAPE CONTRACT
+'   - Value arguments vectorize. A scalar, single-cell Range or 1x1 wrapper
+'     expands to the resolved output shape; every non-scalar value argument
+'     must match exactly in rows and columns. No outer product, no implicit
+'     cross-broadcast. Worksheet orientation is preserved and a 1-D VBA array
+'     is 1xN.
+'   - An all-scalar call returns a scalar. Any other call returns a 1-based
+'     2-D Variant of the resolved shape, evaluated row-major, each element
+'     resolved independently so a blank or an incoming error at one position
+'     never suppresses a valid neighbour.
+'   - Opt_ controls never vectorize: a multi-element control is call-level
+'     #VALUE! under CONTROL_NOT_SCALAR.
+'   - The output is capped at 100,000 elements (#NUM!, CAPACITY_EXCEEDED),
+'     decided from dimensions before any Range is read. Multi-area, empty,
+'     rank-3+ and non-Range inputs are call-level #VALUE!; a jagged array is
+'     detected during materialization, after the cap, because detecting it
+'     requires inspecting elements.
+'   - Every wrapper applies contract section 5.2's stages in order: host guard,
+'     classify every value argument, controls and broadcast resolution, cap,
+'     materialize, traverse. No element implementation ever runs the guard or
+'     reads Application.Caller.
+'
+' COMPATIBILITY
+'   Scalar calls are supported on every Excel version certified for scalar
+'   use. Multi-cell calls are tested, supported and claimed on dynamic-array
+'   Excel only. No Ctrl+Shift+Enter or other legacy multi-cell claim is made,
+'   there is no version detection, and Excel's own spill-placement errors are
+'   Excel's to raise.
 '
 ' DESIGN / INPUT NORMALIZATION
 '   - Every DateIn-style argument is a Variant funnelled through TryResolveDate,
@@ -241,19 +258,33 @@ Public Function KPR_Dates_DayOfWeek( _
 '     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_DayOfWeek
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -267,7 +298,18 @@ Public Function KPR_Dates_DayOfWeek( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
     Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -280,19 +322,45 @@ Public Function KPR_Dates_DayOfWeek( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_DayOfWeek = Elem_DayOfWeek(DateIn, WkMonday)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_DayOfWeek = Elem_DayOfWeek(P1, WkMonday)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_DayOfWeek(ElementAt(P1, K1, R, C), WkMonday)
+            Next C
+        Next R
+        KPR_Dates_DayOfWeek = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -334,19 +402,33 @@ Public Function KPR_Dates_DaysInMonth( _
 '     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_DaysInMonth
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -359,6 +441,17 @@ Public Function KPR_Dates_DaysInMonth( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -371,16 +464,42 @@ Public Function KPR_Dates_DaysInMonth( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_DaysInMonth = Elem_DaysInMonth(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_DaysInMonth = Elem_DaysInMonth(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_DaysInMonth(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_DaysInMonth = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -422,19 +541,33 @@ Public Function KPR_Dates_DaysInYear( _
 '     Long on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain
-'   #NUM!    an integer outside the Long range
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an output of 100,001 or more elements; an integer outside the Long range
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_DaysInYear
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Takes a calendar year, not a date. No date is constructed, so no window gate applies and year 1900 is fully in the domain.
@@ -447,6 +580,17 @@ Public Function KPR_Dates_DaysInYear( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of YearIn
+    Dim K1              As KPR_ArgShape 'Shape kind of YearIn
+    Dim R1              As Long      'Rows of YearIn
+    Dim C1              As Long      'Cols of YearIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -459,16 +603,42 @@ Public Function KPR_Dates_DaysInYear( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(YearIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(YearIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_DaysInYear = Elem_DaysInYear(YearIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_DaysInYear = Elem_DaysInYear(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_DaysInYear(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_DaysInYear = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -518,19 +688,33 @@ Public Function KPR_Dates_BeginOfMonth( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_BeginOfMonth
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -543,6 +727,17 @@ Public Function KPR_Dates_BeginOfMonth( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -555,16 +750,42 @@ Public Function KPR_Dates_BeginOfMonth( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_BeginOfMonth = Elem_BeginOfMonth(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_BeginOfMonth = Elem_BeginOfMonth(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_BeginOfMonth(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_BeginOfMonth = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -606,19 +827,33 @@ Public Function KPR_Dates_EndOfMonth( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_EndOfMonth
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -631,6 +866,17 @@ Public Function KPR_Dates_EndOfMonth( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -643,16 +889,42 @@ Public Function KPR_Dates_EndOfMonth( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_EndOfMonth = Elem_EndOfMonth(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_EndOfMonth = Elem_EndOfMonth(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_EndOfMonth(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_EndOfMonth = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -694,19 +966,33 @@ Public Function KPR_Dates_BeginOfQuarter( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_BeginOfQuarter
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - A Q1-1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
@@ -719,6 +1005,17 @@ Public Function KPR_Dates_BeginOfQuarter( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -731,16 +1028,42 @@ Public Function KPR_Dates_BeginOfQuarter( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_BeginOfQuarter = Elem_BeginOfQuarter(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_BeginOfQuarter = Elem_BeginOfQuarter(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_BeginOfQuarter(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_BeginOfQuarter = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -782,19 +1105,33 @@ Public Function KPR_Dates_EndOfQuarter( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_EndOfQuarter
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Always inside the window for an in-window input: the quarter end is never earlier than the input.
@@ -807,6 +1144,17 @@ Public Function KPR_Dates_EndOfQuarter( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -819,16 +1167,42 @@ Public Function KPR_Dates_EndOfQuarter( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_EndOfQuarter = Elem_EndOfQuarter(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_EndOfQuarter = Elem_EndOfQuarter(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_EndOfQuarter(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_EndOfQuarter = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -870,19 +1244,33 @@ Public Function KPR_Dates_BeginOfYear( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_BeginOfYear
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Any 1900 input names 1900-01-01, which is outside the supported window: RESULT_WINDOW, not a date.
@@ -895,6 +1283,17 @@ Public Function KPR_Dates_BeginOfYear( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -907,16 +1306,42 @@ Public Function KPR_Dates_BeginOfYear( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_BeginOfYear = Elem_BeginOfYear(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_BeginOfYear = Elem_BeginOfYear(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_BeginOfYear(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_BeginOfYear = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -958,19 +1383,33 @@ Public Function KPR_Dates_EndOfYear( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_EndOfYear
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -983,6 +1422,17 @@ Public Function KPR_Dates_EndOfYear( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -995,16 +1445,42 @@ Public Function KPR_Dates_EndOfYear( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_EndOfYear = Elem_EndOfYear(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_EndOfYear = Elem_EndOfYear(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_EndOfYear(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_EndOfYear = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1054,19 +1530,33 @@ Public Function KPR_Dates_IsMonthEnd( _
 '     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_IsMonthEnd
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -1079,6 +1569,17 @@ Public Function KPR_Dates_IsMonthEnd( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1091,16 +1592,42 @@ Public Function KPR_Dates_IsMonthEnd( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_IsMonthEnd = Elem_IsMonthEnd(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_IsMonthEnd = Elem_IsMonthEnd(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_IsMonthEnd(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_IsMonthEnd = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1142,19 +1669,33 @@ Public Function KPR_Dates_IsQuarterEnd( _
 '     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_IsQuarterEnd
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -1167,6 +1708,17 @@ Public Function KPR_Dates_IsQuarterEnd( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1179,16 +1731,42 @@ Public Function KPR_Dates_IsQuarterEnd( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_IsQuarterEnd = Elem_IsQuarterEnd(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_IsQuarterEnd = Elem_IsQuarterEnd(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_IsQuarterEnd(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_IsQuarterEnd = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1230,19 +1808,33 @@ Public Function KPR_Dates_IsYearEnd( _
 '     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_IsYearEnd
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -1255,6 +1847,17 @@ Public Function KPR_Dates_IsYearEnd( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1267,16 +1870,42 @@ Public Function KPR_Dates_IsYearEnd( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_IsYearEnd = Elem_IsYearEnd(DateIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_IsYearEnd = Elem_IsYearEnd(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_IsYearEnd(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_IsYearEnd = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1318,19 +1947,33 @@ Public Function KPR_Dates_IsLeapYear( _
 '     Boolean on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain
-'   #NUM!    an integer outside the Long range
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an output of 100,001 or more elements; an integer outside the Long range
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_IsLeapYear
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Takes a calendar year, not a date. IsLeapYear(1900) is False; no window gate applies.
@@ -1343,6 +1986,17 @@ Public Function KPR_Dates_IsLeapYear( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of YearIn
+    Dim K1              As KPR_ArgShape 'Shape kind of YearIn
+    Dim R1              As Long      'Rows of YearIn
+    Dim C1              As Long      'Cols of YearIn
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1355,16 +2009,42 @@ Public Function KPR_Dates_IsLeapYear( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(YearIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(YearIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_IsLeapYear = Elem_IsLeapYear(YearIn)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_IsLeapYear = Elem_IsLeapYear(P1)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_IsLeapYear(ElementAt(P1, K1, R, C))
+            Next C
+        Next R
+        KPR_Dates_IsLeapYear = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1417,19 +2097,33 @@ Public Function KPR_Dates_AddDays( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_AddDays
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - The shift is computed in Double and gated before coercion back to Date, so an overflow can never reach CDate.
@@ -1442,6 +2136,21 @@ Public Function KPR_Dates_AddDays( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim P2              As Variant   'Materialized payload of nDays
+    Dim K2              As KPR_ArgShape 'Shape kind of nDays
+    Dim R2              As Long      'Rows of nDays
+    Dim C2              As Long      'Cols of nDays
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1454,16 +2163,45 @@ Public Function KPR_Dates_AddDays( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(nDays, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(nDays, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_AddDays = Elem_AddDays(DateIn, nDays)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_AddDays = Elem_AddDays(P1, P2)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_AddDays(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C))
+            Next C
+        Next R
+        KPR_Dates_AddDays = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1508,19 +2246,33 @@ Public Function KPR_Dates_AddWeeks( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_AddWeeks
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - None.
@@ -1533,6 +2285,21 @@ Public Function KPR_Dates_AddWeeks( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim P2              As Variant   'Materialized payload of nWeeks
+    Dim K2              As KPR_ArgShape 'Shape kind of nWeeks
+    Dim R2              As Long      'Rows of nWeeks
+    Dim C2              As Long      'Cols of nWeeks
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1545,16 +2312,45 @@ Public Function KPR_Dates_AddWeeks( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(nWeeks, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(nWeeks, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_AddWeeks = Elem_AddWeeks(DateIn, nWeeks)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_AddWeeks = Elem_AddWeeks(P1, P2)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_AddWeeks(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C))
+            Next C
+        Next R
+        KPR_Dates_AddWeeks = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1602,19 +2398,33 @@ Public Function KPR_Dates_AddMonths( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_AddMonths
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -1628,7 +2438,22 @@ Public Function KPR_Dates_AddMonths( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim P2              As Variant   'Materialized payload of nMonths
+    Dim K2              As KPR_ArgShape 'Shape kind of nMonths
+    Dim R2              As Long      'Rows of nMonths
+    Dim C2              As Long      'Cols of nMonths
     Dim KeepEOM         As Boolean    'Resolved Opt_KeepEOM
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1641,19 +2466,48 @@ Public Function KPR_Dates_AddMonths( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or native Opt_KeepEOM (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(nMonths, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(nMonths, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_AddMonths = Elem_AddMonths(DateIn, nMonths, KeepEOM)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_AddMonths = Elem_AddMonths(P1, P2, KeepEOM)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_AddMonths(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C), KeepEOM)
+            Next C
+        Next R
+        KPR_Dates_AddMonths = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1701,19 +2555,33 @@ Public Function KPR_Dates_AddYears( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_AddYears
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -1727,7 +2595,22 @@ Public Function KPR_Dates_AddYears( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of DateIn
+    Dim K1              As KPR_ArgShape 'Shape kind of DateIn
+    Dim R1              As Long      'Rows of DateIn
+    Dim C1              As Long      'Cols of DateIn
+    Dim P2              As Variant   'Materialized payload of nYears
+    Dim K2              As KPR_ArgShape 'Shape kind of nYears
+    Dim R2              As Long      'Rows of nYears
+    Dim C2              As Long      'Cols of nYears
     Dim KeepEOM         As Boolean    'Resolved Opt_KeepEOM
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1740,19 +2623,48 @@ Public Function KPR_Dates_AddYears( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or native Opt_KeepEOM (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(DateIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(nYears, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveBool(Opt_KeepEOM, False, KeepEOM, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(DateIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(nYears, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_AddYears = Elem_AddYears(DateIn, nYears, KeepEOM)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_AddYears = Elem_AddYears(P1, P2, KeepEOM)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_AddYears(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C), KeepEOM)
+            Next C
+        Next R
+        KPR_Dates_AddYears = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1814,19 +2726,33 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
-'   #NUM!    an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_NthWeekdayOfMonth
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -1840,7 +2766,30 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of YearIn
+    Dim K1              As KPR_ArgShape 'Shape kind of YearIn
+    Dim R1              As Long      'Rows of YearIn
+    Dim C1              As Long      'Cols of YearIn
+    Dim P2              As Variant   'Materialized payload of MonthIn
+    Dim K2              As KPR_ArgShape 'Shape kind of MonthIn
+    Dim R2              As Long      'Rows of MonthIn
+    Dim C2              As Long      'Cols of MonthIn
+    Dim P3              As Variant   'Materialized payload of WdIndex
+    Dim K3              As KPR_ArgShape 'Shape kind of WdIndex
+    Dim R3              As Long      'Rows of WdIndex
+    Dim C3              As Long      'Cols of WdIndex
+    Dim P4              As Variant   'Materialized payload of n
+    Dim K4              As KPR_ArgShape 'Shape kind of n
+    Dim R4              As Long      'Rows of n
+    Dim C4              As Long      'Cols of n
     Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1853,19 +2802,54 @@ Public Function KPR_Dates_NthWeekdayOfMonth( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(YearIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(MonthIn, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(WdIndex, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(n, K4, R4, C4, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K4, R4, C4, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(YearIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(MonthIn, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(WdIndex, P3, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(n, P4, K4, R4, C4, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_NthWeekdayOfMonth = Elem_NthWeekdayOfMonth(YearIn, MonthIn, WdIndex, n, WkMonday)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_NthWeekdayOfMonth = Elem_NthWeekdayOfMonth(P1, P2, P3, P4, WkMonday)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_NthWeekdayOfMonth(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C), ElementAt(P3, K3, R, C), ElementAt(P4, K4, R, C), WkMonday)
+            Next C
+        Next R
+        KPR_Dates_NthWeekdayOfMonth = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -1916,19 +2900,33 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
-'   #NUM!    an integer outside the Long range; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; an integer argument that is fractional, Boolean, text, or outside its domain; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; an integer outside the Long range; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_LastWeekdayOfMonth
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveBool (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -1942,7 +2940,26 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of YearIn
+    Dim K1              As KPR_ArgShape 'Shape kind of YearIn
+    Dim R1              As Long      'Rows of YearIn
+    Dim C1              As Long      'Cols of YearIn
+    Dim P2              As Variant   'Materialized payload of MonthIn
+    Dim K2              As KPR_ArgShape 'Shape kind of MonthIn
+    Dim R2              As Long      'Rows of MonthIn
+    Dim C2              As Long      'Cols of MonthIn
+    Dim P3              As Variant   'Materialized payload of WdIndex
+    Dim K3              As KPR_ArgShape 'Shape kind of WdIndex
+    Dim R3              As Long      'Rows of WdIndex
+    Dim C3              As Long      'Cols of WdIndex
     Dim WkMonday        As Boolean    'Resolved Opt_WeekBaseMonday
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -1955,19 +2972,51 @@ Public Function KPR_Dates_LastWeekdayOfMonth( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or native Opt_WeekBaseMonday (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(YearIn, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(MonthIn, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(WdIndex, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveBool(Opt_WeekBaseMonday, True, WkMonday, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(YearIn, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(MonthIn, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(WdIndex, P3, K3, R3, C3, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_LastWeekdayOfMonth = Elem_LastWeekdayOfMonth(YearIn, MonthIn, WdIndex, WkMonday)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_LastWeekdayOfMonth = Elem_LastWeekdayOfMonth(P1, P2, P3, WkMonday)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_LastWeekdayOfMonth(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C), ElementAt(P3, K3, R, C), WkMonday)
+            Next C
+        Next R
+        KPR_Dates_LastWeekdayOfMonth = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -2023,19 +3072,33 @@ Public Function KPR_Dates_PillarFromDates( _
 '     String on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; an optional control of the wrong type or an unknown token
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_PillarFromDates
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '   - TryResolveRounding (KPR_Core_Array, KPR_Core_Parse)
 '
 ' NOTES
@@ -2049,7 +3112,22 @@ Public Function KPR_Dates_PillarFromDates( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of StartDate
+    Dim K1              As KPR_ArgShape 'Shape kind of StartDate
+    Dim R1              As Long      'Rows of StartDate
+    Dim C1              As Long      'Cols of StartDate
+    Dim P2              As Variant   'Materialized payload of EndDate
+    Dim K2              As KPR_ArgShape 'Shape kind of EndDate
+    Dim R2              As Long      'Rows of EndDate
+    Dim C2              As Long      'Cols of EndDate
     Dim Mode            As KPR_PillarRounding 'Resolved Opt_Rounding
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -2062,19 +3140,48 @@ Public Function KPR_Dates_PillarFromDates( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
-    'Accept only an omitted, blank or recognized Opt_Rounding token (call-level)
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(StartDate, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(EndDate, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3a: optional controls, scalar or 1x1 only (CONTROL_NOT_SCALAR)
         If Not TryResolveRounding(Opt_Rounding, Mode, FailErr) Then GoTo Fail
 
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(StartDate, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(EndDate, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_PillarFromDates = Elem_PillarFromDates(StartDate, EndDate, Mode)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_PillarFromDates = Elem_PillarFromDates(P1, P2, Mode)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_PillarFromDates(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C), Mode)
+            Next C
+        Next R
+        KPR_Dates_PillarFromDates = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -2119,19 +3226,33 @@ Public Function KPR_Dates_DateFromPillar( _
 '     Date on success, or a native Excel error value.
 '
 ' ERROR POLICY (USER FACING)
-'   #VALUE!  a date argument that is not scalar, not a date, or malformed text; a pillar token outside the accepted grammar
-'   #NUM!    a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
+'   #VALUE!  a multi-cell optional control; a shape that is not a scalar,
+'            Range or array, or a multi-area, empty, jagged or rank-3+ input;
+'            two non-scalar arguments of different shapes; a date argument that is not scalar, not a date, or malformed text; a pillar token outside the accepted grammar
+'   #NUM!    an output of 100,001 or more elements; a date outside KPR_MIN_DATE .. KPR_MAX_DATE; a result outside the supported window
 '   #N/A     an identified 1904 worksheet caller, or an identified caller
 '            whose date system cannot be read
 '   Incoming native errors are returned unchanged.
 '
-' ORDER OF EVALUATION
-'   host guard -> optional controls -> element arguments in signature order.
-'   The guard is call-level; the element resolves its own value arguments.
+' SHAPE
+'   Value arguments may be a scalar, a single-cell Range or 1x1 wrapper, or a
+'   multi-element Range or array. A scalar expands; every non-scalar argument
+'   must match exactly in rows and columns. An all-scalar call returns a
+'   scalar; any other call returns a 1-based 2-D Variant of the resolved
+'   shape, evaluated row-major, with each element resolved independently.
+'   Multi-cell results are supported on dynamic-array Excel only.
+'
+' ORDER OF EVALUATION (call-level, contract section 5.2)
+'   host guard -> classify every value argument -> optional controls and
+'   broadcast resolution -> element cap -> materialize -> traverse.
+'   Within an element, value arguments resolve in signature order.
 '
 ' DEPENDENCIES
 '   - PassHostGuard
 '   - Elem_DateFromPillar
+'   - KPR_Core_Array: TryClassifyShape, AccumulateShape, CheckCapacity,
+'     TryMaterialize, TryAllocateOutput, ElementAt
+'   - KPR_Core_Err.ErrForCondition
 '
 ' NOTES
 '   - Months first with clip semantics, then exact days, matching the parser's grammar. Singular: it returns exactly one date. The plural baseline name was a defect.
@@ -2144,6 +3265,21 @@ Public Function KPR_Dates_DateFromPillar( _
 '------------------------------------------------------------------------------
 ' DECLARE
 '------------------------------------------------------------------------------
+    Dim P1              As Variant   'Materialized payload of StartDate
+    Dim K1              As KPR_ArgShape 'Shape kind of StartDate
+    Dim R1              As Long      'Rows of StartDate
+    Dim C1              As Long      'Cols of StartDate
+    Dim P2              As Variant   'Materialized payload of Pillar
+    Dim K2              As KPR_ArgShape 'Shape kind of Pillar
+    Dim R2              As Long      'Rows of Pillar
+    Dim C2              As Long      'Cols of Pillar
+    Dim OutKind         As KPR_ArgShape 'Resolved output kind
+    Dim OutRows         As Long      'Resolved output rows
+    Dim OutCols         As Long      'Resolved output cols
+    Dim OutArr          As Variant   'Output array for a multi-element call
+    Dim R               As Long      'Row cursor
+    Dim C               As Long      'Column cursor
+    Dim Condition       As KPR_Condition 'Call-level shape or capacity condition
     Dim FailErr         As Variant   'Worksheet-facing error value returned on failure
 
 '------------------------------------------------------------------------------
@@ -2156,16 +3292,45 @@ Public Function KPR_Dates_DateFromPillar( _
         FailErr = ErrValue()
 
 '------------------------------------------------------------------------------
-' CALL-LEVEL GUARDS
+' CALL-LEVEL STAGES (contract section 5.2)
 '------------------------------------------------------------------------------
-    'Refuse a 1904 worksheet host before any argument is touched (call-level)
+    'Stage 1: refuse a 1904 worksheet host before any argument is touched
         If Not PassHostGuard(FailErr) Then GoTo Fail
 
+    'Stage 2: classify every value argument from type and dimensions alone
+        If Not TryClassifyShape(StartDate, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryClassifyShape(Pillar, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 3b: exact-shape broadcast resolution (SHAPE_MISMATCH)
+        OutKind = KPR_SHAPE_SCALAR: OutRows = 1: OutCols = 1
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not AccumulateShape(OutKind, OutRows, OutCols, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 4: the element cap, once, on the resolved output shape
+        If Not CheckCapacity(OutRows, OutCols, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
+    'Stage 5: only now may content be read
+        If Not TryMaterialize(StartDate, P1, K1, R1, C1, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        If Not TryMaterialize(Pillar, P2, K2, R2, C2, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+
 '------------------------------------------------------------------------------
-' ELEMENT
+' TRAVERSE
 '------------------------------------------------------------------------------
-    'The scalar call is the 1x1 case of the element implementation
-        KPR_Dates_DateFromPillar = Elem_DateFromPillar(StartDate, Pillar)
+    'An all-scalar call returns a scalar: the 1x1 case of the element
+        If OutKind = KPR_SHAPE_SCALAR Then
+            KPR_Dates_DateFromPillar = Elem_DateFromPillar(P1, P2)
+            Exit Function
+        End If
+
+    'A multi-element call returns a 1-based 2-D array of the resolved shape,
+    'evaluated row-major; each element resolves its own inputs
+        If Not TryAllocateOutput(OutRows, OutCols, OutArr, Condition) Then FailErr = ErrForCondition(Condition): GoTo Fail
+        For R = 1 To OutRows
+            For C = 1 To OutCols
+                OutArr(R, C) = Elem_DateFromPillar(ElementAt(P1, K1, R, C), ElementAt(P2, K2, R, C))
+            Next C
+        Next R
+        KPR_Dates_DateFromPillar = OutArr
         Exit Function
 
 '------------------------------------------------------------------------------
@@ -4052,10 +5217,8 @@ Private Function TryResolveBool( _
 '   - Each public Optional Variant declaration supplies its documented default,
 '     so an omitted argument reaches this helper as a native Boolean.
 '   - A blank cell arrives as Empty and selects the same default.
-'   - A control larger than 1x1 is CONTROL_NOT_SCALAR in the contract; this
-'     revision reports the shape rejection it inherits from TryUnwrapScalar,
-'     which yields the same #VALUE!. Issue #16 separates the two when arrays
-'     become traversable.
+'   - A control larger than 1x1 is CONTROL_NOT_SCALAR, reported by
+'     TryUnwrapControl from the control's dimensions alone.
 '   - An incoming error in a control propagates verbatim as a call-level result.
 '
 ' UPDATED
@@ -4079,9 +5242,11 @@ Private Function TryResolveBool( _
 '------------------------------------------------------------------------------
 ' RESOLVE SHAPE
 '------------------------------------------------------------------------------
-    'A control must be scalar or a 1x1 wrapper; it never vectorizes
-        If Not TryUnwrapScalar(ControlIn, ScalarValue) Then
-            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+    'A control must be scalar or a 1x1 wrapper; it never vectorizes. A valid
+    'multi-element control is CONTROL_NOT_SCALAR, an unsupported shape is
+    'SHAPE_UNSUPPORTED, and neither reads the control's contents.
+        If Not TryUnwrapControl(ControlIn, ScalarValue, Condition) Then
+            ErrOut = ErrForCondition(Condition)
             Exit Function
         End If
 
@@ -4165,9 +5330,11 @@ Private Function TryResolveRounding( _
 '------------------------------------------------------------------------------
 ' RESOLVE SHAPE
 '------------------------------------------------------------------------------
-    'A control must be scalar or a 1x1 wrapper; it never vectorizes
-        If Not TryUnwrapScalar(ControlIn, ScalarValue) Then
-            ErrOut = ErrForCondition(KPR_COND_SHAPE_UNSUPPORTED)
+    'A control must be scalar or a 1x1 wrapper; it never vectorizes. A valid
+    'multi-element control is CONTROL_NOT_SCALAR, an unsupported shape is
+    'SHAPE_UNSUPPORTED, and neither reads the control's contents.
+        If Not TryUnwrapControl(ControlIn, ScalarValue, Condition) Then
+            ErrOut = ErrForCondition(Condition)
             Exit Function
         End If
 
