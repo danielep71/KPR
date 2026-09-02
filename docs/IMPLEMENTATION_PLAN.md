@@ -772,7 +772,7 @@ Wizard screenshot is required. Final exact-source certification remains #29.
 <details>
 <summary><strong>#16 — Implement the array shape and broadcasting engine</strong></summary>
 
-- State: `open`
+- State: `closed`
 - Assignee: @danielep71
 - Labels: `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
@@ -784,40 +784,50 @@ Wizard screenshot is required. Final exact-source certification remains #29.
 
 Create one internal array engine with deterministic orientation, broadcasting, optional-argument and capacity semantics for the single public surface.
 
+## Delivered boundary
+
+Issue #16 delivers the shape services in `KPR_Core_Array`, tested directly. It does not change the worksheet facade or public behavior; #17 owns each public function's row-major element loop and its mapping of classified conditions to call-level Excel errors.
+
+The delivered services are:
+
+- `TryMaterialize` for shape classification, pre-read capacity gating and one-read Range/in-memory-array snapshots;
+- `AccumulateShape` for scalar expansion and exact-shape broadcast resolution;
+- `CheckCapacity` for the 100,000-element limit, with the product computed in `Double`;
+- `ElementAt`, total over a validated descriptor, for normalized element access and scalar expansion;
+- `TryAllocateOutput` for classified 1-based output allocation; and
+- `TryUnwrapControl` for independent optional-control classification without reading a multi-element control.
+
 ## Contract
 
-- Value arguments may vectorize. `Opt_` arguments must be omitted, scalar or 1×1; a larger optional argument returns call-level `#VALUE!`.
+- Value arguments may vectorize. `Opt_` arguments must be omitted, scalar or 1×1; a larger optional argument reports `CONTROL_NOT_SCALAR`, which maps to call-level `#VALUE!`.
 - A scalar or 1×1 value expands to the resolved output shape.
 - All non-scalar value arguments must have identical row and column dimensions.
 - Do not perform row-to-column outer products or implicit cross-broadcasting.
-- An all-scalar call returns a scalar, not a 1×1 array.
+- An all-scalar call resolves to a scalar, not a 1×1 array.
 - Preserve worksheet Range orientation. Treat a one-dimensional VBA array as 1×N.
 - Reject multi-area, empty, jagged and unsupported array inputs intentionally.
 - `TryMaterialize` preserves `Empty`, `vbError` and valid payloads at their original positions; it does not interpret them.
 - #17 owns per-element parsing, error propagation and the survival of valid neighbouring results.
-- A shape conflict returns one call-level `#VALUE!`.
-- Cap the resolved output at 100,000 elements. A larger call returns one call-level `#NUM!`.
+- A shape conflict reports `SHAPE_MISMATCH`, which maps to call-level `#VALUE!`.
+- Cap a materialized or allocated shape at 100,000 elements. A larger shape reports `CAPACITY_EXCEEDED`, which maps to call-level `#NUM!`.
 - Never intersect a supplied Range with `UsedRange` or silently shorten the requested output.
-- Own shape classification, broadcast resolution, allocation and 1×1 unwrapping only; contain no date algorithms and no generic function-pointer dispatch.
+- Own shape classification, broadcast resolution, allocation and 1×1 unwrapping only; contain no date algorithms, host classification or generic function-pointer dispatch.
 - Decide capacity from dimensions alone, before reading `Range.Value2`, before allocating a normalized array and before inspecting any element; compute the product in `Double`.
-- Classify `Opt_` controls independently of the capacity-gated value path: a multi-element control is `CONTROL_NOT_SCALAR`/`#VALUE!` from its dimensions alone, never `CAPACITY_EXCEEDED`, and its contents are never read.
-- #16 changes no public behaviour. It delivers services in `KPR_Core_Array`, tested directly; #17 wires the facade to them.
-
-## Already-landed baseline hardening
-
-Commit `2b6464c` made the current scalar boundary inspect object/array type before copying, reject unsupported ranks before reading bounds, and accept only scalar or 1×1 payloads. The row/column/rectangle engine, scalar expansion, exact-shape broadcasting, 100,000-element capacity gate and deterministic traversal remain unimplemented, so no acceptance criterion is checked from that commit alone.
+- Classify `Opt_` controls independently of the capacity-gated value path: a multi-element control is `CONTROL_NOT_SCALAR` from its dimensions alone, never `CAPACITY_EXCEEDED`, and its contents are never read.
+- The facade must run `PassHostGuard` before materialization; #17 already owns and specifies that ordering.
+- #16 changes no public behavior. #17 wires the facade to these services.
 
 ## Acceptance criteria
 
-- [ ] Scalar, 1×1, row, column and rectangular focused cases preserve the documented result type and shape.
-- [ ] Multi-argument scalar expansion works identically for Ranges and in-memory arrays.
-- [ ] One-dimensional VBA arrays are asserted as 1×N.
-- [ ] Non-scalar optional arguments, shape mismatches and unsupported arrays return the documented call-level error.
-- [ ] Exactly 100,000 elements are accepted and 100,001 returns `#NUM!`.
-- [ ] `TryMaterialize` preserves `Empty`, `vbError` and valid payloads at their original positions.
-- [ ] Traversal is deterministic and does not select, activate or recalculate unrelated Excel state; a static purity rule forbids Excel state, host classification, dispatch and date tokens in the engine.
-- [ ] Caller calculation, events, screen updating and selection state remain unchanged.
-- [ ] #19 later encodes the independent generated shape/capacity fixtures; #21 owns their complete regression execution.
+- [x] Scalar, 1×1, row, column and rectangular focused cases preserve the documented descriptor and shape.
+- [x] Multi-argument scalar expansion works identically for Ranges and in-memory arrays at the service boundary.
+- [x] One-dimensional VBA arrays are asserted as 1×N.
+- [x] Non-scalar optional arguments, shape mismatches and unsupported arrays report the classified conditions that map to the documented call-level errors.
+- [x] Exactly 100,000 elements are accepted and 100,001 reports `CAPACITY_EXCEEDED`, which maps to `#NUM!`.
+- [x] `TryMaterialize` preserves `Empty`, `vbError` and valid payloads at their original positions.
+- [x] Normalized element access is deterministic; #17 owns the actual row-major loops. A static purity rule forbids Excel state, host classification, dispatch and date tokens in the engine.
+- [x] Caller calculation, events, screen updating and selection state remain unchanged across the focused Range service calls.
+- [x] #19 later encodes the independent generated shape/capacity fixtures; #21 owns their complete regression execution.
 
 ## Dependencies
 
@@ -831,7 +841,7 @@ Commit `2b6464c` made the current scalar boundary inspect object/array type befo
 
 - State: `open`
 - Assignee: @danielep71
-- Labels: `enhancement`, `behavior-change`, `blocked`, `code`, `P1`, `tests`
+- Labels: `enhancement`, `behavior-change`, `code`, `P1`, `tests`
 - Milestone: `v0.0.2`
 - URL: https://github.com/danielep71/KPR/issues/17
 
