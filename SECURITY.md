@@ -2,394 +2,375 @@
 
 # 🔒 KPR Security Policy
 
-### Trust boundaries, responsible disclosure, data protection, and release integrity
+### Security, trust boundaries, data protection, and release integrity for financial VBA
 
-[![Reporting](https://img.shields.io/badge/reporting-private-d97706?style=for-the-badge)](#reporting-a-vulnerability)
-[![Support](https://img.shields.io/badge/support-pre--release_best_effort-217346?style=for-the-badge)](#supported-versions)
-[![Platform](https://img.shields.io/badge/platform-Excel_VBA_%2F_Windows-0078D6?style=for-the-badge&logo=microsoft-excel&logoColor=white)](#security-model)
-[![Scope](https://img.shields.io/badge/scope-source_%7C_workbooks_%7C_releases-6f42c1?style=for-the-badge)](#security-scope)
-[![Data](https://img.shields.io/badge/data-synthetic_examples_only-d73a49?style=for-the-badge)](#financial-data-and-confidentiality)
-
-<br>
-
-**Source-first trust · Least privilege · Private disclosure · Synthetic evidence · Verifiable releases**
+[![Reporting](https://img.shields.io/badge/Reporting-Private-d97706?style=for-the-badge)](#reporting-a-vulnerability)
+[![Support](https://img.shields.io/badge/Support-Latest_release-217346?style=for-the-badge)](#supported-versions)
+[![Scope](https://img.shields.io/badge/Scope-Source_%7C_Releases_%7C_Automation-0969da?style=for-the-badge)](#security-scope)
+[![Disclosure](https://img.shields.io/badge/Disclosure-Coordinated-6f42c1?style=for-the-badge)](#coordinated-disclosure)
 
 <br>
 
-[Supported versions](#supported-versions)
-&nbsp;·&nbsp;
-[Report privately](#reporting-a-vulnerability)
-&nbsp;·&nbsp;
-[Security model](#security-model)
-&nbsp;·&nbsp;
-[Scope](#security-scope)
-&nbsp;·&nbsp;
-[Data protection](#financial-data-and-confidentiality)
-&nbsp;·&nbsp;
-[Release integrity](#supply-chain-and-release-integrity)
+**Protect users · Minimize exposure · Preserve evidence · Coordinate disclosure**
 
 </div>
 
 ---
 
-**KPR** is an Excel/VBA library under development for financial analytics and
-instrument pricing.
+**KPR** is a local Excel/VBA library for financial analytics and instrument pricing. Its intended runtime has no privileged installer, background service, automatic updater, credential store, or implicit transmission of workbook or financial data.
 
-VBA code executes with the permissions already granted to Microsoft Excel and
-the current operating-system user. A defect in an apparently narrow calculation
-or workbook integration can therefore affect workbook data, formulas,
-application state, linked content, or distributed macro-enabled artifacts.
+This policy explains which versions receive security attention, how to report a
+suspected vulnerability privately, what the project considers security-relevant,
+and which trust boundaries remain the responsibility of users and host
+organizations.
 
 > [!IMPORTANT]
-> KPR is **not a security boundary**. It does not sandbox untrusted workbooks,
-> authorize users, enforce workbook permissions, protect secrets, or make
-> malicious VBA safe. Only run KPR source or artifacts that you trust and have
-> obtained through a verified channel.
-
----
-
-<a id="supported-versions"></a>
-
-## 🧭 Supported versions
-
-KPR has not yet published its first supported release.
-
-| Version | Security status |
-|---|---|
-| `main` | Pre-release development; reports reviewed on a best-effort basis |
-| `v0.0.1` | Repository-setup pre-release only; reports reviewed on a best-effort basis, with no supported functional API or binary |
-| Supported functional releases | None published yet |
-| Unofficial forks or repackaged binaries | Not supported by this project |
-
-Once supported functional releases begin, security support will normally apply
-to the latest such tagged release. Older-release support, if any, will be stated
-explicitly here rather than inferred from the existence of a repository tag.
-
-> [!WARNING]
-> Code on `main` may be incomplete, unvalidated, or incompatible without notice.
-> It must not be represented as a security-supported production release.
-
----
-
-<a id="reporting-a-vulnerability"></a>
-
-## 📮 Reporting a vulnerability
-
-Please do **not** disclose a suspected vulnerability in a public issue,
-discussion, pull request, commit message, sample workbook, or screenshot.
-
-Preferred reporting path:
-
-1. use GitHub's private vulnerability-reporting option if it is available on the
-   repository's **Security** page;
-2. otherwise contact the maintainer through an established private channel; and
-3. if neither route is available, use GitHub's reporting facilities without
-   publishing exploit details.
-
-### Include where possible
-
-| Evidence | Requested detail |
-|---|---|
-| 🧾 **Identity** | Repository, commit or release, file, module, and procedure |
-| 🖥️ **Environment** | Excel, Office bitness, Windows, locale, and deployment model |
-| 🎯 **Impact** | Confidentiality, integrity, availability, or supply-chain consequence |
-| 🔬 **Reproduction** | Minimal steps using synthetic data |
-| 🧨 **Exploitability** | Preconditions, trust level, user interaction, and affected scope |
-| 🛡️ **Mitigation** | Workaround or containment already tested, if any |
-| 📎 **Evidence** | Sanitized logs, screenshots, stack information, or proof of concept |
-
-Use the smallest proof necessary to establish the issue. Do not attach a real
-client, employer, counterparty, student, or personal workbook.
-
-### What to expect
-
-The maintainer will aim to:
-
-1. acknowledge receipt;
-2. determine whether the report is within scope;
-3. reproduce and assess severity where possible;
-4. coordinate a correction and disclosure plan; and
-5. credit the reporter if requested and appropriate.
-
-Response and remediation times are best effort, especially before the first
-release. Complex Excel/VBA issues may require a particular Office version,
-bitness, locale, workbook state, or clean Excel process to reproduce.
-
-> [!NOTE]
-> Please allow reasonable time for investigation before public disclosure. If
-> active exploitation or an immediate data risk exists, state that clearly in
-> the first report.
+> A security policy does not make macros, workbooks, add-ins, source archives, or
+> release artifacts inherently trustworthy. Establish provenance and apply your
+> organization's security controls before enabling executable content.
 
 ---
 
 <a id="security-model"></a>
 
-## 🛡️ Security model
+## 🧭 Security model
 
-KPR assumes that:
+The project assumes that:
 
-```text
-Microsoft Excel and the operating system are trusted
-the user is authorized to open the workbook or add-in
-macros are enabled through an approved trust mechanism
-the KPR source or release artifact was obtained from a trusted channel
-the host workbook and other loaded VBA projects are not malicious
-```
+- Microsoft Excel, the operating system, and the VBA runtime are trusted;
+- the current user is authorized to open and run the workbook or add-in;
+- macros are enabled only through an approved trust mechanism;
+- project source or artifacts were obtained from an official channel; and
+- the host workbook and other code already trusted in the Excel process are not
+  malicious.
 
-These assumptions are boundaries, not guarantees.
+These are trust boundaries, not guarantees. VBA projects running in the same
+Excel process are not isolated security sandboxes.
 
-### Trust flow
+KPR calculations operate on caller-supplied values and workbook context. Financial correctness is critical, but a numerical defect becomes a security issue only when it crosses a trust boundary, compromises protected data or artifacts, or can be exploited to defeat a security or integrity control.
 
-```mermaid
-flowchart TB
-    U["Authorized user"] --> E["Trusted Excel process"]
-    E --> H["Trusted workbook or add-in"]
-    H --> K["Verified KPR source or artifact"]
-    K --> D["Caller-authorized workbook data"]
-```
+---
 
-If any upstream element is untrusted, KPR cannot make the resulting Excel
-session safe.
+<a id="supported-versions"></a>
 
-### Intended runtime profile
+## 📦 Supported versions
 
-KPR is intended to remain a local Excel/VBA library with a narrow operational
-surface:
+| Source state | Security support |
+|---|---|
+| **Latest tagged functional release** | ✅ Supported |
+| **Release candidate before publication** | ⚠️ Testing and best-effort remediation |
+| **main** | ⚠️ Development code; best effort |
+| **Older tagged releases** | ❌ Normally unsupported; upgrade first |
+| **Modified copies, unofficial forks, or mirrors** | ❌ Unsupported unless the issue reproduces in official supported source |
 
-- no privileged installer;
-- no background service;
-- no automatic update mechanism;
-- no credential store in the calculation runtime;
-- no implicit transmission of workbook or financial data; and
-- no mandatory third-party runtime dependency.
+If the project has not yet published a functional release, development code is
+pre-release and no production version is security-supported.
 
-These are design intentions for the pre-release project. Any future capability
-that changes them must be documented, reviewed, and security-assessed explicitly.
+Security fixes normally land on **main** and are included in a new tagged
+release. Older releases are not normally patched in place unless the maintainer
+states otherwise.
+
+Reports must identify an exact release tag or full commit SHA. Descriptions such
+as “latest” or “yesterday's main” are insufficient because branches change.
+
+---
+
+<a id="reporting-a-vulnerability"></a>
+
+## 📣 Reporting a vulnerability
+
+Do **not** disclose a suspected vulnerability in a public issue, discussion,
+pull request, commit message, Wiki page, sample workbook, screenshot, or release
+thread.
+
+Use either private channel:
+
+1. On the repository **Security** page, select **Report a vulnerability** when
+   GitHub private vulnerability reporting is available.
+2. Otherwise email **danielep71@gmail.com** with the subject:
+   **Private security report — KPR**.
+
+Include the smallest amount of information needed to reproduce and assess the
+issue:
+
+| Evidence | Requested detail |
+|---|---|
+| 🧾 **Identity** | Repository, exact tag or full commit SHA, file, module, procedure, and artifact |
+| 🖥️ **Environment** | Excel version/build, Office bitness, Windows version, locale, and deployment model |
+| 🎯 **Impact** | Confidentiality, integrity, availability, code-execution, or supply-chain consequence |
+| 🔬 **Reproduction** | Minimal steps and proof using synthetic data |
+| 🧨 **Exploitability** | Preconditions, required trust, user interaction, affected scope, and persistence |
+| 🛡️ **Mitigation** | Workaround or containment already tested, if any |
+| 📎 **Evidence** | Sanitized logs, diagnostics, screenshots, hashes, or proof of concept |
+| 💹 **Financial contract** | Instrument, dates, units, signs, market conventions, expected result, tolerance, and independent reference |
+| 📘 **Workbook state** | Caller, date system, relevant ranges, names, links, formulas, and whether the issue crosses caller-authorized scope |
+
+Do not send real client, employer, counterparty, student, production, or personal
+workbooks. Remove credentials, tokens, personal data, internal paths,
+connections, external links, document metadata, hidden names, cached values,
+queries, and other unrelated content.
+
+If a secret has been exposed, revoke or rotate it immediately before spending
+time perfecting the report.
+
+---
+
+<a id="response-process"></a>
+
+## ⏱️ Response process
+
+This project is maintained by one person. Response times are best-effort rather than a contractual SLA.
+
+The maintainer aims to:
+
+| Stage | Target |
+|---|---|
+| **Acknowledgement** | Within 5 business days |
+| **Initial scope and severity assessment** | Within 10 business days after sufficient evidence is available |
+| **Progress update for an active investigation** | At least every 14 days |
+| **Remediation and disclosure** | Proportionate to severity, exploitability, affected users, and validation needs |
+
+The process normally includes reproducing the issue, determining affected
+versions and artifacts, containing active risk, developing a fix, adding
+regression or fault-injection evidence, validating in the relevant Excel and
+Windows environment, and preparing a corrected release or advisory.
+
+Targets may change when reproduction requires unavailable Office versions,
+hardware, long-running behavior, third-party coordination, or sanitized evidence
+from the reporter. Material delays will be communicated when practical.
+
+Reporter credit can be included in an advisory or release notes when requested.
+Anonymous credit is also acceptable.
+
+---
+
+<a id="security-triage"></a>
+
+## 🎯 Security issue or ordinary defect?
+
+When uncertain, report privately. The maintainer can reclassify a report safely.
+
+Security reports include credible risks of:
+
+- unintended code execution or crossing a documented trust boundary;
+- unauthorized reading, modification, deletion, or disclosure of data;
+- persistent or exploitable loss of availability;
+- credential, token, signing-key, runner, or automation compromise;
+- malicious, substituted, or misleading official release artifacts;
+- validation or provenance bypasses that can represent an unsafe artifact as
+  trusted; or
+- a correctness defect deliberately exploitable to defeat a security,
+  authorization, integrity, or control boundary.
+
+An incorrect result, compatibility problem, bounded performance regression,
+documentation error, or recoverable UI defect is normally an ordinary bug unless
+it creates a concrete security impact.
+
+### Severity guide
+
+| Severity | Typical impact |
+|---|---|
+| **Critical** | Unintended code execution, exposed release credentials, compromised official artifacts, or broad unauthorized data access |
+| **High** | Significant integrity/confidentiality loss, persistent host compromise, or practical supply-chain exploitation |
+| **Moderate** | Bounded availability or integrity impact requiring meaningful preconditions |
+| **Low** | Hardening weakness or limited impact without demonstrated exploitation |
+
+Severity considers impact, exploitability, required privileges, user
+interaction, affected versions, recoverability, and whether trusted malicious
+VBA is already required.
 
 ---
 
 <a id="security-scope"></a>
 
-## 🎯 Security scope
+## 🛠️ Security scope
 
 ### In scope
 
-Security reports are appropriate for vulnerabilities involving:
+- official source and committed executable or macro-enabled artifacts;
+- official GitHub Release assets, archives, checksums, manifests, and provenance
+  claims;
+- repository-owned build, test, validation, packaging, and release tooling;
+- GitHub Actions workflows, permissions, dependencies, and project-managed
+  credentials;
+- documented runtime integrations and trust boundaries; and
+- security or integrity behavior introduced by this project's code.
 
-- unauthorized reading, modification, deletion, or disclosure of workbook data;
-- formula, name, link, connection, or worksheet manipulation outside documented
-  caller-authorized scope;
-- command, macro, formula, or path injection;
-- unsafe handling of untrusted strings, file paths, workbook names, or external
-  content;
-- persistence or execution that occurs without documented user intent;
-- corruption of caller-owned Excel application state with security or integrity
-  consequences;
-- credential, secret, token, or sensitive-data exposure;
-- unsafe WinAPI declarations or memory handling;
-- malicious or substituted release artifacts;
-- dependency, GitHub Actions, or repository-automation compromise; and
-- a validation bypass that allows an unsafe artifact to be represented as a
-  trusted KPR release.
+### Project-specific risk surfaces
 
-### Usually handled as ordinary defects
-
-The following normally belong in a public issue using synthetic inputs, unless
-they also create a concrete security impact:
-
-- an inaccurate price, yield, cash flow, sensitivity, or date result;
-- an unsupported market convention;
-- a convergence or precision defect;
-- a documentation error;
-- a performance regression; or
-- an Excel-version compatibility problem.
-
-Financial correctness matters deeply, but a numerical defect is not
-automatically a security vulnerability. Treat it as security-sensitive when it
-can be deliberately exploited to cross a trust boundary, corrupt protected
-data, bypass validation, or compromise a distributed artifact.
+- **Input handling** — formula, name, path, command, macro, or string injection through untrusted inputs.
+- **Workbook integrity** — unauthorized reading, writing, deletion, persistence, or mutation outside documented caller-owned scope.
+- **Numerical integrity** — deliberately exploitable pricing, date, curve, or validation behavior that defeats a material control.
+- **Financial confidentiality** — disclosure of trades, curves, portfolios, market data, counterparties, or proprietary conventions.
+- **Release integrity** — substituted modules, workbooks, archives, manifests, or misleading validation and provenance claims.
 
 ### Out of scope
 
-This project cannot remediate:
-
-- vulnerabilities in Microsoft Excel, Office, Windows, or GitHub themselves;
+- vulnerabilities in Microsoft Excel, Office, Windows, GitHub, Python, or the
+  VBA runtime themselves;
+- organization-controlled macro security, endpoint controls, access rights, or
+  deployment policy;
 - malicious VBA already trusted and running in the same Excel process;
-- organization-specific macro policies, endpoint controls, or access rights;
-- social engineering unrelated to KPR source or release channels;
-- unofficial forks, modified copies, or binaries not published by this project;
-- lost or stolen user credentials; or
-- financial losses arising solely from using an unsupported pre-release build.
+- unrelated workbooks, add-ins, dependencies, or infrastructure;
+- modified copies that do not reproduce the issue in official supported source;
+- unofficial mirrors, repackaged binaries, or unsupported historical snapshots;
+- lost or stolen user credentials not exposed by this project;
+- social engineering unrelated to official project content; and
+- ordinary defects without a concrete security impact.
 
-Relevant upstream vulnerabilities should be reported to the responsible vendor.
-
----
-
-## 🧱 Runtime security boundaries
-
-### Caller-owned workbook state
-
-KPR code must not assume ownership of a workbook, worksheet, range, formula,
-name, link, connection, table, or Excel application setting merely because it is
-accessible through the object model.
-
-Security-sensitive or integrity-sensitive state includes:
-
-```text
-workbook and worksheet contents
-formulas, names, links, and connections
-VBA project and macro entry points
-Application.Calculation
-Application.EnableEvents
-Application.DisplayAlerts
-Application.ScreenUpdating
-Application.StatusBar
-active workbook, sheet, range, and selection
-file paths and external data locations
-```
-
-Mutations must be bounded by the documented API contract. Any temporary state
-change must have explicit ownership, cleanup, and failure behavior.
-
-### Errors and diagnostics
-
-Error messages, logs, test reports, and debug output must not expose:
-
-- full confidential file paths unnecessarily;
-- workbook content or market data beyond the minimal diagnostic need;
-- credentials, tokens, connection strings, or environment secrets; or
-- data from a workbook other than the caller-authorized target.
-
-Failing safely is preferable to returning a plausible but unverified result or
-continuing after the integrity boundary is uncertain.
-
-### Formula and string injection
-
-Any feature that writes caller-controlled text to a worksheet, name, formula,
-path, shell, command, query, or external connection must treat the destination as
-an injection boundary. Values beginning with formula-control characters and
-strings used to construct formulas or paths require explicit handling and tests.
+Upstream vulnerabilities should be reported to the responsible vendor or
+platform.
 
 ---
 
-<a id="financial-data-and-confidentiality"></a>
+<a id="data-and-secrets"></a>
 
-## 🔐 Financial data and confidentiality
+## 🔐 Data and secret handling
 
-Do not submit real:
+Never commit, upload, log, or attach:
 
-- trades, positions, portfolios, counterparties, or valuations;
-- curves, market data, vendor extracts, or proprietary model outputs;
-- client, employer, student, or personal workbooks;
-- credentials, internal hostnames, network paths, or connection strings; or
-- screenshots containing hidden or incidental sensitive information.
+- passwords, personal access tokens, API keys, signing keys, certificates, or
+  connection strings;
+- client, employer, counterparty, student, employee, or personal data;
+- proprietary source, models, workbooks, market data, production extracts, or
+  licensed vendor content;
+- internal URLs, machine-specific paths, environment dumps, or unredacted
+  screenshots; or
+- proof-of-concept material beyond what is necessary to establish the issue.
 
-Use synthetic data that preserves only the behavior required to reproduce the
-issue.
+Use synthetic data and a minimal reproduction. Excel files can carry sensitive
+material outside visible cells, including document properties, defined names,
+hidden sheets, VBA, cached values, Power Query data, external links, and
+connections.
 
-> [!CAUTION]
-> Macro-enabled workbooks can retain hidden names, VBA, metadata, cached values,
-> external links, connections, custom XML, and document properties. Deleting
-> visible worksheet values is not sufficient sanitization.
-
-### Third-party data and licenses
-
-Market data and vendor outputs may be contractually restricted even when they do
-not contain personal data. A numerical reference must be legally redistributable
-or described without publishing the restricted source content.
+Repository secrets must be scoped to the smallest necessary workflow, protected
+from untrusted pull-request code, excluded from logs and artifacts, and rotated
+after suspected exposure.
 
 ---
 
-<a id="supply-chain-and-release-integrity"></a>
+<a id="supply-chain"></a>
 
-## 📦 Supply chain and release integrity
+## 📦 Supply-chain and release integrity
 
-KPR is source-first: exported VBA and configuration files in Git are the primary
-review surface. Macro-enabled binaries introduce a separate trust boundary.
+Trusted distribution is limited to the official repository and its GitHub
+Releases page.
 
-### Source controls
+Maintainers should:
 
-Contributions should preserve:
+- review executable and macro-enabled artifacts before publication;
+- pin third-party workflow actions to immutable commit SHAs;
+- grant workflows the minimum required permissions;
+- keep build, validation, signing, and publication responsibilities separated
+  where practical;
+- publish checksums, manifests, attestations, or signatures when the release
+  process supports them; and
+- document exactly what each piece of release evidence proves.
 
-- reviewable `.bas`, `.cls`, `.frm`, `.frx`, and RibbonX sources;
-- explicit provenance for adapted algorithms and reference datasets;
-- pinned or otherwise controlled automation dependencies;
-- least-privilege workflow permissions;
-- separation between production logic, tests, demos, and release artifacts; and
-- no secrets or signing material committed to the repository.
+A checksum proves file identity. It does not prove that the file is safe, that
+it was built from the stated source, or that it executed successfully in Excel.
 
-### Release controls
-
-Before a future KPR binary is described as a supported release, the project
-should establish and record:
-
-```text
-source commit and tag identity
-successful compilation
-relevant regression and numerical-reference results
-artifact build procedure
-artifact version and filename
-SHA-256 digest after final build and validation
-known environment and coverage boundaries
-release notes and installation guidance
-```
-
-KPR currently publishes no supported binary. Until the first release process is
-defined, no workbook or add-in should be presented as an official KPR package.
-
-### Verifying future artifacts
-
-When releases exist, obtain them only from:
-
-```text
-https://github.com/danielep71/KPR/releases
-```
-
-Compare any published digest after download and before enabling macros. A digest
-proves file identity relative to the published value; it does not by itself prove
-that the artifact was built from the tagged source or that the source is safe.
+Source hashes, artifact hashes, source-to-artifact provenance, Excel execution
+evidence, and signing identity are distinct claims and must not be conflated.
 
 ---
 
-## 🤖 Repository automation and credentials
+<a id="automation"></a>
 
-GitHub Actions and other repository automation must:
+## 🤖 Repository automation and runners
 
-- request only the permissions required for the job;
-- use repository secrets rather than committed credentials;
-- avoid printing secrets or sensitive API responses;
-- pin third-party actions to reviewed revisions where practical;
-- keep analytics, release, validation, and deployment credentials separate; and
-- treat fork-originated or untrusted pull-request code as untrusted input.
+Workflow code and configuration are security-sensitive.
 
-A passing operational workflow is not proof of source correctness, numerical
-accuracy, release provenance, or artifact safety.
+- Do not expose secrets to pull requests from forks or other untrusted code.
+- Do not run untrusted contributions on a persistent self-hosted Excel/Windows
+  runner with repository, user, network, or signing credentials.
+- Use ephemeral or isolated runners where practical.
+- Clean workbooks, temporary files, Excel processes, credentials, and workspace
+  state between jobs.
+- Treat logs, screenshots, workbooks, test artifacts, and environment metadata
+  as potentially sensitive.
+- Review changes to workflow permissions, action pins, release jobs, dependency
+  acquisition, and artifact upload/download paths as security changes.
 
----
-
-## ✅ Safe-use checklist
-
-```text
-[ ] Obtain KPR only from the official repository or Releases page
-[ ] Review the source or use a release approved by your organization
-[ ] Verify any published artifact digest before enabling macros
-[ ] Use organizational macro-signing and trusted-location policies where required
-[ ] Test in a non-production workbook with synthetic data first
-[ ] Back up important workbooks before integrating pre-release code
-[ ] Confirm the intended workbook, worksheet, range, and financial conventions
-[ ] Do not store secrets or restricted market data in examples or configuration
-[ ] Revalidate outputs independently for material financial use
-[ ] Report suspected vulnerabilities privately
-```
+Automation that writes repository content or publishes releases must have
+explicit, least-privilege authorization.
 
 ---
 
-## ⚖️ Security and financial-model disclaimer
+<a id="safe-use"></a>
 
-Security review does not certify financial correctness, and numerical validation
-does not certify security. Users remain responsible for independent model
-validation, governance, access control, change management, macro policy, and
-suitability for their use case.
+## ✅ Safe-use guidance
+
+Users should:
+
+- obtain KPR only from the official repository or Releases page;
+- review plain-text source and verify any published artifact identity before enabling macros;
+- preserve organization-approved macro security and trusted-location or signing policies;
+- test with synthetic data in a non-production workbook and back up important files;
+- confirm dates, units, signs, currencies, calendars, conventions, and output contracts; and
+- independently validate outputs used for material financial decisions.
+
+No numerical, statistical, pricing, timing, or UI result from this project is by
+itself an authentication, authorization, access-control, cryptographic,
+financial-advice, or safety-critical mechanism.
+
+---
+
+<a id="coordinated-disclosure"></a>
+
+## 📣 Coordinated disclosure
+
+Avoid public disclosure while exploitability is being assessed, a fix is being
+prepared, affected users have not had reasonable time to update, an exposed
+secret remains valid, or a malicious artifact or runner remains reachable.
+
+The maintainer and reporter should agree a disclosure plan based on severity,
+active exploitation, remediation complexity, availability of a workaround, and
+the time needed to validate a corrected release.
+
+The maintainer may ask for a sanitized reproduction, additional environment
+detail, confirmation against a candidate fix, or a reasonable embargo. The
+reporter does not surrender ownership of their research.
+
+When remediation is available, the project may publish a GitHub Security
+Advisory, corrected release, release-note entry, mitigation guidance, and credit
+agreed with the reporter.
+
+---
+
+<a id="safe-harbor"></a>
+
+## 🛡️ Good-faith research and safe harbor
+
+Good-faith security research is welcome when it:
+
+- stays within this project's source, artifacts, and documented integrations;
+- avoids privacy violations, data destruction, service disruption, persistence,
+  social engineering, and access to data beyond what is necessary;
+- stops after establishing the minimum evidence required;
+- reports the issue privately and promptly; and
+- allows reasonable time for investigation and remediation.
+
+The project will not initiate or recommend legal action solely for research
+conducted in good faith and consistently with this policy. This statement does
+not authorize testing of third-party systems or bind Microsoft, GitHub, an
+employer, a client, or any other third party.
+
+No paid bug bounty is offered unless the maintainer states otherwise in writing.
+
+---
+
+<a id="related-policies"></a>
+
+## 📚 Related policies
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- The repository README, contribution guidelines, license, release notes, and
+  project documentation where present
+- GitHub's platform security and acceptable-use policies
+
+Conduct complaints and vulnerability reports are different. Use the Code of
+Conduct for participant behavior and this policy for software risk.
 
 ---
 
@@ -397,7 +378,7 @@ suitability for their use case.
 
 ### Security principle
 
-**Trust the source deliberately · Minimize privilege · Protect the data · Verify the artifact · Report privately**
+**Trust deliberately · Run minimally · Protect secrets · Preserve evidence · Disclose responsibly**
 
 <br>
 
