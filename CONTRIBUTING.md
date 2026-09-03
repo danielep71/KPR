@@ -2,29 +2,27 @@
 
 # 🤝 Contributing to KPR
 
-### Engineering guidance for defensible Excel/VBA financial analytics and pricing
+### Defensible Excel/VBA financial analytics and instrument pricing
 
-[![Conduct](https://img.shields.io/badge/Read_first-Code_of_conduct-6f42c1?style=flat-square)](CODE_OF_CONDUCT.md)
+[![Contributions](https://img.shields.io/badge/Contributions-Welcome-2ea44f?style=flat-square)](#ways-to-contribute)
+[![Conduct](https://img.shields.io/badge/Conduct-Required-6f42c1?style=flat-square)](CODE_OF_CONDUCT.md)
+[![Security](https://img.shields.io/badge/Security-Private_reporting-d73a49?style=flat-square)](SECURITY.md)
+[![Workflow](https://img.shields.io/badge/Workflow-Source--first-0969da?style=flat-square)](#source-first-vba)
 [![License](https://img.shields.io/badge/License-MIT-217346?style=flat-square)](LICENSE)
-[![Source](https://img.shields.io/badge/Model-Source--first-0969da?style=flat-square)](#source-first-development)
-[![Numerics](https://img.shields.io/badge/Numerics-Evidence_required-d97706?style=flat-square)](#numerical-engineering)
-[![Office](https://img.shields.io/badge/Office-32_%2F_64--bit-217346?style=flat-square)](#vba-and-excel-standards)
 
 <br>
 
-**Explicit conventions · Stable numerics · Reviewable source · Reproducible evidence · Honest boundaries**
+**Focused scope · Reviewable source · Reproducible evidence · Honest limitations**
 
 <br>
 
-[Before you start](#before-you-start)
+[Start here](#start-here)
 &nbsp;·&nbsp;
-[Financial contracts](#financial-contract-first)
+[Workflow](#development-workflow)
 &nbsp;·&nbsp;
-[Numerical evidence](#numerical-engineering)
+[VBA rules](#source-first-vba)
 &nbsp;·&nbsp;
-[VBA standards](#vba-and-excel-standards)
-&nbsp;·&nbsp;
-[Validation](#validation-baseline)
+[Validation](#validation-and-evidence)
 &nbsp;·&nbsp;
 [Pull requests](#pull-requests)
 
@@ -32,284 +30,164 @@
 
 ---
 
-Thank you for helping improve **KPR**, an Excel/VBA library for financial
-analytics and instrument pricing.
+Thank you for helping improve **KPR**.
 
-Contributions are welcome across code, tests, numerical reference sets,
-documentation, examples, and repository infrastructure. Every contribution is
-reviewed against the same question:
+Contributions are welcome when they strengthen correctness, clarity,
+maintainability, compatibility, documentation, tests, or reproducibility. The
+standard is not simply that a change works once: another person must be able to
+review it, reproduce the evidence, and understand its operational boundaries.
 
-> Does this make the library more correct, explicit, reproducible, and safe for
-> a caller to use?
-
-By participating, you agree to follow the
-[Code of Conduct](CODE_OF_CONDUCT.md). Security-sensitive reports should follow
-[SECURITY.md](SECURITY.md) rather than being disclosed in a public issue.
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Report suspected vulnerabilities privately under [SECURITY.md](SECURITY.md);
+never disclose sensitive details in a public issue or pull request.
 
 ---
 
-<a id="before-you-start"></a>
+<a id="start-here"></a>
 
-## 🧭 Before you start
+## 🧭 Start here
 
-Read:
+Before opening work:
 
-- [README.md](README.md)
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
-- [SECURITY.md](SECURITY.md)
-- [CHANGELOG.md](CHANGELOG.md)
+1. Read the README, this guide, the Code of Conduct, and the Security Policy.
+2. Search open and closed issues and pull requests for related work.
+3. Open an issue before a non-trivial feature, public-API change, dependency,
+   architectural change, compatibility break, or broad refactor.
+4. Agree the observable contract and validation approach before implementation.
+5. Keep credentials, personal/client data, proprietary workbooks, and restricted
+   reference material out of the repository.
 
-For a defect, open an issue with a minimal reproduction. For a material feature,
-new pricing model, public-API change, dependency, or architectural change, open
-an issue before implementation so that scope and conventions can be agreed.
-
-Small documentation corrections and similarly narrow changes may be submitted
-directly in a focused pull request.
+Small documentation corrections and narrowly obvious fixes may go directly to a
+focused pull request.
 
 > [!IMPORTANT]
-> KPR is not a generic VBA snippet collection. A result can be numerically close
-> and still be financially wrong because of a date, quote, compounding, calendar,
-> interpolation, settlement, or sign convention. Define the contract before
-> optimizing the implementation.
+> A numerically close answer can still be financially wrong. Define the market
+> and date conventions before changing an implementation, and never use the
+> implementation under test to generate its own expected values.
 
-### Engineering priorities
+---
 
-| Priority | Why it matters |
+<a id="ways-to-contribute"></a>
+
+## 🌱 Ways to contribute
+
+| Contribution | Good first action |
 |---|---|
-| 📐 **Explicit financial contract** | A formula without its conventions is not a reusable pricing function. |
-| 🧮 **Numerical defensibility** | Plausible-looking output is not evidence of accuracy or stability. |
-| 🧪 **Independent validation** | An implementation must not generate its own expected results. |
-| 🎯 **Deterministic behavior** | The same supported inputs and environment should produce the same outcome. |
-| 🔒 **Caller-owned Excel state** | A library must not silently take ownership of workbook or application state. |
-| ⚙️ **32-bit and 64-bit compatibility** | Platform-specific defects remain defects even when they occur only on an untested host. |
-| 🧱 **Stable public API** | Workbook formulas and VBA callers are expensive to migrate silently. |
-| 📖 **Readable exported source** | The repository diff is the review artifact; the VBE is only an editing host. |
-| 🔐 **Data and license integrity** | Financial workbooks and market data can carry confidential or restricted content. |
-| 🧾 **Honest evidence** | Record what was actually tested and what remains unverified. |
+| 🐛 Reproducible defect | Open an issue with minimal inputs, expected behavior, observed behavior, and environment. |
+| ✨ Feature or API change | Open an issue describing users, contract, alternatives, compatibility, and validation. |
+| 🧪 Tests or reference evidence | Explain provenance, independence, precision, coverage, and expected failure detection. |
+| 📖 Documentation | Identify the affected behavior and keep examples executable and current. |
+| ⚙️ Repository/tooling | Explain developer impact, failure behavior, portability, and maintenance cost. |
+| 🔐 Security concern | Follow [SECURITY.md](SECURITY.md); do not open a public report. |
+| 💬 Usage question | Use the repository's supported discussion or issue channel without sensitive data. |
+
+A proposal may be adapted, deferred, or declined when it is out of scope,
+duplicates an existing capability, weakens a contract, or creates maintenance
+cost disproportionate to its benefit.
 
 ---
 
-## ⚡ Quick reference
+## 📁 Repository model
 
-| Before submitting | Minimum expectation |
+This is a **source-first numerical financial library**. The Git diff, not an opaque workbook, is
+the review artifact.
+
+| Location | Purpose |
 |---|---|
-| 🧭 **Contract** | Define inputs, outputs, conventions, domain, errors, and compatibility impact. |
-| 🛠️ **Compile** | For VBA changes, record the relevant compile result when run; #29 owns the final exact-source candidate compile. |
-| 🧪 **Test** | Run relevant regressions, edge cases, invariants, and independent comparisons. |
-| 🎯 **Tolerances** | State absolute/relative rules and justify them from the contract. |
-| 🖥️ **Environment** | Record Excel, Windows, Office bitness, locale, and date system where relevant. |
-| 📚 **Documentation** | Update user-facing behavior and `[Unreleased]` notes in the same change. |
-| 🔍 **Diff review** | Remove accidental binaries, generated files, secrets, and unrelated formatting. |
+| `src/` | Authoritative exported VBA modules, classes, forms, and Ribbon source |
+| `test/` | Regression tests, numerical contracts, and validation support |
+| `docs/` | Normative financial contracts and source-format guidance |
+| `tools/` | Deterministic checks, fixtures, packaging, and evidence tooling |
+| `demo/` | Reviewable demonstrations |
+
+The README and current tree are authoritative if a listed optional directory is
+not present.
 
 ---
 
-## 🎯 Project scope
+## 🌿 Development workflow
 
-KPR is intended to provide reusable financial calculations and instrument
-pricing components that are:
+1. Fork or clone the repository and start from the current `main`.
+2. Create a short, focused branch such as `fix/clear-description`,
+   `feat/clear-description`, `docs/clear-description`, or
+   `test/clear-description`.
+3. Reproduce the existing behavior before changing it.
+4. Define the intended contract, affected callers, compatibility impact, and
+   evidence plan.
+5. Make the smallest coherent source change; do not mix unrelated formatting,
+   refactoring, generated files, or cleanup.
+6. Compile and run the relevant static, regression, host, and manual checks.
+7. Re-export changed VBA components and review the complete text/binary diff.
+8. Update documentation and release notes required by the change.
+9. Push the branch and open a pull request with evidence and limitations.
 
-- explicit about assumptions and market conventions;
-- numerically defensible over a documented input domain;
-- deterministic, testable, and diagnosable;
-- usable from supported Excel environments on 32-bit and 64-bit Office;
-- conservative with caller-owned workbook and application state; and
-- documented well enough to use without reading the implementation.
+Repository maintainers may use the repository's configured direct-push workflow
+where permitted. External contributions and reviewable portfolio changes should
+use branches and pull requests.
 
-A proposal may be declined when it falls outside that scope, duplicates an
-existing capability, introduces disproportionate maintenance risk, or cannot be
-validated independently.
+### Commit discipline
 
----
-
-<a id="source-first-development"></a>
-
-## 📂 Source-first development
-
-KPR uses exported, reviewable source files as its development record.
-
-| Path | Purpose | Review status |
-|---|---|---|
-| `src/` | Exported VBA modules, classes, forms, and Ribbon source | Authoritative source |
-| `test/` | Regression tests, numerical contracts, and validation support | Authoritative evidence code |
-| `docs/` | Normative contracts, implementation plans, and source-format guidance | Authoritative documentation |
-| `tools/` | Deterministic repository, fixture, packaging, and evidence tooling | Reviewable automation |
-| `demo/` | Example and demonstration source when introduced by its owning issue | Reviewable examples |
-| `assets/` | Documentation and repository media | Supporting material |
-
-Every tracked VBA file conforms to the repository's Visual Basic Editor export
-format and carries an `Attribute VB_Name` header that matches its file name.
-Follow
-[docs/VBE_EXPORT.md](docs/VBE_EXPORT.md) when exporting a component or importing
-one back into Excel.
-
-Keep form `.frm` and `.frx` companions together. Do not treat a binary workbook
-as a substitute for exported source. Generated `.xlsm`, `.xlam`, `.xlsx`, and
-other Office binaries are not committed; certified artifacts may be attached to
-a release or issue while their relationship to the exact source remains
-documented externally.
-
-> [!CAUTION]
-> Never normalize `.frx` files as text. Never use a binary workbook as the only
-> record of a source change.
-
----
-
-<a id="financial-contract-first"></a>
-
-## 📐 Financial contract first
-
-Every public financial function or pricing model must define its contract before
-its implementation is reviewed.
-
-The v0.0.2 date layer already has one. Its observable behaviour is frozen in
-[docs/DATE_LAYER_CONTRACT.md](docs/DATE_LAYER_CONTRACT.md), which governs where
-it and other documentation disagree about behaviour.
-
-### Contract map
-
-State whichever elements are relevant:
-
-| Dimension | Questions the contract must answer |
-|---|---|
-| 🧾 **Instrument** | What cash flows, rights, obligations, or payoff are represented? |
-| 📅 **Dates** | What are valuation, trade, settlement, payment, fixing, and maturity dates? |
-| 💱 **Units** | Which currency, notional, price scale, rate scale, and output units apply? |
-| 🗓️ **Calendars** | Which holidays, weekends, business-day rules, and end-of-month rules apply? |
-| ⏱️ **Accrual** | Which day-count basis, frequency, stub, and accrual rules apply? |
-| 📈 **Quotation** | Is the input/output a price, yield, spread, volatility, discount factor, or rate? |
-| 🔁 **Compounding** | Which compounding convention and frequency apply? |
-| ➕ **Signs** | Which payer/receiver, long/short, asset/liability, and cash-flow signs apply? |
-| 📉 **Curves** | Which interpolation, extrapolation, bootstrap, and missing-data rules apply? |
-| 🧮 **Output** | Is the result clean, dirty, accrued, present value, yield, sensitivity, or probability? |
-| 🚧 **Domain** | Which inputs are valid, invalid, unsupported, or ambiguous? |
-| ⚠️ **Failure** | How are invalid inputs, non-convergence, and unavailable results reported? |
-| 🎯 **Accuracy** | Which precision, rounding, and tolerance contract applies? |
-
-Do not hide a material convention behind an unexplained constant, a worksheet
-format, or an Excel regional default. If the market admits multiple conventions,
-require or document the selected convention explicitly.
-
-### Compatibility-sensitive conventions
-
-A change in any of the following may be a public behavior change even when the
-VBA signature is unchanged:
+Write imperative, specific subjects, normally in this form:
 
 ```text
-default settlement rule
-day-count interpretation
-cash-flow inclusion boundary
-curve interpolation or extrapolation
-quote or sign convention
-rounding or convergence policy
-invalid-input result
+fix: preserve formulas during write-back
+feat: add explicit tail calculation
+test: cover cleanup after initialization failure
+docs: clarify supported Office environments
+chore: harden repository validation
 ```
 
-Assess and document the version impact.
+Keep commits reviewable. Reference the issue when one exists. Do not include
+secrets, private links, generated attribution boilerplate, or unverifiable test
+claims in commit messages.
 
 ---
 
-<a id="numerical-engineering"></a>
+<a id="source-first-vba"></a>
 
-## 🧮 Numerical engineering
+## 📦 Source-first VBA
 
-Financial code must be supported by more than a few happy-path examples.
+Exported source is authoritative.
 
-### 🔬 Independent reference evidence
+- Use `Option Explicit`.
+- Preserve the repository's VBE export metadata, module names, encoding, and
+  line-ending policy.
+- Match `.bas`, `.cls`, and `.frm` filenames to their component identity.
+- Keep every required `.frm` / `.frx` pair together; treat `.frx` as binary.
+- Do not edit a binary form resource as text.
+- Do not use a workbook or add-in as the only record of a code change.
+- Do not commit Office lock files, recovery copies, local exports, test output,
+  or generated binaries unless the repository explicitly designates them as
+  source.
+- Qualify workbook, worksheet, range, and application references.
+- Avoid implicit active-workbook, active-sheet, selection, and default-member
+  dependencies.
+- Keep `On Error Resume Next` scopes narrow and intentional.
+- Preserve useful diagnostic context and clean up on success and failure.
+- Avoid new references, APIs, dependencies, or platform assumptions until their
+  support and deployment impact is agreed.
 
-Use an independent and attributable reference where practical:
+### Public contracts and compatibility
 
-- a published formula or technical paper;
-- a regulator, central bank, exchange, or industry specification;
-- a trusted analytical library;
-- a separately implemented high-precision calculation;
-- a licensed vendor result that may legally be used as evidence; or
-- an independently derived invariant or limiting case.
+Treat documented procedures, functions, classes, enums, parameters, defaults,
+return values, errors, side effects, workbook formats, and supported platforms
+as contracts.
 
-Record the source, input conventions, precision, and comparison rule.
+A contract-changing contribution must:
 
-> [!WARNING]
-> Do not use the implementation under test to generate its own expected values.
-> If reference data is committed, make its provenance and generation process
-> reproducible.
+1. identify affected callers and migration needs;
+2. explain what changes and what remains unchanged;
+3. add or update regression coverage;
+4. update user-facing documentation and examples; and
+5. state whether the release impact is patch, minor, or major.
 
-### 🧪 Test matrix
+Do not make an internal helper public merely to simplify a test. Use an explicit
+test seam where the project supports one.
 
-Tests should cover, as applicable:
+### Excel state ownership
 
-| Class | Examples |
-|---|---|
-| ✅ **Ordinary** | Representative market inputs and documented examples |
-| 0️⃣ **Degenerate** | Zero, near-zero, empty, coincident-date, and no-cash-flow cases |
-| ↔️ **Boundary** | Leap years, month ends, cutoff dates, domain limits, and discontinuities |
-| ➖ **Signed** | Negative rates, negative prices where admissible, long/short, payer/receiver |
-| 🔭 **Extreme** | Large notionals, long maturities, deep tails, high/low volatility, stress inputs |
-| 🚫 **Invalid** | Missing, malformed, inconsistent, non-finite, and out-of-domain inputs |
-| 🔁 **Round trip** | Price → yield → price, discount factor → rate → discount factor |
-| ⚖️ **Invariant** | Monotonicity, symmetry, parity, conservation, bounds, and limiting behavior |
-| 📚 **Reference** | Independent values across the supported domain |
-| 🐛 **Regression** | A permanent case for every corrected defect |
-
-### 🎯 Tolerance contract
-
-A numerical assertion should make its comparison policy explicit:
-
-```text
-absolute error
-relative error
-combined absolute/relative rule
-units or basis-point interpretation
-reference precision
-domain over which the tolerance is claimed
-```
-
-Choose tolerances from the numerical contract and reference quality. Do not
-relax a tolerance merely to make a test pass, and do not require exact binary
-equality unless exactness is guaranteed by the algorithm and representation.
-
-### 🛡️ Numerical robustness
-
-Review, where relevant:
-
-- cancellation and loss of significance;
-- overflow, underflow, and non-finite intermediates;
-- discontinuities and piecewise definitions;
-- tail behavior and asymptotic approximations;
-- iteration limits, initial guesses, bracketing, and convergence criteria;
-- ill-conditioned inputs and sensitivity to perturbations; and
-- reproducibility across VBA and worksheet-call paths.
-
-A function must fail predictably when it cannot produce a valid result. It must
-not silently return a plausible-looking number.
-
----
-
-<a id="vba-and-excel-standards"></a>
-
-## ⚙️ VBA and Excel standards
-
-### Source rules
-
-Contributed VBA source should:
-
-- use `Option Explicit`;
-- declare variables and parameters with the narrowest practical types;
-- make `ByVal` and `ByRef` intent explicit;
-- avoid `Select`, `Activate`, `ActiveWorkbook`, `ActiveSheet`, and implicit
-  default members unless the public contract specifically requires them;
-- qualify workbook, worksheet, range, and application references;
-- keep public entry points small and move reusable logic into focused modules or
-  classes;
-- use comments to explain financial intent, numerical safeguards, and invariants
-  rather than restating syntax;
-- centralize shared constants and avoid unexplained numeric literals;
-- handle errors deliberately and preserve useful diagnostic context;
-- clean up transient state on both success and failure paths; and
-- avoid new external references or dependencies unless discussed and accepted.
-
-### Caller-owned state
-
-Treat these as owned by Excel, the host workbook, or another component unless
-KPR has explicitly established ownership:
+Assume these surfaces belong to the caller or host unless the project explicitly
+owns them:
 
 ```text
 Application.Calculation
@@ -318,114 +196,130 @@ Application.ScreenUpdating
 Application.DisplayAlerts
 Application.StatusBar
 active workbook / worksheet / selection
-names, links, connections, and workbook structure
+window styles, shortcuts, timers, names, links, connections, and shapes
 ```
 
-Restore only state that KPR successfully changed and can safely claim. Error
-handling and cleanup must not conceal the original failure.
-
-### Platform compatibility
-
-Any WinAPI declaration must be compatible with supported 32-bit and 64-bit
-Office configurations, normally through conditional compilation and
-`LongPtr`-safe declarations.
-
-Code must not depend unintentionally on locale-sensitive parsing, date formats,
-decimal separators, worksheet names, the active selection, calculation mode, or
-the caller's global Excel state.
-
-Do not claim cross-bitness, cross-version, or cross-locale compatibility unless
-the relevant environments were actually tested.
+Capture state before changing it. Restore only state the component successfully
+changed and still owns. Cleanup must not conceal the original failure.
 
 ---
 
-## 🧱 Public API and compatibility
+## 🧩 Project engineering contract
 
-Treat a documented public function, type, enum, parameter, return convention,
-default, and error behavior as a compatibility contract.
-
-A contribution that changes that contract must:
-
-1. identify the affected callers;
-2. explain the compatibility impact;
-3. add or update contract tests;
-4. update user-facing documentation and examples; and
-5. state the expected Semantic Versioning impact.
-
-Do not expose an internal helper as `Public` merely for convenience. Some Excel
-or RibbonX callbacks may need public visibility; document those members as
-infrastructure rather than supported consumer API.
-
-### Semantic Versioning guide
-
-| Impact | Typical change |
+| Area | Required behavior |
 |---|---|
-| 🩹 **Patch** | Backward-compatible defect correction, internal hardening, or documentation fix |
-| ✨ **Minor** | New backward-compatible model, function, option, or supported convention |
-| 💥 **Major** | Removed/renamed API, incompatible default, redefined convention, or changed result contract |
-
-Version the supported behavior, not only the VBA signature.
-
----
-
-## 🔄 Development workflow
-
-1. Start from the current `main` branch.
-2. Keep the change focused on one coherent purpose.
-3. Preserve unrelated code and formatting.
-4. Export all changed VBA components in reviewable form.
-5. Run the deterministic repository checks and the focused tests relevant to
-   the change.
-6. For VBA changes, record any compile or Excel execution actually performed;
-   do not manufacture clean-workbook provenance or screenshot evidence.
-7. Review the diff for accidental binary, generated, confidential, or
-   environment-specific content.
-8. Submit a pull request that links the relevant issue.
-
-Use clear commits that describe the behavior changed. Avoid mixing refactors,
-formatting, new functionality, and unrelated fixes when they can be reviewed
-separately.
+| **Financial contract** | State instrument, dates, units, calendars, accrual, quotation, compounding, signs, curves, outputs, domain, and failure behavior as applicable. |
+| **Numerical evidence** | Use independent reference values; state precision, comparison rule, worst observed error, and the supported domain. |
+| **Public API** | Treat functions, types, enums, defaults, conventions, and error behavior as compatibility contracts. |
+| **Caller-owned state** | Do not silently take ownership of calculation, events, screen updating, alerts, status bar, active objects, names, links, or connections. |
+| **Platform support** | Keep WinAPI declarations 32/64-bit safe and avoid accidental locale, date-system, or active-workbook dependence. |
 
 ---
 
-<a id="validation-baseline"></a>
+<a id="validation-and-evidence"></a>
 
-## 🧪 Validation baseline
+## 🧪 Validation and evidence
 
-Validation is proportional to the change and to the owning issue:
+Validation must be proportional to risk and reproducible from the exact source
+under review.
 
-- run the deterministic repository gate and its focused negative self-tests;
-- run the relevant regression suites and principal failure paths;
-- compare numerical output with independent evidence where applicable;
-- record only Excel execution, compilation, environments, references,
-  tolerances, and results that were actually observed; and
-- state explicitly what remains unverified.
+- Compile the affected VBA project when Excel execution is available.
+- Run the deterministic repository gate and focused negative self-tests.
+- Run the relevant regression suites, edge cases, invariants, and failure paths.
+- Compare numerical changes with an independent, attributable reference.
+- Record Excel, Windows, Office bitness, locale/date system, exact commit, tolerances, results, and anything unverified.
 
-Intermediate implementation issues do not require a clean-workbook provenance
-statement, a disabled-Compile screenshot, or an Insert Function / Function
-Wizard screenshot. A concise compile or focused Excel result may be recorded
-when useful. Issue #29 is the sole gate that requires the complete candidate to
-be imported, compiled, executed, and round-tripped from its exact recorded SHA.
+For performance claims, include the workload, environment, application-state setup, warm-up policy, timing method, sample count, dispersion, and comparison baseline. Correctness and numerical stability outrank micro-optimization.
 
-Changes involving platform declarations, Excel host behavior, date systems, or
-locale-sensitive inputs should be tested on each affected configuration. If a
-configuration cannot be tested, state that limitation explicitly.
+### Evidence principles
 
-### Performance evidence
+- Test the behavior, not only the implementation path.
+- Add a permanent regression for every corrected defect.
+- Include ordinary, boundary, invalid-input, error, and cleanup paths.
+- Use an independent source for expected numerical results.
+- State skips and unavailable environments explicitly; a skipped check is not a
+  pass.
+- Do not claim compatibility, accuracy, performance, or certification beyond
+  what was actually observed.
+- Treat cleanup failures and incomplete runs as failures.
+- Never generate expected values with the implementation under test.
 
-Performance claims must include:
+### Suggested evidence block
 
 ```text
-representative workload
-Excel / Windows / Office bitness
-calculation and application-state setup
-warm-up policy
-timing method
-sample size and dispersion
-comparison baseline
+Source
+------
+Commit / tag:
+Files or components changed:
+
+Environment
+-----------
+Excel:
+Office bitness:
+Operating system:
+Locale / date system:
+Deployment or host:
+
+Checks
+------
+Compile:
+Static checks:
+Focused tests:
+Full regression:
+Manual / UI / platform checks:
+Cleanup:
+
+Evidence
+--------
+Independent reference and version:
+Inputs / workload:
+Tolerance or acceptance rule:
+Expected:
+Observed:
+Worst discrepancy / dispersion:
+
+Limitations
+-----------
+Skipped or unverified:
+Follow-up:
 ```
 
-Correctness and numerical stability outrank micro-optimization.
+Remove non-applicable fields, but do not omit a material limitation.
+
+---
+
+## 📖 Documentation and release notes
+
+Update the README, relevant contracts in `docs/`, examples, API material, and the `[Unreleased]` section of `CHANGELOG.md` when behavior changes.
+
+Documentation must say:
+
+- what users can rely on;
+- inputs, outputs, defaults, side effects, and failure behavior;
+- supported and untested environments;
+- installation or migration steps;
+- numerical or platform assumptions; and
+- any known limitation introduced or exposed by the change.
+
+Do not edit a released version or tag merely to describe unreleased work. Release
+numbers, artifacts, hashes, and dates belong to the repository's release
+workflow.
+
+---
+
+## 🔐 Security, privacy, and provenance
+
+- Follow [SECURITY.md](SECURITY.md) for vulnerability reports.
+- Use synthetic, anonymized, or explicitly redistributable examples and data.
+- Remove names, email addresses, account identifiers, workbook properties,
+  document metadata, credentials, tokens, private URLs, and machine-specific
+  paths.
+- Verify the license and redistribution rights of copied code, formulas,
+  reference tables, images, and generated material.
+- Cite material algorithms and external reference data precisely enough for a
+  reviewer to verify them.
+- You remain responsible for the correctness, licensing, security, and
+  reviewability of tool-assisted contributions.
 
 ---
 
@@ -433,151 +327,70 @@ Correctness and numerical stability outrank micro-optimization.
 
 ## 🚀 Pull requests
 
-A reviewer should be able to answer:
+A pull request should answer:
 
 ```text
 What problem does this solve?
-What financial and API contract applies?
-What behavior changes?
-What behavior remains unchanged?
-What independent evidence supports the result?
+What observable contract changes?
+What remains compatible?
+How was it validated from this exact source?
+What evidence is independent?
 What remains unverified?
 ```
 
-### Pull-request checklist
+### Checklist
 
 ```text
-[ ] Related issue linked for non-trivial work
-[ ] Scope is focused
-[ ] Financial conventions and input domain are explicit
-[ ] Public API and Semantic Versioning impact assessed
-[ ] Numerical method and stability risks assessed
-[ ] Independent reference and tolerance recorded
-[ ] Boundary, invalid-input, invariant, and regression cases covered
-[ ] Caller-owned Excel state preserved
-[ ] Error and non-convergence behavior tested
-[ ] 32-bit / 64-bit impact assessed where relevant
-[ ] Relevant VBA compile result recorded if performed; final candidate compile remains #29
-[ ] Relevant automated and manual results recorded
-[ ] Performance evidence included for performance claims
-[ ] Documentation and CHANGELOG updated
-[ ] No confidential, restricted, generated, or accidental binary content added
+[ ] Scope is focused and the related issue is linked
+[ ] Public API, compatibility, and release impact are assessed
+[ ] Exported VBA source and required binary companions are synchronized
+[ ] Relevant compile, static, regression, and manual checks are recorded
+[ ] Numerical/performance evidence is independent and reproducible where relevant
+[ ] Error, boundary, recovery, and cleanup paths are covered
+[ ] Caller-owned Excel state and platform/bitness concerns are addressed
+[ ] README, contracts, examples, and release notes are updated
+[ ] No confidential, restricted, generated, or accidental binary content is added
+[ ] Unverified environments and skipped checks are stated plainly
+[ ] Final diff contains no unrelated formatting or local artifacts
 ```
 
-### Suggested evidence block
-
-```text
-Environment
------------
-KPR commit:
-Excel:
-Office bitness:
-Windows:
-Locale / date system:
-Deployment: embedded workbook / add-in
-
-Financial contract
-------------------
-Instrument / function:
-Conventions:
-Input domain:
-Expected failure behavior:
-
-Numerical evidence
-------------------
-Independent reference:
-Reference precision:
-Tolerance rule:
-Worst observed error:
-
-Validation
-----------
-Compile:
-Regression tests:
-Manual checks:
-
-Known boundary
---------------
-<what this evidence does not prove>
-```
-
-Record only tests and environments actually completed.
+Reviews may request changes to scope, tests, contracts, compatibility,
+documentation, or evidence. Discussion must remain technical and respectful
+under the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
-## 📖 Documentation and changelog
+## 🤝 Review and maintainer decisions
 
-Documentation belongs in the same change as the behavior it describes.
+Reviewers evaluate correctness, safety, maintainability, compatibility,
+evidence, documentation, and fit with the project's direction. Approval of an
+idea does not guarantee acceptance of every implementation detail.
 
-| Change | Documentation impact |
-|---|---|
-| Public function or model | API, conventions, inputs, outputs, examples, and changelog |
-| Numerical method | Method, domain, reference, tolerance, and known limitations |
-| Default or convention | Compatibility note, migration impact, tests, and changelog |
-| Error behavior | Public contract, examples, and regression evidence |
-| Installation or packaging | README/install guidance and release notes |
-| Validation infrastructure | Contributor guidance and evidence instructions |
-
-Add user-visible changes to the `[Unreleased]` section of
-[CHANGELOG.md](CHANGELOG.md). Do not record unverified claims or validation that
-has not actually been run.
+The maintainer may edit, squash, defer, or decline a contribution to protect the
+coherence and supportability of the project. Contributors will be credited
+through Git history and release notes where appropriate.
 
 ---
 
-## 🔐 Data, privacy, and provenance
+## 📄 Licensing
 
-Use synthetic or properly licensed test data. Do not commit:
-
-- client, employer, counterparty, student, or personal data;
-- credentials, connection strings, signing material, or internal URLs;
-- proprietary models, spreadsheets, market data, or vendor outputs that cannot
-  legally be redistributed;
-- copied code whose origin or license cannot be established; or
-- generated content represented as independently validated evidence.
-
-Contributors remain responsible for reviewing, testing, and licensing any
-AI-assisted material they submit. AI assistance does not replace numerical
-evidence, provenance, or authorship responsibility.
+By contributing, you agree that your contribution is licensed under the
+repository's [MIT License](LICENSE). You must have the right to submit every
+part of the contribution, including code, tests, data, images, and generated
+material.
 
 ---
 
-## 🤝 Review culture
+## 👤 Maintainer
 
-A strong review comment states the location, contract, risk, evidence, and
-whether the change is required or optional.
+Maintained by **Daniele Penza**.
 
-Useful:
-
-> `BondPrice`: the new branch excludes a cash flow on the settlement date, but
-> the public contract does not define that boundary. Please state the inclusion
-> rule, add both sides of the boundary to the tests, and compare them with the
-> independent reference.
-
-Less useful:
-
-> The bond calculation is wrong.
-
-Review the software precisely and the contributor respectfully. See the
-[Code of Conduct](CODE_OF_CONDUCT.md).
+For ordinary contributions, use GitHub issues and pull requests. For sensitive
+security matters, use the private channel in [SECURITY.md](SECURITY.md).
 
 ---
-
-## 📄 License
-
-By contributing, you agree that your contribution will be licensed under KPR's
-[MIT License](LICENSE). Identify any adapted source and its license in the pull
-request.
-
----
-
-<div align="center">
 
 ### Contribution principle
 
-**Define the convention · Preserve caller state · Prove the number · Test the boundary · State what remains unknown**
-
-<br>
-
-Maintained by **Daniele Penza**
-
-</div>
+> Make the contract explicit, keep the diff focused, and leave evidence another
+> person can reproduce.
