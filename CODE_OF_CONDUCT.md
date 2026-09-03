@@ -6,49 +6,25 @@
 
 [![Applies to](https://img.shields.io/badge/Applies_to-Everyone-217346?style=for-the-badge)](#scope)
 [![Spaces](https://img.shields.io/badge/Spaces-Code_%7C_Issues_%7C_PRs-0969da?style=for-the-badge)](#scope)
-[![Standard](https://img.shields.io/badge/Standard-Respectful_%2B_Evidence--Led-6f42c1?style=for-the-badge)](#technical-discussion)
-[![Domain](https://img.shields.io/badge/Domain-Finance_%2B_Numerics-d97706?style=for-the-badge)](#technical-discussion)
+[![Standard](https://img.shields.io/badge/Standard-Respectful_%2B_Evidence--Led-6f42c1?style=for-the-badge)](#technical-collaboration)
+[![Enforcement](https://img.shields.io/badge/Enforcement-Fair_%2B_Proportionate-d97706?style=for-the-badge)](#enforcement)
 
 <br>
 
-**Technical rigor · Respectful disagreement · Reproducible evidence · Privacy-aware collaboration**
-
-<br>
-
-[Our pledge](#our-pledge)
-&nbsp;·&nbsp;
-[Expected behavior](#expected-behavior)
-&nbsp;·&nbsp;
-[Technical discussion](#technical-discussion)
-&nbsp;·&nbsp;
-[Confidentiality](#data-and-confidentiality)
-&nbsp;·&nbsp;
-[Enforcement](#enforcement)
+**Respect people · Challenge ideas with evidence · State uncertainty · Protect data**
 
 </div>
 
 ---
 
-**KPR** is an open-source Excel/VBA library for financial analytics and
-instrument pricing.
+**KPR** is an open-source Excel/VBA library for financial analytics and instrument pricing. Models can be ambiguous, financial conventions can differ, and floating-point results require explicit contracts and reproducible evidence.
 
-The project benefits from careful disagreement: models can be ambiguous,
-financial conventions can differ, floating-point results require judgment, and
-Excel behavior can depend on host state. Those challenges make respectful,
-precise, and reproducible collaboration essential.
+Technical rigor and respectful interaction are complementary requirements.
+Neither excuses the absence of the other.
 
-People should feel comfortable:
-
-- asking basic or advanced questions;
-- reporting a numerical or implementation defect;
-- challenging a model, convention, tolerance, or design decision;
-- proposing a safer or more accurate alternative;
-- identifying an unsupported market convention or Excel environment; and
-- correcting an earlier conclusion when new evidence emerges.
-
-> [!IMPORTANT]
-> Technical rigor and respectful interaction are complementary requirements.
-> Neither excuses the absence of the other.
+People should feel comfortable asking questions, reporting defects, challenging
+assumptions, proposing safer or more accurate alternatives, and correcting an
+earlier conclusion when new evidence emerges.
 
 ---
 
@@ -56,18 +32,15 @@ People should feel comfortable:
 
 ## 🤝 Our pledge
 
-Everyone who participates — through code, issues, pull requests, reviews,
-documentation, numerical references, examples, releases, or project discussion —
-is expected to help create a harassment-free experience for all.
+Everyone who participates through code, issues, pull requests, reviews,
+documentation, examples, releases, the Wiki, or project discussion is expected
+to help create a harassment-free experience for all.
 
-That expectation applies regardless of:
-
-- age, body size, disability, ethnicity, gender identity or expression;
-- level of professional, academic, financial, numerical, VBA, or Excel
-  experience;
-- nationality, personal appearance, race, religion, or socioeconomic status;
-- sexual identity or orientation; or
-- any other personal characteristic unrelated to the contribution.
+That expectation applies regardless of age, body size, disability, ethnicity,
+gender identity or expression, level or type of experience, nationality,
+personal appearance, race, religion, socioeconomic status, sexual identity or
+orientation, or any other personal characteristic unrelated to the
+contribution.
 
 We commit to acting and interacting in ways that support an open, welcoming,
 diverse, inclusive, and healthy community.
@@ -78,37 +51,30 @@ diverse, inclusive, and healthy community.
 
 ## ✅ Expected behavior
 
-Participants are expected to:
-
 | Principle | Expected practice |
 |---|---|
 | 🤝 **Respect** | Assume good faith and address the work rather than the person. |
-| 🎯 **Precision** | Distinguish observed fact, convention, assumption, hypothesis, and opinion. |
+| 🎯 **Precision** | Distinguish observation, requirement, assumption, inference, hypothesis, and opinion. |
 | 🧪 **Evidence** | Provide reproducible examples and relevant environment details where practical. |
 | 🧭 **Transparency** | State uncertainty, limitations, conflicts of interest, and material dependencies. |
 | 🔄 **Correction** | Acknowledge mistakes openly when better evidence changes the conclusion. |
-| 🌱 **Inclusion** | Welcome contributors with different levels and types of expertise. |
-| 🔐 **Stewardship** | Respect privacy, confidentiality, licensing, and intellectual-property boundaries. |
+| 🌱 **Inclusion** | Welcome contributors with different backgrounds and levels of expertise. |
+| 🔐 **Stewardship** | Respect privacy, confidentiality, security, licensing, and intellectual-property boundaries. |
 | 🧱 **Coherence** | Accept that maintainers may adopt, revise, defer, split, or decline a contribution. |
 
 ### Useful disagreement
 
-A useful technical disagreement can be investigated:
+A useful technical disagreement is specific and testable:
 
-> “The two outputs differ outside the stated tolerance. The comparison uses the
-> same settlement date, ACT/365F basis, compounding convention, and cash-flow
-> sign. The minimal input and independent reference are attached.”
+> "The observed result differs from the documented contract outside the stated
+> tolerance. The exact version, environment, minimal reproduction, expected
+> result, observed result, and independent reference are provided below."
 
-That statement identifies a testable claim.
+A personal judgment is not testable:
 
-### Unhelpful disagreement
+> "This is wrong because the author does not understand the subject."
 
-A personal judgment cannot be tested:
-
-> “This is wrong because the author does not understand pricing.”
-
-Both statements may arise from frustration with the same result. Only the first
-helps improve the library.
+Only the first statement helps improve the project.
 
 ---
 
@@ -118,86 +84,106 @@ helps improve the library.
 
 Unacceptable behavior includes:
 
-- harassment, intimidation, discrimination, or personal attacks;
+- harassment, intimidation, discrimination, threats, or personal attacks;
 - trolling, insulting or derogatory comments, and deliberately inflammatory
   language;
-- unwelcome sexual attention or advances;
+- unwelcome sexual attention or sexualized language or imagery;
 - publishing private or confidential information without permission;
 - deliberately misrepresenting results, sources, authorship, test evidence, or
-  model behavior;
+  another participant's statements;
+- fabricating, altering, or selectively presenting evidence to conceal a
+  material limitation or contrary result;
 - pressuring others to disclose employer, client, counterparty, student, or
   proprietary information;
 - using credentials, reputation, job title, or academic status to silence a
-  technical challenge rather than answering its substance;
+  technical challenge rather than addressing its substance;
+- spam, unrelated promotion, commercial solicitation, or sustained disruption;
+- public disclosure of a suspected vulnerability before reasonable coordinated
+  remediation;
 - repeated disruption after a maintainer has asked participants to stop; and
-- other conduct that would reasonably be considered inappropriate in a
-  professional setting.
+- retaliation against a reporter, witness, or participant in an investigation.
+
+Disagreement is allowed. Abuse is not.
 
 ---
 
-<a id="technical-discussion"></a>
+<a id="technical-collaboration"></a>
 
-## 🧪 Technical discussion standards
+## 🧪 Technical collaboration
 
-KPR discussions should make the evidence boundary visible.
+Pricing and date calculations are meaningful only when the instrument definition, market convention, numerical contract, and host environment are explicit.
 
-### Evidence capsule
+Where relevant, technical reports and review comments should identify:
 
-When reporting or debating behavior, provide the relevant items where practical:
-
-| Evidence | Examples |
+| Evidence | Expected information |
 |---|---|
-| 🧾 **Identity** | KPR release, commit, module, and public entry point |
-| 🖥️ **Environment** | Excel and Windows versions, Office bitness, locale, and date system |
-| 📐 **Contract** | Instrument definition, units, dates, signs, quote type, and expected output |
-| 📅 **Conventions** | Day count, calendar, business-day rule, settlement, frequency, and compounding |
-| 🔬 **Reproduction** | Smallest deterministic input and exact steps |
-| 🎯 **Comparison** | Expected and observed values, absolute/relative error, and tolerance |
-| 📚 **Reference** | Independent derivation, specification, library, vendor result, or published source |
-| ⚠️ **Boundary** | What was not tested or cannot yet be concluded |
+| 🧾 **Identity** | Repository release, tag, branch or commit; affected file, procedure, API or artifact |
+| 🖥️ **Environment** | Excel and Office version/build, 32-bit or 64-bit, Windows version, and relevant locale or host settings |
+| 🔬 **Reproduction** | Smallest deterministic input and exact steps needed to reproduce the behavior |
+| 🎯 **Comparison** | Expected and observed behavior, error or diagnostic output, and the acceptance criterion |
+| ✅ **Validation** | Relevant automated, static, manual or Excel regression evidence and whether the run completed |
+| ⚠️ **Boundary** | Assumptions, limitations, untested configurations, uncertainty, and what cannot yet be concluded |
+| 💹 **Financial contract** | Instrument, currency, units, dates, signs, quote type, cash flows, and expected output |
+| 📅 **Conventions** | Day count, calendar, business-day rule, settlement, frequency, compounding, and interpolation |
+| 📚 **Numerical reference** | Independent derivation, specification, library or vendor result; tolerance and absolute/relative error |
 
-> [!NOTE]
-> A screenshot may illustrate a result, but it does not replace the inputs,
-> conventions, reference, and tolerance needed to reproduce a numerical claim.
+Prefer explicit evidence classifications:
 
-### Evidence language
+| Classification | Meaning |
+|---|---|
+| **Observed** | Reproduced directly |
+| **Derived** | Follows from stated inputs and rules |
+| **Inferred** | Best explanation, but not independently proven |
+| **Expected** | Required by the documented contract |
+| **Environment-specific** | Verified only in the stated host configuration |
+| **Unverified** | Plausible, but evidence is incomplete |
 
-Prefer explicit classifications:
+Do not present a plausible inference as a verified fact. A screenshot may
+illustrate a result, but it does not replace the inputs, environment, contract,
+reference, and steps needed to reproduce the claim.
 
-```text
-Observed       reproduced directly
-Derived        follows from stated inputs and equations
-Inferred       best explanation, not independently proven
-Expected       required by the documented contract
-Unverified     plausible, but evidence is incomplete
-Environment    specific to a tested Excel/Windows configuration
-```
+Project-specific expectations:
 
-Do not present a plausible inference as a verified fact.
+- Distinguish a market convention from a mathematical identity or implementation choice.
+- State units, signs, dates, compounding, calendars, tolerances, and reference sources for numerical claims.
+- Do not upload proprietary curves, portfolios, trade details, workbooks, or licensed market data; use synthetic examples.
 
 ---
 
 <a id="data-and-confidentiality"></a>
 
-## 🔐 Data and confidentiality
+## 🔐 Data, privacy, and confidentiality
 
-Financial work often involves sensitive information. Sample portfolios,
-workbooks, screenshots, market data, trade details, logs, and error reports must
-not expose:
+Do not upload confidential or restricted material to demonstrate a defect or
+support a contribution. This includes:
 
 - client, employer, counterparty, student, or personal data;
-- credentials, connection strings, internal URLs, or signing material;
-- proprietary models, workbooks, curves, market data, or vendor content; or
-- confidential business assumptions or positions.
+- credentials, tokens, signing material, connection strings, or internal URLs;
+- proprietary code, models, workbooks, market data, business assumptions, or
+  production extracts;
+- licensed vendor content that cannot be redistributed; and
+- files or examples that the contributor is not authorized to share.
 
-Replace sensitive material with the smallest synthetic example that preserves
-the behavior. Contributors must have the right to submit every code fragment,
-document, image, dataset, and numerical reference they provide.
+Use the smallest synthetic example that preserves the relevant behavior.
 
-> [!CAUTION]
-> Excel workbooks can contain hidden names, connections, cached values, VBA,
-> metadata, links, and other information that is not visible on the active sheet.
-> Sanitize and inspect a reproduction before uploading it.
+Excel workbooks can contain hidden names, external links, connections, cached
+values, queries, metadata, comments, hidden sheets, and VBA that are not visible
+on the active sheet. Sanitize and inspect every reproduction before uploading
+it.
+
+---
+
+<a id="security"></a>
+
+## 🔑 Security reports
+
+Suspected vulnerabilities must follow [SECURITY.md](SECURITY.md). Do not
+publish exploit details, credentials, private keys, or a working proof of
+concept in a public issue before coordinated remediation.
+
+The Code of Conduct reporting channel is for participant behavior. A security
+report concerns software risk. If an incident involves both, use the private
+channel and make that clear.
 
 ---
 
@@ -205,14 +191,43 @@ document, image, dataset, and numerical reference they provide.
 
 ## 🌐 Scope
 
-This Code of Conduct applies in all KPR project spaces, including:
+This Code of Conduct applies to:
 
-- source code and committed artifacts;
-- issues, pull requests, reviews, comments, and discussions;
-- documentation, examples, release activity, and the project Wiki; and
-- other public spaces where someone is representing KPR or its community.
+- source code, committed artifacts, documentation, examples, and releases;
+- issues, pull requests, reviews, comments, discussions, and the Wiki;
+- project-related email and private communication between participants; and
+- public spaces where someone represents the project or its community.
 
 It applies to maintainers, contributors, reviewers, users, and visitors alike.
+
+Project representation includes using an official account, speaking on behalf
+of the project, presenting oneself as a maintainer or contributor in a
+project-related forum, or moderating a project discussion.
+
+---
+
+<a id="reporting"></a>
+
+## 📣 Reporting unacceptable behavior
+
+Report unacceptable behavior **privately** to the maintainer:
+
+**danielep71@gmail.com**
+
+Do not publish sensitive personal information in a public issue.
+
+Where available, include what happened, where and approximately when it
+happened, relevant links or screenshots, whether the behavior is ongoing,
+whether another participant witnessed it, and any immediate safety, privacy, or
+confidentiality concern.
+
+Reports will be reviewed as promptly, fairly, and discreetly as reasonably
+possible. Information will be shared only as needed to understand the report,
+protect participants, enforce this policy, or comply with applicable platform
+or legal requirements.
+
+A good-faith report is not misconduct merely because the maintainer ultimately
+concludes that no violation occurred.
 
 ---
 
@@ -221,13 +236,14 @@ It applies to maintainers, contributors, reviewers, users, and visitors alike.
 ## ⚖️ Enforcement
 
 The maintainer is responsible for clarifying and enforcing this Code of Conduct
-and may remove, edit, or reject comments, commits, code, issues, and other
+and may remove, edit, or reject comments, commits, code, issues, or other
 contributions that are inconsistent with it.
 
-Responses may include:
+Responses depend on seriousness, frequency, context, prior behavior, and risk.
+They may include:
 
 1. clarification or a private reminder;
-2. a formal warning;
+2. a formal warning and conditions for continued participation;
 3. editing or removing project content;
 4. closing or locking a discussion;
 5. rejecting or reverting a contribution;
@@ -235,34 +251,78 @@ Responses may include:
 7. permanent exclusion from project spaces; or
 8. escalation to GitHub or another relevant platform.
 
-Enforcement aims to be proportionate, consistent, protective of participants,
-and protective of the technical record. Retaliation against anyone who reports a
-concern or participates in its review is itself a violation.
-
-Ordinary conduct concerns may be raised in the relevant issue or pull request.
-Do not publish sensitive details. If a public report would expose personal or
-confidential information, contact the maintainer through an established private
-channel or use GitHub's reporting facilities.
+Enforcement aims to be fair, proportionate, consistent, protective of
+participants, and protective of the technical record. Retaliation against
+anyone who reports a concern or participates in its review is itself a
+violation.
 
 ---
 
 ## 🧩 Conflicts of interest
 
 Disclose a material interest when it could reasonably affect technical review.
+
 Examples include ownership of a competing implementation, commercial interest
-in a proposed dependency, employer or client restrictions, or uncertainty about
-the origin or license of submitted material.
+in a dependency or benchmark, employer or client restrictions, uncertainty
+about the origin or license of submitted material, or reviewing one's own work
+under another identity.
 
 A conflict is not automatically disqualifying. Undisclosed material influence
 is the concern.
 
 ---
 
+## 📜 Source and licensing integrity
+
+Contributors must have the right to submit every code fragment, document,
+screenshot, workbook, dataset, benchmark, image, and numerical reference they
+provide.
+
+Identify the source and license of adapted material. Do not submit proprietary
+code, incompatible licensed content, confidential screenshots, selectively
+edited evidence, or generated material whose provenance and right of use cannot
+be established.
+
+A file digest proves file identity. It does not by itself prove authorship,
+source provenance, reproducibility, or execution correctness.
+
+---
+
+## 🧱 Maintainer decisions
+
+A maintainer may decline a contribution even when it is technically valid.
+Reasons may include scope, compatibility, maintenance burden, testability,
+platform risk, API stability, duplication, architecture, or release timing.
+
+A declined contribution is not a judgment about the contributor. When
+practical, the technical reason should be recorded. Participants may challenge
+a decision respectfully with new evidence; repeatedly reopening the same
+argument without new evidence is not constructive.
+
+---
+
+## 🙏 Project scale and response expectations
+
+This project is maintained by one person. That affects response capacity,
+not the seriousness of this policy.
+
+Response times are best-effort. Complex reports may take longer when they
+require a particular Office configuration, Windows behavior, clean Excel
+process, long-running test, or manual workbook validation.
+
+Reasonable delay is not dismissal. Repeatedly demanding immediate action is not
+a substitute for technical evidence.
+
+GitHub's platform policies and community standards also apply where relevant.
+
+---
+
 ## 📜 Attribution
 
-This Code of Conduct is informed by the
-[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html)
-and adapted for KPR's evidence-led financial and numerical engineering context.
+This Code of Conduct is informed by and adapted from the
+[Contributor Covenant, version 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html).
+Its project-specific technical and data-handling provisions are maintained for
+this repository.
 
 ---
 
@@ -270,7 +330,7 @@ and adapted for KPR's evidence-led financial and numerical engineering context.
 
 ### Practical principle
 
-**Be precise about the model · Be generous toward the person · Show the evidence · State the boundary · Protect the data**
+**Be precise about the work · Be generous toward the person · Show the evidence · State the boundary · Protect the data**
 
 <br>
 
