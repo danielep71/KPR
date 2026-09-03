@@ -99,6 +99,8 @@ Use only the categories needed by a release.
 
 ### Added
 
+- Added a standardized installation and maintainer release documentation set with project-specific deployment, certification, provenance, recovery, and post-publication controls.
+
 - Multi-cell evaluation on the single 22-name surface. Every value-taking
   function now accepts a scalar, a single-cell Range or 1x1 wrapper, or a
   multi-element Range or array at each value position, expands scalars,
