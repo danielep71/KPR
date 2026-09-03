@@ -185,6 +185,8 @@ Use only the categories needed by a release.
 
 ### Changed
 
+- Standardized the pull-request review contract around exact-candidate evidence, compatibility, risk and recovery, security and provenance, and project-specific validation gates.
+
 - Reconciled the README, installation, contribution, security, contract, and
   implementation-plan status with the implemented v0.0.2 date surface while
   preserving #29 as the only final exact-source certification gate.

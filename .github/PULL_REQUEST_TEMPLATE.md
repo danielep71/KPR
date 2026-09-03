@@ -1,361 +1,318 @@
 <!--
-  KPR pull request template
-
-  Keep the PR focused on one coherent purpose. Complete the core sections and
-  delete optional sections that do not apply; do not convert unperformed work
-  into "PASS" or fill the template with unexplained "N/A" entries.
-
-  Record only tests, references, environments, and compatibility claims that
-  were actually verified. Evidence matters more than checkbox volume.
-
-  SECURITY: do not disclose a suspected vulnerability, credential, confidential
-  workbook, restricted market data, or exploitable trust-boundary issue here.
-  Follow SECURITY.md and report privately.
+  Keep this pull request focused on one coherent outcome.
+  Complete every common section. Delete optional profile blocks that do not apply.
+  Use NOT RUN or NOT APPLICABLE with a reason; never manufacture PASS evidence.
+  Record only checks and environments exercised against the exact candidate.
+  Report vulnerabilities privately through SECURITY.md; do not disclose secrets,
+  exploitable details, confidential workbooks, or restricted data in a pull request.
 -->
 
 <div align="center">
 
 # 🔀 KPR Pull Request
 
-### Focused change · Explicit contract · Reproducible evidence · Honest boundaries
+### Financial contract · Numerical evidence · Exact candidate · Honest boundaries
 
-[![Contract](https://img.shields.io/badge/Contract-Explicit-217346?style=flat-square)](../CONTRIBUTING.md#financial-contract-first)
-[![Numerics](https://img.shields.io/badge/Numerics-Evidence_required-d97706?style=flat-square)](../CONTRIBUTING.md#numerical-engineering)
-[![Compatibility](https://img.shields.io/badge/API-SemVer_assessed-6f42c1?style=flat-square)](../CONTRIBUTING.md)
-[![Data](https://img.shields.io/badge/Data-Synthetic_only-d73a49?style=flat-square)](../SECURITY.md#financial-data-and-confidentiality)
+[![Contributing](https://img.shields.io/badge/guide-CONTRIBUTING-217346?style=flat-square)](../CONTRIBUTING.md)
+[![Security](https://img.shields.io/badge/security-private%20reporting-d73a49?style=flat-square)](../SECURITY.md)
+[![Release](https://img.shields.io/badge/release-RELEASING-6f42c1?style=flat-square)](../RELEASING.md)
+[![Changelog](https://img.shields.io/badge/changes-Unreleased-d97706?style=flat-square)](../CHANGELOG.md)
 
 </div>
 
 ---
 
+> [!IMPORTANT]
+> A numerically close answer can still be financially wrong. Make every affected convention and comparison boundary explicit.
+
 ## 📌 Summary
 
-<!-- What changed and why? Prefer one precise outcome over a list of edits. -->
+<!-- State the observable outcome and why it is needed. Prefer one precise purpose. -->
 
-## 🎯 Problem or motivation
-
-<!--
-State the defect, limitation, analytical need, maintenance problem, or user
-workflow. Describe the pre-change behavior where useful.
--->
-
-## 🔗 Related issue
+## 🔗 Related issues
 
 ```text
 Closes #
+Related to #
 ```
 
-<!-- Use "Refs #" when the PR contributes to but does not close the issue. -->
+Use a closing keyword only when this pull request satisfies the issue's complete acceptance criteria.
+
+## 🧭 Change classification
+
+- [ ] Defect correction
+- [ ] Backward-compatible capability
+- [ ] Breaking API, behavior, deployment, or migration change
+- [ ] Internal refactor with no intended supported-behavior change
+- [ ] Test, fixture, reference-data, or validation change
+- [ ] Performance change
+- [ ] Security or trust-boundary hardening
+- [ ] Documentation-only change
+- [ ] Repository tooling, workflow, or governance change
+- [ ] Packaging or release preparation
+- [ ] Date, calendar, day-count, or schedule change
+- [ ] Rate, curve, cash-flow, instrument, or pricing change
+- [ ] Numerical method, solver, or approximation change
+
+## 🎚️ Affected surface
+
+- [ ] Worksheet UDF or VBA caller surface
+- [ ] Public result or error contract
+- [ ] Date/calendar/schedule foundation
+- [ ] Pricing, curve, cash-flow, or instrument engine
+- [ ] Array classification, broadcasting, or traversal
+- [ ] Excel host integration or application state
+- [ ] No runtime or supported surface — documentation/repository-only
 
 ---
 
-## 🏷️ Type of change
+## 📐 Scope and contract impact
 
-- [ ] 🐛 Defect correction
-- [ ] ✨ Backward-compatible feature or model
-- [ ] 💥 Breaking contract or API change
-- [ ] 🧮 Numerical-method or accuracy change
-- [ ] 📅 Date, calendar, day-count, or schedule change
-- [ ] 📈 Rate, curve, cash-flow, or instrument change
-- [ ] 🔒 Excel-state, data-integrity, or security hardening
-- [ ] ♻️ Internal refactor with no intended supported-behavior change
-- [ ] 🧪 Test, reference-data, or validation change
-- [ ] ⚡ Performance change
-- [ ] 📦 Packaging, release, or repository-infrastructure change
-- [ ] 📖 Documentation-only change
+### In scope
 
-## 🎚️ Affected layer
+- <!-- Deliberate outcome -->
 
-- [ ] 📊 Excel UDF or VBA caller surface
-- [ ] 🧱 Supported public API or result contract
-- [ ] 🧮 Pricing or analytics engine
-- [ ] 🧾 Cash-flow or instrument representation
-- [ ] 📉 Curve, interpolation, extrapolation, or calibration
-- [ ] 📅 Date, calendar, convention, or schedule foundation
-- [ ] 🔢 Numerical primitive, solver, or approximation
-- [ ] ⚙️ Excel host integration or application state
-- [ ] 🧪 Regression harness or independent reference set
-- [ ] 📦 Demo, workbook/add-in artifact, or release process
-- [ ] 📚 Documentation or repository governance
+### Out of scope
 
----
+- <!-- Reasonable adjacent work deliberately deferred -->
 
-## 📐 Contract snapshot
-
-Complete the lines relevant to this PR. A reviewer should understand the
-behavioral boundary before reading the implementation.
+### Supported behavior and compatibility
 
 ```text
-Supported function / component:
-Inputs and admissible domain:
-Output and units:
-Financial conventions:
-Defaults:
-Invalid-input behavior:
-Non-convergence / unavailable-result behavior:
-Caller-owned Excel state preserved:
+Supported behavior changed:       Yes / No
+Backward compatible:              Yes / No / Uncertain
+Suggested release impact:         none / patch / minor / major / uncertain
+New supported members:
+Removed or renamed members:
+Changed signatures or defaults:
+Changed results, errors, state, or side effects:
+Migration required:
 Known limitation introduced or retained:
 ```
 
-### Financial conventions
+Assess compatibility against documented behavior, not merely the VBA `Public` keyword. Infrastructure callbacks, Ribbon entry points, test seams, and `Application.Run` targets are not automatically supported API.
 
-Check and explain every convention this change affects.
+### Production source and package
 
-- [ ] 📅 Valuation, trade, settlement, fixing, payment, or maturity date
-- [ ] 🗓️ Calendar, weekend, roll, stub, or end-of-month rule
-- [ ] ⏱️ Day count, accrual, frequency, or compounding
-- [ ] 💱 Currency, notional, units, or scaling
-- [ ] 📈 Price, yield, rate, spread, volatility, or probability quotation
-- [ ] ➕ Long/short, payer/receiver, asset/liability, or cash-flow sign
-- [ ] 📉 Curve input, interpolation, extrapolation, or missing-data rule
-- [ ] 🧮 Precision, rounding, tolerance, iteration, or convergence
-- [ ] None — no financial convention is affected
+The source manifest and import order documented in `INSTALLATION.md`, including the public `KPR_DATES_DAYS` facade and required `KPR_Core_*` modules.
+
+- [ ] Required source files and import order are unchanged.
+- [ ] Required source files or order changed and `INSTALLATION.md` was updated.
+- [ ] No production source/package impact.
+
+## 🔧 Implementation notes
 
 ```text
-Convention detail:
-```
-
-> [!IMPORTANT]
-> A formula can be numerically close and still be financially wrong. Do not
-> leave a material convention implicit in workbook formatting, locale, a magic
-> constant, or the implementation itself.
-
----
-
-## 🧱 Public API and Semantic Versioning
-
-```text
-Supported behavior changed:     Yes / No
-Backward compatible:           Yes / No / Uncertain
-Suggested release impact:      patch / minor / major / none / uncertain
-New supported members:
-Removed or renamed members:
-Changed defaults:
-Changed result or error contract:
-Migration required:
-```
-
-Assess compatibility against documented behavior, not only the VBA keyword
-`Public`. Infrastructure members may need public visibility for Excel, RibbonX,
-callbacks, `Application.Run`, packaging, or tests without becoming supported API.
-
-If no supported behavior changes, state:
-
-```text
-No supported behavior change.
-```
-
----
-
-## 🛠️ Implementation approach
-
-<!--
-Explain the design, important alternatives, invariants, and why this approach was
-chosen. Focus on decisions a future maintainer cannot infer safely from the diff.
--->
-
-```text
-Approach:
+Approach and key invariant:
 Alternatives considered:
-Key invariant:
-New dependency or reference:
-```
-
-<details>
-<summary><strong>🧮 Numerical-method detail</strong></summary>
-
-<!-- Complete for algorithms, solvers, approximations, curves, or accuracy changes. -->
-
-```text
-Method / equation:
-Source or derivation:
-Supported domain:
-Stability risks:
-Initial guess / bracket:
-Iteration limit:
-Convergence criterion:
-Tail / boundary treatment:
+New dependency, reference, or generated input:
+State ownership and cleanup:
 Failure behavior:
 ```
 
-</details>
-
-<details>
-<summary><strong>⚙️ Excel host-state detail</strong></summary>
-
-<!-- Complete when the change reads or mutates Excel objects or application state. -->
-
-```text
-Workbook / worksheet / range scope:
-Application state read:
-Application state changed:
-Ownership established how:
-Success-path cleanup:
-Failure-path cleanup:
-Formula / name / link / connection impact:
-```
-
-</details>
+Explain decisions a future reviewer cannot safely infer from the diff.
 
 ---
 
-## ✅ Validation
+## ✅ Verification
 
-### Environment
+### Candidate identity
 
-Record environments actually used. Do not claim compatibility for an untested
-configuration.
+| Evidence | Result |
+| --- | --- |
+| Exact PR HEAD SHA | <!-- Full 40-character SHA --> |
+| Base branch and base SHA | <!-- Branch + full SHA --> |
+| Working tree used locally | <!-- clean / dirty; explain --> |
+| Source or package tested | <!-- Exact candidate source / artifact / N/A --> |
+
+Evidence from another commit does not certify this candidate.
+
+### Static and repository checks
+
+- `python3 tools/check_repo.py --root . --self-test`
+- `python3 tools/check_repo.py`
+- `git diff --check`
+
+| Check | Result / evidence |
+| --- | --- |
+| Hosted required checks | <!-- PASS / FAIL / NOT RUN + workflow URL --> |
+| Local static command | <!-- Command + PASS / FAIL / NOT RUN --> |
+| Formatting / `git diff --check` | <!-- PASS / FAIL --> |
+| Machine-readable artifact | <!-- Name / URL / not produced --> |
+
+### Excel and VBA execution
+
+- [ ] Required and completed against the exact PR HEAD.
+- [ ] Required but incomplete — reason and merge/release consequence stated.
+- [ ] Not required — documentation/repository-only change with no executable or packaging impact.
+
+Relevant entry points:
+
+- `KPR_Tests_RunAll` or the documented complete KPR suite
+- Focused public-surface and worksheet smoke tests
+
+| Evidence | Result |
+| --- | --- |
+| Tested commit SHA | <!-- Full SHA or N/A --> |
+| `Debug → Compile VBAProject` | <!-- PASS / FAIL / NOT RUN / N/A --> |
+| Regression/certification entry point | <!-- Exact procedure --> |
+| Completion state | <!-- PASS / FAIL / INCOMPLETE / NOT RUN --> |
+| Cases / assertions / failures | <!-- Counts or N/A --> |
+| Skipped / cleanup outcome | <!-- Counts and state or N/A --> |
+| Focused and manual checks | <!-- Scenarios + result --> |
+| Evidence file or workflow | <!-- Name / URL / N/A --> |
+
+### Validation environment
 
 ```text
-KPR base commit:
-Excel version / build:
-Office bitness:             32-bit / 64-bit
-Windows version:
-Locale / decimal separator:
-Workbook date system:       1900 / 1904
-Deployment:                 source workbook / add-in / other
+Excel product, version, and build:
+Office bitness:                    32-bit / 64-bit
+Windows version/build:
+Workbook or add-in host:
+Deployment model:
+Workbook date system: 1900 / 1904
+Locale and decimal/list separators
+Dynamic-array Excel availability where spill behavior changes
 ```
 
-### Validation performed
+Record only tested environments. Source inspection does not constitute host execution, and one Office bitness does not execute the other conditional branch.
 
-- [ ] 🛠️ `Debug > Compile VBAProject`
-- [ ] 🔬 Focused unit or component tests
-- [ ] 🐛 Complete relevant regression pack
-- [ ] 📚 Independent reference comparison
-- [ ] ⚖️ Invariant, parity, monotonicity, symmetry, or round-trip tests
-- [ ] ↔️ Boundary and limiting cases
-- [ ] 🚫 Invalid-input and failure-path tests
-- [ ] 🔁 Non-convergence or recovery tests
-- [ ] 📊 Worksheet UDF and VBA caller-path comparison
-- [ ] 🆕 Fresh Excel-process check
-- [ ] ⚙️ 32-bit / 64-bit check where relevant
-- [ ] 🌍 Locale or date-system check where relevant
-- [ ] 📦 Packaged-artifact check where relevant
+### Regression coverage
+
+- [ ] Existing tests cover the changed success path.
+- [ ] New or amended tests cover each corrected defect.
+- [ ] Boundary, invalid-input, failure, fallback, and cleanup paths are covered as applicable.
+- [ ] Test entry points and inventory/count metadata remain synchronized.
+- [ ] Expected results come from the contract or an independent reference.
+- [ ] No regression change is needed — rationale recorded below.
 
 ```text
-Compile result:
-Regression result:
-Focused/manual result:
+Coverage rationale and new test names:
+Unexecuted or deferred coverage:
 ```
-
-> [!WARNING]
-> Record only validation that was actually run. An operational GitHub workflow,
-> a screenshot, or a successful compile is not numerical-reference evidence.
-> Intermediate changes do not need generic clean-workbook, disabled-Compile, or
-> Function Wizard screenshots; the final exact-source import and compile belong
-> to the release-certification issue.
-
-### Numerical evidence
-
-Complete for changes that produce or affect numerical output.
-
-```text
-Independent reference:
-Reference provenance / version:
-Reference precision:
-Tested domain:
-Comparison rule:            absolute / relative / combined / other
-Tolerance:
-Worst observed error:
-Worst-error input:
-Unverified boundary:
-```
-
-### Test cases added or changed
-
-| Test | Contract or defect covered | Expected result |
-|---|---|---|
-| | | |
 
 ---
 
-## ⚡ Performance
+## ⚠️ Risk, rollback, and recovery
+
+- [ ] Low — documentation, metadata, or mechanically verified change.
+- [ ] Medium — bounded runtime, tooling, or compatibility impact.
+- [ ] High — numerical integrity, shared Excel state, native API, security, release, or breaking impact.
 
 ```text
-Performance impact:         improved / neutral / regressed / not measured
-Representative workload:
-Timing method:
-Warm-up policy:
-Sample size:
-Baseline:
-Observed result:
+Principal failure modes:
+Residual risk after validation:
+Rollback or revert procedure:
+Excel-process, workbook, data, or artifact recovery:
+Conditions that make rollback unsafe:
 ```
-
-Do not make a performance claim without a reproducible workload and measurement
-boundary. Correctness and stability outrank micro-optimization.
-
----
 
 ## 🔐 Security, data, and provenance
 
-- [ ] No client, employer, counterparty, student, or personal data is included
-- [ ] No credential, connection string, internal URL, or signing material is included
-- [ ] Test inputs are synthetic or legally redistributable
-- [ ] Market data and vendor outputs are licensed for the way they are used
-- [ ] Adapted algorithms, code, and datasets identify their source and license
-- [ ] No unexpected formula, command, path, or external-content injection surface is introduced
-- [ ] No security-sensitive detail requires private disclosure instead of this PR
+- [ ] No credential, secret, signing material, internal URL, or personal path is included.
+- [ ] No client, employer, counterparty, student, personal, or restricted production data is included.
+- [ ] Test data is synthetic, anonymized, or explicitly redistributable.
+- [ ] External algorithms, code, datasets, and market/vendor data have attributable provenance and compatible licensing.
+- [ ] Formula, command, path, callback, deserialization, and external-content injection surfaces were assessed.
+- [ ] No security-sensitive detail belongs in private disclosure instead of this pull request.
+- [ ] Generated evidence identifies its inputs, tool/runtime version, candidate SHA, and limitations.
 
 ```text
-Source / dataset provenance:
-Security impact:
+Security or privacy impact:
+Source/data provenance:
+New trust boundary:
 ```
 
----
+## 📚 Documentation and release hygiene
 
-## 📖 Documentation and release impact
-
-- [ ] README updated
-- [ ] Installation guidance updated
-- [ ] API / model documentation updated
-- [ ] Examples or demo updated
-- [ ] `[Unreleased]` changelog updated
-- [ ] Security policy updated
-- [ ] No documentation change required — reason stated below
+- [ ] `README.md` reflects supported behavior and examples.
+- [ ] `INSTALLATION.md` reflects paths, dependencies, import order, validation, upgrades, and removal.
+- [ ] `CONTRIBUTING.md` reflects development and evidence requirements.
+- [ ] `CHANGELOG.md` records material change under `[Unreleased]`.
+- [ ] `SECURITY.md` reflects supported versions or trust boundaries.
+- [ ] `RELEASING.md` reflects certification, package, provenance, or recovery changes.
+- [ ] Source headers, API references, demos, Wiki pages, and counts remain synchronized.
+- [ ] Version markers remain unchanged unless this is the deliberate release-stamp change.
+- [ ] No documentation change is required — reason recorded below.
 
 ```text
 Documentation impact:
-Release-artifact impact:
+Release, artifact, or migration impact:
 ```
 
 ---
 
-## ⚠️ Known boundaries
+## 🧩 Project-specific review
 
-<!-- State what this PR and its evidence do not prove. Do not leave implicit. -->
+<details>
+<summary><strong>💹 Financial and numerical contract</strong></summary>
+
+Complete this block whenever the change can alter a date, amount, rate, price, curve, probability, schedule, or diagnostic.
 
 ```text
-Untested environment:
-Unsupported domain:
-Deferred follow-up:
-Residual risk:
+Instrument / calculation:
+Valuation, trade, settlement, fixing, payment, and maturity dates:
+Calendar, weekend, roll, stub, and end-of-month rules:
+Day count, accrual, frequency, and compounding:
+Currency, notional, units, scaling, quotation, and sign:
+Curve inputs, interpolation, extrapolation, and missing-data rule:
+Admissible domain, defaults, precision, and failure behavior:
 ```
 
----
+- [ ] Every material convention is explicit rather than inferred from locale or formatting.
+- [ ] Strict input rejection and error precedence remain deterministic.
+- [ ] Scalar, single-cell, array, Range, and spill/broadcast behavior are covered as applicable.
+- [ ] Capacity limits are decided before content is read.
+- [ ] The 1900/1904 host-date-system contract is preserved or deliberately revised.
 
-## 📋 Author checklist
+</details>
+<details>
+<summary><strong>🔬 Independent numerical evidence</strong></summary>
 
-- [ ] The PR has one coherent purpose
-- [ ] The related issue is linked
-- [ ] The financial and API contracts are explicit
-- [ ] Public API and Semantic Versioning impact are assessed
-- [ ] Numerical evidence is independent and attributable where required
-- [ ] Tolerances follow the contract rather than the observed implementation
-- [ ] Caller-owned Excel state and failure cleanup are preserved
-- [ ] A regression case covers each corrected defect
-- [ ] Documentation reflects current behavior, not intended future behavior
-- [ ] Evidence records only tests and environments actually completed
-- [ ] Confidential, restricted, generated, and binary content was reviewed
-- [ ] Known limitations and unverified boundaries are stated
+Required for any numerical or financial result change.
+
+```text
+Independent reference and version:
+Reference precision and provenance:
+Tested domain and parameter grid:
+Absolute / relative / combined comparison rule:
+Tolerance and contractual basis:
+Worst discrepancy and input:
+Unverified boundary:
+```
+
+- [ ] Expected values were not copied from KPR.
+- [ ] Boundary, limiting, invariant, parity, monotonicity, and round-trip checks are included as relevant.
+- [ ] Non-convergence and unavailable-result behavior are tested.
+- [ ] Licensed market or vendor data is not committed without permission.
+
+</details>
 
 ---
 
 ## 👀 Reviewer focus
 
-<!-- Point reviewers to the highest-risk files, contracts, or numerical decisions. -->
-
 ```text
-Primary review risk:
-Files / procedures to inspect first:
+Highest-risk decision:
+Files and procedures to inspect first:
 Evidence to challenge:
+Known boundary not proved by this pull request:
+Unresolved question or accepted trade-off:
 ```
+
+## ☑️ Final author check
+
+- [ ] The title describes the observable outcome.
+- [ ] The pull request has one coherent purpose and no unrelated churn.
+- [ ] Linked issue acceptance criteria are met or remaining work is explicit.
+- [ ] Compatibility and release impact are assessed.
+- [ ] Evidence belongs to the exact candidate claimed.
+- [ ] Required checks are terminal and passing; incomplete work is not presented as PASS.
+- [ ] Executable VBA was compiled and tested when required.
+- [ ] Failure, cleanup, and recovery behavior were reviewed.
+- [ ] The complete diff, including comments, metadata, binary companions, and documentation, was reviewed.
+- [ ] No merge marker, stale placeholder, unexplained N/A, accidental binary, or private material remains.
+
+---
+
+**Review principle:** approve the smallest coherent change whose contract, evidence, risk, and recovery can all be explained from this pull request.
